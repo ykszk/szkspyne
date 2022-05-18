@@ -8,6 +8,7 @@ import numpy as np
 import scipy
 import scipy.stats
 import torch
+import torch.utils.data
 from numba import njit
 
 PointType = Tuple[float, float]

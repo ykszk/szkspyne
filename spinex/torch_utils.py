@@ -62,6 +62,7 @@ class SoftArgmax(torch.nn.Module):
     '''
     Soft argmax for ND tensor. Input is a ND (batch, channel, i, j, ...) tensor.
     '''
+
     def __self__(self):
         super().__init__()
 

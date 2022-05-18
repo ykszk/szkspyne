@@ -3,12 +3,14 @@ Utility functions for image manipulation
 '''
 from typing import Sequence, Union
 
-
 import numpy as np
 import skimage.transform
+import torch
+import boundingbox as bb
 
 
-def pad_to_shape(x: np.ndarray, shape: Sequence[int], constant_value: float) -> np.ndarray:
+def pad_to_shape(x: np.ndarray, shape: Sequence[int],
+                 constant_value: float) -> np.ndarray:
     '''
     Add zero padding to bottom right.
 
@@ -25,7 +27,8 @@ def pad_to_shape(x: np.ndarray, shape: Sequence[int], constant_value: float) -> 
     return np.pad(x, [(0, d) for d in ds], constant_values=constant_value)
 
 
-def pad_to_next_pow2(x: np.ndarray, axis: Sequence[int], constant_value: float) -> np.ndarray:
+def pad_to_next_pow2(x: np.ndarray, axis: Sequence[int],
+                     constant_value: float) -> np.ndarray:
     '''
     Args:
         axis: list of axis
@@ -45,7 +48,8 @@ def pad_to_next_pow2(x: np.ndarray, axis: Sequence[int], constant_value: float) 
     return pad_to_shape(x, new_shape, constant_value)
 
 
-def pad_to_next_multiple(m: int, x: np.ndarray, axis: Sequence[int], constant_value: float) -> np.ndarray:
+def pad_to_next_multiple(m: int, x: np.ndarray, axis: Sequence[int],
+                         constant_value: float) -> np.ndarray:
     '''
     shape a*m+b -> (a+1)*m
     
@@ -69,7 +73,10 @@ def pad_to_next_multiple(m: int, x: np.ndarray, axis: Sequence[int], constant_va
     return pad_to_shape(x, new_shape, constant_value)
 
 
-def resize_height(height: int, img: np.ndarray, kps: Union[Sequence[Sequence[float]], None] = None) -> np.ndarray:
+def resize_height(
+        height: int,
+        img: np.ndarray,
+        kps: Union[Sequence[Sequence[float]], np.ndarray, None] = None) -> np.ndarray:
     '''
     Resize image to the height. Width is dynamically determined (i.e. aspect ratio is kept.)
 
@@ -100,3 +107,64 @@ def resize_height(height: int, img: np.ndarray, kps: Union[Sequence[Sequence[flo
         return img, kps
     else:
         return img
+
+
+def pad_align(xs):
+    shapes = [x.shape for x in xs]
+    max_shapes = np.max(shapes, axis=0)
+    ds = [max_shapes - s for s in shapes]
+    padded = []
+    for x, d in zip(xs, ds):
+        pad_width = list(
+            zip(np.floor(d / 2).astype(int),
+                np.ceil(d / 2).astype(int)))
+        padded.append(np.pad(x, pad_width))
+    return np.stack(padded)
+
+
+def slice_align(xs):
+    shapes = [x.shape for x in xs]
+    min_shapes = np.min(shapes, axis=0)
+    ds = [s - min_shapes for s in shapes]
+    sliced = []
+    for x, d, shape in zip(xs, ds, shapes):
+        slice_args = list(
+            zip(np.floor(d / 2).astype(int),
+                np.ceil(d / 2).astype(int)))
+        slices = tuple([
+            slice() if e == 0 else slice(e[0], s - e[1])
+            for e, s in zip(slice_args, shape)
+        ])
+        sliced.append(x[slices])
+    return np.stack(sliced)
+
+
+class CropCollate:
+
+    def __init__(self, margin=0, p=.5, multiple=None, thresh=1 / 1000):
+        '''
+        Crop images by the heatmap
+
+        Args:
+            multiple (integer): 
+        '''
+        self.p = p
+        self.margin = margin
+        self.multiple = multiple
+        self.thresh = thresh
+
+    def __call__(self, batch):
+        xs, ys = list(zip(*batch))
+        xs, ys = np.array(xs), np.array(ys)
+        if np.random.rand() < self.p:
+            mask = ys > self.thresh
+            bbox = bb.bbox(np.max(mask, axis=1, keepdims=True))
+            xs = bb.crop(xs, bbox, self.margin)
+            bbox = bb.bbox(mask)
+            ys = bb.crop(ys, bbox, self.margin)
+            if self.multiple:
+                xs = pad_to_next_multiple(self.multiple, xs, [2, 3])
+                ys = pad_to_next_multiple(self.multiple, ys, [2, 3])
+        xs = torch.Tensor(xs)
+        ys = torch.Tensor(ys)
+        return xs, ys

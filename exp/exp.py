@@ -21,13 +21,9 @@ from joblib import Parallel, delayed
 from tqdm import tqdm
 import cv2
 
-import transforms
-import utils
-import pretrained_models
+from spinex import pretrained_models, transforms, point_utils, img_utils, exp_utils
 
 import mhd
-
-USE_TEST_AS_VAL = False # set true to train the model for the deployment
 
 # torch.backends.cudnn.benchmark = True # due to random cropping
 
@@ -37,7 +33,7 @@ def main():
     parser.add_argument('--output',
                         help='Output directory: %(default)s',
                         metavar='<dirname>',
-                        default='/scratch/suzuki/spine')
+                        default='result')
     parser.add_argument('--patience',
                         help='The patience for early stopping: %(default)s',
                         metavar='<n>',
@@ -66,9 +62,9 @@ def main():
                         help='Cropping probability in collation: %(default)s',
                         metavar='<value>',
                         type=float,
-                        default=.5)
+                        default=.2)
     parser.add_argument('--fold',
-                        help='The number of folds in k-fold: %(default)s',
+                        help='The number of folds in k-fold CV: %(default)s',
                         metavar='<n>',
                         type=int,
                         default=5)
@@ -78,14 +74,18 @@ def main():
     parser.add_argument('--clahe',
                         help='Use CLAHE for image normalization',
                         action='store_true')
+    parser.add_argument(
+        '--holdout',
+        help=
+        'Perform hold-out cross validation. Test fold is used as validation fold. Use this to train a model for deployment',
+        action='store_true')
 
     parser = pretrained_models.LitSMP.add_model_specific_args(parser)
 
     args = parser.parse_args()
 
-    label_names = ['C2 IA', 'C2 IP', 'C last IA', 'C last IP']
-    data_root = Path('../data/annotation')
-    mha_root = Path('../data/mha')
+    label_names = ['TL', 'TR', 'BL', 'BR']
+    data_root = Path('../../data/')
     outroot = Path(args.output)
     outroot.mkdir(parents=True, exist_ok=True)
     logzero.logfile(outroot / 'output.log')
@@ -97,15 +97,13 @@ def main():
     with open(outroot / 'args.json', 'w') as f:
         json.dump(args.__dict__, f, indent=2)
 
-    df_all = pd.read_csv('dataset.csv')
-    df_all['pid'] = df_all['filepath'].map(lambda pid: Path(pid).parts[0])
-    df_anon = pd.read_csv('new_anon.csv')
-    anon_dict = {
-        opid: apid
-        for opid, apid in zip(df_anon['OldID'], df_anon['NewID'])
-    }
-    df_all['anon_pid'] = df_all['pid'].map(lambda e: anon_dict[e])
-    pids = df_all['anon_pid'].unique()
+    dfs = []
+    for fn in ['script/verse.csv', 'script/spineweb.csv']:
+        df = pd.read_csv(fn)
+        df['pid'] = df['filepath'].map(lambda pid: Path(pid).parts[-1])
+        dfs.append(df)
+    df_all = np.concatenate(dfs, axis=0)
+    pids = df_all['pid']
     K_FOLD = args.fold
     df_all['set_id'] = -1
     kfold = KFold(n_splits=K_FOLD,
@@ -118,6 +116,8 @@ def main():
 
     df_all.to_csv(outroot / 'dataset.csv', index=False)
     AFFINITY = True
+
+    USE_TEST_AS_VAL = args.holdout
 
     DEBUG = args.debug
     NUM_WORKERS = os.cpu_count() - 1  #2 if os.name == 'nt' else 0
@@ -170,17 +170,10 @@ def main():
             '''
             load images and keypoints
             '''
+
             def load(row):
-                img_path = (mha_root / row.filepath).with_suffix('.mha')
-                x, _ = mhd.read(img_path)
-                assert x.dtype == np.uint16, 'np.uint16 is expected'
-                kp = []
-                for l in label_names:
-                    px = row.get(l + ' x')
-                    py = row.get(l + ' y')
-                    kp.append((py, px))
-                kp = np.array(kp)
-                x, kp = utils.resize_height(height, x, kp)
+                x, kp = exp_utils.load_data(row, data_root, label_names)
+                x, kp = img_utils.resize_height(height, x, kp)
                 if clahe:
                     x = transforms.apply_clahe(x)
                 return x, kp
@@ -195,23 +188,14 @@ def main():
 
             new_shape = (down_factor *
                          np.ceil(np.array(max_shape) / down_factor)).astype(
-                             np.int64)
+                             np.int64).tolist()
             logger.info('Pad to %s', new_shape)
-            xs = [utils.pad_to_shape(x, new_shape) for x in xs]
+            xs = [img_utils.pad_to_shape(x, new_shape, 0) for x in xs]
             return xs, kps
 
         logger.info('load train set')
         train_xs, train_kps = load_dataset(df_train, HEIGHT, False)
         logger.info('train size %d', len(train_xs))
-        repeat = 1 if DEBUG else 2  # TODO: remove if dataset is large
-        if len(train_xs) > 1000:
-            pass
-        else:
-            logger.info('Repeat %d', repeat)
-            train_xs, train_kps = np.repeat(train_xs, repeat,
-                                            axis=0), np.repeat(train_kps,
-                                                               repeat,
-                                                               axis=0)
         logger.info('load val set')
         val_xs, val_kps = load_dataset(df_val, HEIGHT, True)
         logger.info('val size %d', len(val_xs))
@@ -220,26 +204,24 @@ def main():
                              pin_memory=True,
                              num_workers=NUM_WORKERS,
                              prefetch_factor=4)
-        dataset = utils.KeypointDataset(train_xs,
-                                        train_kps,
-                                        transforms.random_transform,
-                                        sigma=SIGMA,
-                                        affinity=AFFINITY)
+        dataset = point_utils.KeypointDataset(train_xs,
+                                              train_kps, [],
+                                              transforms.random_transform,
+                                              sigma=SIGMA)
         train_loader = DataLoader(
             dataset,
             shuffle=True,
             drop_last=True,
-            collate_fn=utils.CropCollate(p=args.crop,
-                                         margin=32,
-                                         multiple=down_factor),
+            collate_fn=img_utils.CropCollate(p=args.crop,
+                                             margin=32,
+                                             multiple=down_factor),
             **loader_kwargs,
         )
 
-        dataset = utils.KeypointDataset(val_xs,
-                                        val_kps,
-                                        transforms.base_transform,
-                                        sigma=SIGMA,
-                                        affinity=AFFINITY)
+        dataset = point_utils.KeypointDataset(val_xs,
+                                              val_kps, [],
+                                              transforms.base_transform,
+                                              sigma=SIGMA)
         val_loader = DataLoader(dataset,
                                 shuffle=False,
                                 drop_last=True,
@@ -254,7 +236,7 @@ def main():
                                             verbose=False,
                                             mode='min')
         mc = ModelCheckpoint(monitor='val_loss', dirpath=outdir / 'checkpoint')
-        csv_logger = CSVLogger(outdir, name='logs')
+        csv_logger = CSVLogger(str(outdir), name='logs')
         trainer = pl.Trainer(
             gpus=gpus,
             precision=16,  # mixed precision
@@ -270,7 +252,7 @@ def main():
         trainer.fit(lit_model, train_loader, val_loader)
         logger.info('Finish training')
         df_logs = pd.read_csv(csv_logger.experiment.metrics_file_path)
-        utils.plot_history(df_logs)
+        exp_utils.plot_history(df_logs)
         plt.gcf().savefig(outdir / 'history.png',
                           transparent=True,
                           bbox_inches='tight')
@@ -279,11 +261,10 @@ def main():
 
         test_xs, test_kps = load_dataset(df_test, HEIGHT, True)
         np.save(outdir / 'kps.npy', np.array(test_kps))
-        dataset = utils.KeypointDataset(test_xs,
-                                        None,
-                                        transforms.base_transform,
-                                        sigma=SIGMA,
-                                        affinity=AFFINITY)
+        dataset = point_utils.KeypointDataset(test_xs,
+                                              None, [],
+                                              transforms.base_transform,
+                                              sigma=SIGMA)
         test_loader = DataLoader(dataset, shuffle=False, **loader_kwargs)
 
         logger.info('Start test')
@@ -299,7 +280,6 @@ def main():
             torch.save(
                 lit_model.model.to('cpu').state_dict(),
                 outdir / 'checkpoint' / 'best.pth')
-
 
     for test_id in range(K_FOLD):
         train_test(test_id)
