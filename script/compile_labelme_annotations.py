@@ -1,17 +1,18 @@
+#%%
 from pathlib import Path
 import json
 import pandas as pd
 from collections import defaultdict
 from logzero import logger
-
-indir = Path('../data/agreed_annotation')
-
-logger.info('start')
-dataset = []
-label_names = ['C2 IA', 'C2 IP', 'C last IA', 'C last IP']
-label_names = ['TL', 'TR', 'BL', 'BR']
+data_root = Path('../../data')
+indir = data_root / 'verse/mip'
 sorted_fns = sorted(indir.glob('**/*.json'))
 logger.info('file list done')
+logger.info(len(sorted_fns))
+#%%
+logger.info('start')
+dataset = []
+label_names = ['TL', 'TR', 'BL', 'BR']
 for fn in sorted_fns:
     with open(str(fn)) as f:
         data = json.load(f)
@@ -25,18 +26,20 @@ for fn in sorted_fns:
     if set(label_names) != point_labels:
         print('Ignoring invalid keypoints', filepath)
         continue
-    row = {'filepath': filepath}
+    row = {'filepath': (indir / filepath).relative_to(data_root)}
     for l in label_names:
         ps = point_dict[l]
-        if len(ps) > 1:
-            print('Too many points!', filepath)
-            continue
-        p = ps[0]
-        row[l + ' x'] = p[0]
-        row[l + ' y'] = p[1]
+        x, y = list(zip(*ps))
+        row[l + ' x'] = x
+        row[l + ' y'] = y
         
     dataset.append(row)
 #    break
 logger.info('done processing')
 df = pd.DataFrame(dataset)
-df.to_csv('dataset.csv', index=False)
+df.to_csv('verse.csv', index=False)
+df.head()
+# %%
+df_read = pd.read_csv('verse.csv')
+df_read.head()
+# %%
