@@ -2,7 +2,7 @@
 Utility functions for point manipulation
 '''
 
-from typing import Sequence, Union, Callable, Tuple, Optional
+from typing import Sequence, Callable, Tuple, Optional, TypeVar
 
 import numpy as np
 import scipy
@@ -10,11 +10,73 @@ import scipy.stats
 import torch
 import torch.utils.data
 from numba import njit
+import itertools
 
 PointType = np.ndarray  # Tuple[float, float]
 PointsType = Sequence[PointType]
 PointsList = Sequence[PointsType]
 ImageType = np.ndarray
+
+GenericType = TypeVar('GenericType')
+
+
+def flatten_nest(l: Sequence[Sequence[GenericType]]) -> Sequence[GenericType]:
+    '''
+    Flatten nested list
+
+    Examples:
+    >>> a = [[1, 2], [3, 4, 5]]
+    >>> flatten_nest(a)
+    [1, 2, 3, 4, 5]
+    '''
+    return list(itertools.chain.from_iterable(l))
+
+
+def partition(lst: Sequence[GenericType],
+              sizes: Sequence[int]) -> Sequence[Sequence[GenericType]]:
+    '''
+    Partition list into sub lists with given sizes
+
+    Examples:
+    >>> a = [1, 2, 3, 4, 5]
+    >>> partition(a, [2, 3])
+    [[1, 2], [3, 4, 5]]
+    '''
+    cs = np.cumsum(sizes)
+    cs = np.insert(cs, 0, 0)  # prepend 0
+    assert len(lst) == cs[-1]
+    return [lst[cs[i]:cs[i + 1]] for i in range(len(cs) - 1)]
+
+def flat_apply_partition(lst: Sequence[Sequence[GenericType]], f) -> Sequence[Sequence[GenericType]]:
+    sizes = [len(e) for e in lst]
+    flat = flatten_nest(lst)
+    result = f(flat)
+    return partition(result, sizes)
+
+
+class ImageDataset(torch.utils.data.Dataset):
+    '''
+        Dataset for image without points
+    '''
+
+    def __init__(self, xs: Sequence[np.ndarray],
+                 transform: Optional[Callable[[np.ndarray], np.ndarray]]):
+        '''
+        Args:
+            xs: list of x.
+            transform: transformation.
+        '''
+        self.xs = xs
+        self.transform = transform
+
+    def __len__(self):
+        return len(self.xs)
+
+    def __getitem__(self, idx):
+        x = self.xs[idx]
+        if self.transform is not None:
+            x = self.transform(x)
+        return x
 
 
 class KeypointDataset(torch.utils.data.Dataset):
@@ -24,8 +86,8 @@ class KeypointDataset(torch.utils.data.Dataset):
 
     def __init__(self, xs: Sequence[np.ndarray], points: Sequence[PointsList],
                  point_pairs,
-                 transform: Optional[Callable[[np.ndarray, PointsList],
-                                              Tuple[np.ndarray, PointsList]]],
+                 transform: Optional[Callable[[np.ndarray, PointsType],
+                                              Tuple[np.ndarray, PointsType]]],
                  sigma: float):
         '''
         Args:
@@ -37,7 +99,10 @@ class KeypointDataset(torch.utils.data.Dataset):
         '''
         self.xs = xs
         self.points = points
-        self.point_pairs = point_pairs
+        if point_pairs is None:
+            self.point_pairs = [[]] * len(xs)
+        else:
+            self.point_pairs = point_pairs
         self.transform = transform
         self.sigma = sigma
 
@@ -48,7 +113,10 @@ class KeypointDataset(torch.utils.data.Dataset):
         x, points, point_pairs = self.xs[idx], self.points[
             idx], self.point_pairs[idx]
         if self.transform is not None:
-            x, points = self.transform(x, points)
+            sizes = [len(ps) for ps in points]
+            flat_points = flatten_nest(points)
+            x, points = self.transform(x, flat_points)
+            points = partition(points, sizes)
 
         n_chs = len(points) + len(point_pairs)
         y = np.zeros((n_chs, x.shape[1], x.shape[2]), dtype=np.float32)
@@ -103,7 +171,6 @@ def create_prob_image(shape: Sequence[int],
         out = multivariate_normal(shape, points[0], sigma)
     else:
         out[...] = multivariate_normal(shape, points[0], sigma)
-    print(out)
     for p in points[1:]:
         np.maximum(out, multivariate_normal(shape, p, sigma), out=out)
     if normalize and out.max() != 0:

@@ -104,7 +104,9 @@ def resize_height(
     img = skimage.transform.resize(img, (height, width), preserve_range=True)
     img = np.round(img).astype(dtype)
     if kps is not None:
-        kps = np.array(kps)
+        kps = np.array(kps, dtype=np.float32)
+        assert kps.ndim == 2
+        assert kps.shape[1] == 2
         for i in range(len(kps)):
             kps[i] *= scale
         return img, kps
