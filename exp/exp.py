@@ -48,7 +48,7 @@ def main():
                         help='Image height: %(default)s',
                         metavar='<int>',
                         type=int,
-                        default=1280)
+                        default=768)
     parser.add_argument('--gpus',
                         help='# of gpus. Use all available gpus by default.',
                         metavar='<int>',
@@ -57,7 +57,7 @@ def main():
                         help='Sigma: %(default)s',
                         metavar='<sigma>',
                         type=float,
-                        default=25.0)
+                        default=10.0)
     parser.add_argument('--crop',
                         help='Cropping probability in collation: %(default)s',
                         metavar='<value>',
@@ -85,7 +85,7 @@ def main():
     args = parser.parse_args()
 
     label_names = ['TL', 'TR', 'BL', 'BR']
-    data_root = Path('../../data/')
+    data_root = Path('../data/')
     outroot = Path(args.output)
     outroot.mkdir(parents=True, exist_ok=True)
     logzero.logfile(outroot / 'output.log')
@@ -100,9 +100,11 @@ def main():
     dfs = []
     for fn in ['script/verse.csv', 'script/spineweb.csv']:
         df = pd.read_csv(fn)
-        df['pid'] = df['filepath'].map(lambda pid: Path(pid).parts[-1])
+        #        df['pid'] = df['filepath'].map(lambda pid: Path(pid).parts[-1])
+        df['pid'] = df['filepath']  #.map(lambda pid: Path(pid).parts[-1])
         dfs.append(df)
-    df_all = np.concatenate(dfs, axis=0)
+    df_all = pd.concat(dfs, axis=0, ignore_index=True)
+    logger.info('All data %d', len(df_all))
     pids = df_all['pid']
     K_FOLD = args.fold
     df_all['set_id'] = -1
@@ -111,18 +113,17 @@ def main():
                   random_state=None if args.debug else 202105)
     for set_id, (_, test_index) in enumerate(kfold.split(pids)):
         idset = set(pids[test_index])
-        df_all.loc[df_all['anon_pid'].map(lambda e: e in idset),
-                   'set_id'] = set_id
+        df_all.loc[test_index, 'set_id'] = set_id
 
     df_all.to_csv(outroot / 'dataset.csv', index=False)
-    AFFINITY = True
 
     USE_TEST_AS_VAL = args.holdout
 
     DEBUG = args.debug
-    NUM_WORKERS = os.cpu_count() - 1  #2 if os.name == 'nt' else 0
-    if NUM_WORKERS > 10:
-        NUM_WORKERS = NUM_WORKERS // 2
+    NUM_WORKERS = len(
+        os.sched_getaffinity(0)) - 1  #2 if os.name == 'nt' else 0
+    # if NUM_WORKERS > 10:
+    #     NUM_WORKERS = NUM_WORKERS // 2
     logger.info('workers %d', NUM_WORKERS)
     EPOCHS = 2 if DEBUG else 128
     if DEBUG:
@@ -159,7 +160,7 @@ def main():
 
         logger.info('Create model')
         n_chs = 1
-        N_CLASSES = 6 if AFFINITY else 4
+        N_CLASSES = 4
         lit_model = pretrained_models.LitSMP(n_chs, N_CLASSES, args)
         down_factor = 256
 
@@ -173,7 +174,11 @@ def main():
 
             def load(row):
                 x, kp = exp_utils.load_data(row, data_root, label_names)
-                x, kp = img_utils.resize_height(height, x, kp)
+                sizes = [len(ps) for ps in kp]
+                flat_kp = point_utils.flatten_nest(kp)
+                x, flat_kp = img_utils.resize_height(height, x, flat_kp)
+                kp = point_utils.partition(flat_kp, sizes)
+                kp = np.array(kp)
                 if clahe:
                     x = transforms.apply_clahe(x)
                 return x, kp
@@ -195,6 +200,7 @@ def main():
 
         logger.info('load train set')
         train_xs, train_kps = load_dataset(df_train, HEIGHT, False)
+        train_xs, train_kps = train_xs + train_xs + train_xs, train_kps + train_kps + train_kps # TODO: remove
         logger.info('train size %d', len(train_xs))
         logger.info('load val set')
         val_xs, val_kps = load_dataset(df_val, HEIGHT, True)
@@ -205,7 +211,8 @@ def main():
                              num_workers=NUM_WORKERS,
                              prefetch_factor=4)
         dataset = point_utils.KeypointDataset(train_xs,
-                                              train_kps, [],
+                                              train_kps,
+                                              None,
                                               transforms.random_transform,
                                               sigma=SIGMA)
         train_loader = DataLoader(
@@ -219,7 +226,8 @@ def main():
         )
 
         dataset = point_utils.KeypointDataset(val_xs,
-                                              val_kps, [],
+                                              val_kps,
+                                              None,
                                               transforms.base_transform,
                                               sigma=SIGMA)
         val_loader = DataLoader(dataset,
@@ -239,7 +247,7 @@ def main():
         csv_logger = CSVLogger(str(outdir), name='logs')
         trainer = pl.Trainer(
             gpus=gpus,
-            precision=16,  # mixed precision
+            precision=16 if gpus > 0 else 32,  # mixed precision
             strategy=accelerator,
             plugins=DDPPlugin(find_unused_parameters=False)
             if accelerator == 'ddp' else None,
@@ -260,15 +268,17 @@ def main():
         del dataset, train_loader, val_loader  # release memory
 
         test_xs, test_kps = load_dataset(df_test, HEIGHT, True)
-        np.save(outdir / 'kps.npy', np.array(test_kps))
-        dataset = point_utils.KeypointDataset(test_xs,
-                                              None, [],
-                                              transforms.base_transform,
-                                              sigma=SIGMA)
+        # np.save(outdir / 'kps.npy', np.array(test_kps))
+        mhd.write(outdir / 'x_test.mha', np.stack(test_xs))
+        import pickle
+        with open(outdir / 'kps.pickle', 'wb') as f:
+            pickle.dump(test_kps, f)
+        dataset = point_utils.ImageDataset(test_xs, transforms.base_transform)
         test_loader = DataLoader(dataset, shuffle=False, **loader_kwargs)
 
         logger.info('Start test')
         y_preds = trainer.predict(dataloaders=test_loader, ckpt_path='best')
+        assert y_preds is not None
         y_preds = np.concatenate([y_pred.cpu().numpy() for y_pred in y_preds],
                                  axis=0)
         logger.info('End test')

@@ -28,7 +28,7 @@ class LitSMP(pl.LightningModule):
                             help='Learning rate: %(default)s',
                             metavar='<value>',
                             type=float,
-                            default=1e-4)
+                            default=1e-3)
         parser.add_argument('--encoder_name',
                             help='encoder name: %(default)s',
                             metavar='<name>',
