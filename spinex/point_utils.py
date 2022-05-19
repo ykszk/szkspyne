@@ -2,7 +2,7 @@
 Utility functions for point manipulation
 '''
 
-from typing import Sequence, Union, Callable, Tuple
+from typing import Sequence, Union, Callable, Tuple, Optional
 
 import numpy as np
 import scipy
@@ -11,14 +11,22 @@ import torch
 import torch.utils.data
 from numba import njit
 
-PointType = Tuple[float, float]
+PointType = np.ndarray  # Tuple[float, float]
+PointsType = Sequence[PointType]
+PointsList = Sequence[PointsType]
+ImageType = np.ndarray
+
 
 class KeypointDataset(torch.utils.data.Dataset):
     '''
         Dataset for image and keypoints
     '''
 
-    def __init__(self, xs: Sequence[np.ndarray], points: Sequence[PointType], point_pairs, transform: Union[Callable, None], sigma: float):
+    def __init__(self, xs: Sequence[np.ndarray], points: Sequence[PointsList],
+                 point_pairs,
+                 transform: Optional[Callable[[np.ndarray, PointsList],
+                                              Tuple[np.ndarray, PointsList]]],
+                 sigma: float):
         '''
         Args:
             xs: list of x.
@@ -53,7 +61,8 @@ class KeypointDataset(torch.utils.data.Dataset):
         return x, y
 
 
-def multivariate_normal(shape: Sequence[float], mu: float, sigma: float) -> np.ndarray:
+def multivariate_normal(shape: Sequence[int], mu: np.ndarray,
+                        sigma: float) -> np.ndarray:
     '''
     Generate PDF(heatmap) for multivariate gaussian
     
@@ -64,11 +73,9 @@ def multivariate_normal(shape: Sequence[float], mu: float, sigma: float) -> np.n
     '''
     if np.isscalar(mu):
         mu = np.repeat(mu, len(shape))
-    if np.isscalar(sigma):
-        sigma = np.repeat(sigma, len(shape))
     vecs = [
-        scipy.stats.norm.pdf(np.arange(size), m, v)
-        for size, m, v in zip(shape, mu, sigma)
+        scipy.stats.norm.pdf(np.arange(size), m, sigma)
+        for size, m in zip(shape, mu)
     ]
     # prepare for broadcasting
     vecs = [
@@ -84,18 +91,24 @@ def multivariate_normal(shape: Sequence[float], mu: float, sigma: float) -> np.n
     return output
 
 
-def create_prob_image(shape: Sequence[float], points: Sequence[PointType], sigma: float, normalize: bool = True, out: Union[np.ndarray, None] = None) -> np.ndarray:
+def create_prob_image(shape: Sequence[int],
+                      points: Sequence[PointType],
+                      sigma: float,
+                      normalize: bool = True,
+                      out: Optional[np.ndarray] = None) -> np.ndarray:
     '''
-    Create heatmap from the give points
+    Create heatmap from the given points
     '''
     if out is None:
         out = multivariate_normal(shape, points[0], sigma)
     else:
         out[...] = multivariate_normal(shape, points[0], sigma)
+    print(out)
     for p in points[1:]:
         np.maximum(out, multivariate_normal(shape, p, sigma), out=out)
     if normalize and out.max() != 0:
         out *= (1 / out.max())
+    assert out is not None  # type narrowing
     return out
 
 
@@ -124,14 +137,20 @@ def _gauss_line_dist(w, h, a, b, sigma, img):
             img_row[x] = g
 
 
-def gauss_line_dist(shape: Sequence[float], p1: PointType, p2: PointType, sigma: float, normalize: bool = True, out: np.ndarray = None) -> np.ndarray:
+def gauss_line_dist(shape: Sequence[int],
+                    p1: PointType,
+                    p2: PointType,
+                    sigma: float,
+                    normalize: bool = True,
+                    out: Optional[np.ndarray] = None) -> np.ndarray:
     '''
     Craete affinity map between two points
     '''
-    p1, p2 = np.array(p1, dtype=np.float64), np.array(p2, dtype=np.float64)
     if out is None:
         out = np.zeros(shape, dtype=np.float32)
-    _gauss_line_dist(shape[1], shape[0], p1, p2, sigma, out)
+    _gauss_line_dist(shape[1], shape[0], np.array(p1, dtype=np.float64),
+                     np.array(p2, dtype=np.float64), sigma, out)
     if normalize and out.max() != 0:
         out *= (1 / out.max())
+    assert out is not None  # type anrrowing
     return out
