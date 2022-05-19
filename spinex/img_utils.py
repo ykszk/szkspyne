@@ -1,7 +1,7 @@
 '''
 Utility functions for image manipulation
 '''
-from typing import Sequence, Union
+from typing import Sequence, Union, Tuple
 
 import numpy as np
 import skimage.transform
@@ -65,7 +65,7 @@ def pad_to_next_multiple(m: int, x: np.ndarray, axis: Sequence[int],
            [0., 0., 0.],
            [0., 0., 0.]])
     '''
-    new_shape = (m * np.ceil(np.array(x.shape) / m)).astype(np.int)
+    new_shape = (m * np.ceil(np.array(x.shape) / m)).astype(np.int64)
     new_shape = [
         ns if i in axis else os
         for i, (ns, os) in enumerate(zip(new_shape, x.shape))
@@ -74,9 +74,10 @@ def pad_to_next_multiple(m: int, x: np.ndarray, axis: Sequence[int],
 
 
 def resize_height(
-        height: int,
-        img: np.ndarray,
-        kps: Union[Sequence[Sequence[float]], np.ndarray, None] = None) -> np.ndarray:
+    height: int,
+    img: np.ndarray,
+    kps: Union[Sequence[Sequence[float]], np.ndarray, None] = None
+) -> Union[Tuple[np.ndarray, np.ndarray], np.ndarray]:
     '''
     Resize image to the height. Width is dynamically determined (i.e. aspect ratio is kept.)
 
@@ -103,45 +104,21 @@ def resize_height(
     img = skimage.transform.resize(img, (height, width), preserve_range=True)
     img = np.round(img).astype(dtype)
     if kps is not None:
-        kps = [scale * kp for kp in kps]
+        kps = np.array(kps)
+        for i in range(len(kps)):
+            kps[i] *= scale
         return img, kps
     else:
         return img
 
 
-def pad_align(xs):
-    shapes = [x.shape for x in xs]
-    max_shapes = np.max(shapes, axis=0)
-    ds = [max_shapes - s for s in shapes]
-    padded = []
-    for x, d in zip(xs, ds):
-        pad_width = list(
-            zip(np.floor(d / 2).astype(int),
-                np.ceil(d / 2).astype(int)))
-        padded.append(np.pad(x, pad_width))
-    return np.stack(padded)
-
-
-def slice_align(xs):
-    shapes = [x.shape for x in xs]
-    min_shapes = np.min(shapes, axis=0)
-    ds = [s - min_shapes for s in shapes]
-    sliced = []
-    for x, d, shape in zip(xs, ds, shapes):
-        slice_args = list(
-            zip(np.floor(d / 2).astype(int),
-                np.ceil(d / 2).astype(int)))
-        slices = tuple([
-            slice() if e == 0 else slice(e[0], s - e[1])
-            for e, s in zip(slice_args, shape)
-        ])
-        sliced.append(x[slices])
-    return np.stack(sliced)
-
-
 class CropCollate:
 
-    def __init__(self, margin=0, p=.5, multiple=None, thresh=1 / 1000):
+    def __init__(self,
+                 margin=0,
+                 p=.5,
+                 multiple=None,
+                 thresh: float = 1 / 1000):
         '''
         Crop images by the heatmap
 
@@ -163,8 +140,8 @@ class CropCollate:
             bbox = bb.bbox(mask)
             ys = bb.crop(ys, bbox, self.margin)
             if self.multiple:
-                xs = pad_to_next_multiple(self.multiple, xs, [2, 3])
-                ys = pad_to_next_multiple(self.multiple, ys, [2, 3])
+                xs = pad_to_next_multiple(self.multiple, xs, [2, 3], 0)
+                ys = pad_to_next_multiple(self.multiple, ys, [2, 3], 0)
         xs = torch.Tensor(xs)
         ys = torch.Tensor(ys)
         return xs, ys

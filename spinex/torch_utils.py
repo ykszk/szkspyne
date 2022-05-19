@@ -56,37 +56,3 @@ def gaussian2d(shape, mu, sigma, device, dtype):
         vs.append(v)
     gauss = vs[0].view((vs[0].shape[0], 1)) * vs[1].view((1, vs[1].shape[0]))
     return gauss
-
-
-class SoftArgmax(torch.nn.Module):
-    '''
-    Soft argmax for ND tensor. Input is a ND (batch, channel, i, j, ...) tensor.
-    '''
-
-    def __self__(self):
-        super().__init__()
-
-    def softmax(self, x):
-        shape = x.shape
-        flattened = x.view((shape[0], shape[1], -1))
-        sm = F.softmax(flattened, dim=2)
-        return sm.view(shape)
-
-    def forward(self, x):
-        ret = []
-        sm = self.softmax(x)
-        for axis in range(2, x.dim()):
-            indices = torch.arange(x.shape[axis],
-                                   device=x.device,
-                                   dtype=torch.float32)
-            if x.dim() > 3:  # 2d or more
-                # reduce other axes
-                sum_axis = tuple((i for i in range(2, x.dim()) if i != axis))
-                summed = torch.sum(sm, axis=sum_axis)
-            else:  # 1d tensor
-                summed = sm
-            summed = summed.view((x.shape[0] * x.shape[1], -1))
-            center = torch.matmul(summed, indices).view(
-                (x.shape[0], x.shape[1]))
-            ret.append(torch.unsqueeze(center, -1))
-        return torch.cat(ret, axis=-1)
