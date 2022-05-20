@@ -76,7 +76,7 @@ def pad_to_next_multiple(m: int, x: np.ndarray, axis: Sequence[int],
 def resize_height(
     height: int,
     img: np.ndarray,
-    kps: Union[Sequence[Sequence[float]], np.ndarray, None] = None
+    kps: Union[np.ndarray, None] = None
 ) -> Union[Tuple[np.ndarray, np.ndarray], np.ndarray]:
     '''
     Resize image to the height. Width is dynamically determined (i.e. aspect ratio is kept.)
@@ -104,11 +104,7 @@ def resize_height(
     img = skimage.transform.resize(img, (height, width), preserve_range=True)
     img = np.round(img).astype(dtype)
     if kps is not None:
-        kps = np.array(kps, dtype=np.float32)
-        assert kps.ndim == 2
-        assert kps.shape[1] == 2
-        for i in range(len(kps)):
-            kps[i] *= scale
+        kps = scale * kps
         return img, kps
     else:
         return img

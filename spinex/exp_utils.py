@@ -7,6 +7,8 @@ from typing import Sequence, Tuple
 from pathlib import Path
 from PIL import Image
 
+LABEL_NAMES = ['TL', 'TR', 'BL', 'BR']
+
 
 def plot_history(df, set_ylim=True):
     df = pd.DataFrame((df['train_loss'].dropna().reset_index(drop=True),
@@ -37,33 +39,39 @@ def load_data(row, data_root: Path,
 
 
 def main():
-
+    from logzero import logger
     import argparse
     parser = argparse.ArgumentParser(
         description='Try utility functions for debugging.')
+    parser.add_argument('csv',
+                        help='CSV filename: %(default)s',
+                        nargs='?',
+                        default='../script/verse.csv')
+    parser.add_argument('data_root',
+                        help='Data root directory: %(default)s',
+                        nargs='?',
+                        default='../../data')
+    parser.add_argument('--label_names',
+                        help='Label names: %(default)s',
+                        nargs='?',
+                        default=LABEL_NAMES)
+    parser.add_argument('--height',
+                        help='Resized image height: %(default)d',
+                        default=1024)
+
     subparsers = parser.add_subparsers()
     p_summary = subparsers.add_parser(
         'load_data', help="load a set of image and keypoints from a csv file.")
-    p_summary.add_argument('csv',
-                           help='CSV filename: %(default)s',
-                           nargs='?',
-                           default='../script/verse.csv')
-    p_summary.add_argument('data_root',
-                           help='Data root directory: %(default)s',
-                           nargs='?',
-                           default='../../data')
-    p_summary.add_argument('label_names',
-                           help='Label names: %(default)s',
-                           nargs='?',
-                           default=['TL', 'TR', 'BL', 'BR'])
     p_summary.add_argument('--output',
-                           help='Optional output image. e.g. kps.svg')
+                           help='Optional output image. e.g. keypoints.svg')
 
     def command_load_data(args):
         csv_filename, data_root, label_names = args.csv, args.data_root, args.label_names
         df = pd.read_csv(csv_filename)
+        from img_utils import resize_height
         for _, row in df.iterrows():
             x, kps = load_data(row, Path(data_root), label_names)
+            x, kps = resize_height(args.height, x, kps)
             print('Image shape:', x.shape)
             print('Points shape:', kps.shape)
             plt.imshow(x, 'gray')
@@ -81,11 +89,55 @@ def main():
         return 0
 
     p_summary.set_defaults(handler=command_load_data)
-    # parser.add_argument('-o',
-    #                     '--option',
-    #                     help='Optional argument. default: %(default)s',
-    #                     metavar='<name>',
-    #                     default='default')
+
+    p_transform = subparsers.add_parser(
+        'transform', help="Test transforms.random_transform.")
+    p_transform.add_argument('--rows',
+                             help='The number of rample data: %(default)d',
+                             default=5)
+    p_transform.add_argument(
+        '--columns',
+        help='The number of random transformations: %(default)d',
+        default=5)
+    p_transform.add_argument(
+        '--output', help='Optional output image. e.g. random_transforms.svg')
+
+    def command_transform(args):
+        logger.info('Transform')
+        csv_filename, data_root, label_names = args.csv, args.data_root, args.label_names
+        df = pd.read_csv(csv_filename)
+        from img_utils import resize_height
+        from point_utils import flatten_nest, partition
+        import transforms
+        plt.figure(figsize=(7, 7))
+        i_subplot = 1
+        for _, row in df[:args.rows].iterrows():
+            x, kps = load_data(row, Path(data_root), label_names)
+            x, kps = resize_height(args.height, x, kps)
+            sizes = [len(ps) for ps in kps]
+            flat_points = flatten_nest(kps)
+            for _ in range(args.columns):
+                tx, tkps = transforms.random_transform(x, flat_points)
+                tx = tx.squeeze()
+                tkps = partition(tkps, sizes)
+                tkps = np.array(tkps)
+                plt.subplot(args.rows, args.columns, i_subplot)
+                i_subplot += 1
+                plt.imshow(tx, 'gray')
+                for pts in tkps:
+                    plt.scatter(pts[:, 1], pts[:, 0], s=2)
+                plt.axis('off')
+        if args.output:
+            plt.gcf().savefig(args.output,
+                              transparent=True,
+                              bbox_inches='tight')
+        else:
+            plt.show()
+        plt.close()
+        return 0
+
+    p_transform.set_defaults(handler=command_transform)
+
     # parser.add_argument('-s',
     #                     '--switch',
     #                     help='Switch argument',

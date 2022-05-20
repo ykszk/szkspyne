@@ -13,15 +13,13 @@ import pandas as pd
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
-from PIL import Image
 import logzero
 from logzero import logger
 from sklearn.model_selection import KFold
 from joblib import Parallel, delayed
 from tqdm import tqdm
-import cv2
 
-from spinex import pretrained_models, transforms, point_utils, img_utils, exp_utils
+import pretrained_models, transforms, point_utils, img_utils, exp_utils
 
 import mhd
 
@@ -113,7 +111,7 @@ def main():
                   random_state=None if args.debug else 202105)
     for set_id, (_, test_index) in enumerate(kfold.split(pids)):
         idset = set(pids[test_index])
-        df_all.loc[test_index, 'set_id'] = set_id
+        df_all.loc[test_index, 'set_id'] = set_id  # type: ignore
 
     df_all.to_csv(outroot / 'dataset.csv', index=False)
 
@@ -174,18 +172,14 @@ def main():
 
             def load(row):
                 x, kp = exp_utils.load_data(row, data_root, label_names)
-                sizes = [len(ps) for ps in kp]
-                flat_kp = point_utils.flatten_nest(kp)
-                x, flat_kp = img_utils.resize_height(height, x, flat_kp)
-                kp = point_utils.partition(flat_kp, sizes)
-                kp = np.array(kp)
+                x, kp = img_utils.resize_height(height, x, kp)
                 if clahe:
                     x = transforms.apply_clahe(x)
                 return x, kp
 
             data = Parallel(n_jobs=NUM_WORKERS)(
                 delayed(load)(row)
-                for i, row in tqdm(df.iterrows(), total=len(df)))
+                for _, row in tqdm(df.iterrows(), total=len(df)))
             xs, kps = zip(*data)
 
             shapes = [x.shape for x in xs]
@@ -200,7 +194,7 @@ def main():
 
         logger.info('load train set')
         train_xs, train_kps = load_dataset(df_train, HEIGHT, False)
-        train_xs, train_kps = train_xs + train_xs + train_xs, train_kps + train_kps + train_kps # TODO: remove
+        train_xs, train_kps = train_xs + train_xs + train_xs, train_kps + train_kps + train_kps  # TODO: remove
         logger.info('train size %d', len(train_xs))
         logger.info('load val set')
         val_xs, val_kps = load_dataset(df_val, HEIGHT, True)
@@ -279,8 +273,9 @@ def main():
         logger.info('Start test')
         y_preds = trainer.predict(dataloaders=test_loader, ckpt_path='best')
         assert y_preds is not None
-        y_preds = np.concatenate([y_pred.cpu().numpy() for y_pred in y_preds],
-                                 axis=0)
+        y_preds = np.concatenate(
+            [y_pred.cpu().numpy() for y_pred in y_preds],  # type: ignore
+            axis=0)
         logger.info('End test')
         y_preds = np.moveaxis(y_preds, 1, -1)  # to channel last
         mhd.write(outdir / 'y_pred.mha', y_preds,

@@ -9,32 +9,7 @@ import cv2
 cv2.setNumThreads(0)
 cv2.ocl.setUseOpenCL(False)
 
-
-# https://albumentations.ai/docs/examples/example_keypoints/
-def vis_keypoints(image, keypoints, color=(0, 255, 0), diameter=15):
-    image = image.copy()
-
-    for (y, x) in keypoints:
-        cv2.circle(image, (int(x), int(y)), diameter, color, -1)
-
-    return image
-
-
-class CoarseDropout(A.CoarseDropout):
-    '''
-    Apply identity transform to keypoints
-    '''
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-    def apply_to_keypoint(self, keypoint, **params):
-        return keypoint
-
-
 img_tfs = [
-    # CoarseDropout(
-    #     max_holes=50, max_height=64, max_width=64, fill_value=.5, p=.2),
     A.HorizontalFlip(p=0.25),
     A.RandomBrightnessContrast(brightness_limit=0.4, contrast_limit=0.2, p=.5),
     A.Affine(scale={
@@ -50,13 +25,10 @@ album_transform = A.Compose(img_tfs,
                             keypoint_params=A.KeypointParams(
                                 format='yx', remove_invisible=False))
 
-album_transform_wo_kps = A.Compose(img_tfs)
 
-
-def percentile_normalize(x, percentile, clip=False):
-    minmax = np.percentile(
-        x.ravel()[::10],
-        [percentile, 100 - percentile])  # ::10 to speedup computation
+def percentile_normalize(x, percentile, clip=False, sampling_step=10):
+    minmax = np.percentile(x.ravel()[::sampling_step],
+                           [percentile, 100 - percentile])
     x = (x - minmax[0]) / (minmax[1] - minmax[0])
     if clip:
         np.clip(x, 0, 1, out=x)

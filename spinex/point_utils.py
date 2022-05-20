@@ -25,6 +25,7 @@ def flatten_nest(l: Sequence[Sequence[GenericType]]) -> Sequence[GenericType]:
     Flatten nested list
 
     Examples:
+
     >>> a = [[1, 2], [3, 4, 5]]
     >>> flatten_nest(a)
     [1, 2, 3, 4, 5]
@@ -38,6 +39,7 @@ def partition(lst: Sequence[GenericType],
     Partition list into sub lists with given sizes
 
     Examples:
+
     >>> a = [1, 2, 3, 4, 5]
     >>> partition(a, [2, 3])
     [[1, 2], [3, 4, 5]]
