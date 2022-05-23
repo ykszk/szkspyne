@@ -3,6 +3,7 @@ Utility functions for point manipulation
 '''
 
 from typing import Sequence, Callable, Tuple, Optional, TypeVar
+import itertools
 
 import numpy as np
 import scipy
@@ -10,7 +11,8 @@ import scipy.stats
 import torch
 import torch.utils.data
 from numba import njit
-import itertools
+from scipy.ndimage.measurements import center_of_mass
+from skimage import measure
 
 PointType = np.ndarray  # Tuple[float, float]
 PointsType = Sequence[PointType]
@@ -49,7 +51,9 @@ def partition(lst: Sequence[GenericType],
     assert len(lst) == cs[-1]
     return [lst[cs[i]:cs[i + 1]] for i in range(len(cs) - 1)]
 
-def flat_apply_partition(lst: Sequence[Sequence[GenericType]], f) -> Sequence[Sequence[GenericType]]:
+
+def flat_apply_partition(lst: Sequence[Sequence[GenericType]],
+                         f) -> Sequence[Sequence[GenericType]]:
     sizes = [len(e) for e in lst]
     flat = flatten_nest(lst)
     result = f(flat)
@@ -223,3 +227,55 @@ def gauss_line_dist(shape: Sequence[int],
         out *= (1 / out.max())
     assert out is not None  # type anrrowing
     return out
+
+
+def extract_center_of_masses(heatmaps):
+    '''
+    Center of mass of pixels with the maximum value
+
+    Examples:
+
+    >>> a = np.zeros((2, 3, 3))
+    >>> a[0, 1, 1] = 1
+    >>> a[1, 1, 2] = 2
+    >>> a[1, 1, 1] = 1
+    >>> extract_center_of_masses(a)
+    [(1.0, 1.0), (1.0, 2.0)]
+    '''
+    keypoints = []
+    for ch in heatmaps:
+        max_value = np.max(ch)
+        if max_value <= 0:
+            raise RuntimeError('Empty heatmap')
+        center = center_of_mass(ch == max_value)
+        keypoints.append(center)
+    return keypoints
+
+
+def local_center_of_masses(heatmaps):
+    '''
+
+    Note. Channel axis is 0.
+
+    Examples:
+
+    >>> a = np.zeros((1, 5, 5))
+    >>> a[0, 1, 1] = 1
+    >>> a[0, 3, 4] = 1
+    >>> local_center_of_masses(a)
+    [[(1.0, 1.0), (3.0, 4.0)]]
+    '''
+    local_centers_per_ch = []
+    for ch in heatmaps:
+        max_value = np.max(ch)
+        if max_value <= 0:
+            raise RuntimeError('Empty heatmap')
+        thresh = max_value / 2
+        all_labels = measure.label(ch >= thresh)
+        local_centers = []
+        for i in range(1, np.max(all_labels) + 1):
+            cc = (all_labels == i)
+            center = center_of_mass(ch * (cc == cc.max()))
+            local_centers.append(center)
+        local_centers_per_ch.append(local_centers)
+    return local_centers_per_ch

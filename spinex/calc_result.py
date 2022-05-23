@@ -5,66 +5,16 @@ import numpy as np
 import mhd
 from tqdm import tqdm
 from pathlib import Path
-from scipy.ndimage.measurements import center_of_mass
-from skimage import measure
 import cv2
 import itertools
 import argparse
 from joblib import Parallel, delayed
 from logzero import logger
-
-
-def extract_center_of_masses(heatmaps):
-    '''
-    Center of mass of pixels with the maximum value
-
-    Examples:
-
-    >>> a = np.zeros((2, 3, 3))
-    >>> a[0, 1, 1] = 1
-    >>> a[1, 1, 2] = 2
-    >>> a[1, 1, 1] = 1
-    >>> extract_center_of_masses(a)
-    [(1.0, 1.0), (1.0, 2.0)]
-    '''
-    keypoints = []
-    for ch in heatmaps:
-        max_value = np.max(ch)
-        if max_value <= 0:
-            raise RuntimeError('Empty heatmap')
-        center = center_of_mass(ch == max_value)
-        keypoints.append(center)
-    return keypoints
-
-
-def local_center_of_masses(heatmaps):
-    '''
-    Examples:
-
-    >>> a = np.zeros((1, 5, 5))
-    >>> a[0, 1, 1] = 1
-    >>> a[0, 3, 4] = 1
-    >>> local_center_of_masses(a)
-    [[(1.0, 1.0), (3.0, 4.0)]]
-    '''
-    local_centers_per_ch = []
-    for ch in heatmaps:
-        max_value = np.max(ch)
-        if max_value <= 0:
-            raise RuntimeError('Empty heatmap')
-        thresh = max_value / 2
-        all_labels = measure.label(ch >= thresh)
-        local_centers = []
-        for i in range(1, np.max(all_labels) + 1):
-            cc = (all_labels == i)
-            center = center_of_mass(ch * (cc == cc.max()))
-            local_centers.append(center)
-        local_centers_per_ch.append(local_centers)
-    return local_centers_per_ch
+import point_utils
 
 
 def h2p_affinity(heatmap):
-    all_candidates = local_center_of_masses(heatmap)
+    all_candidates = point_utils.local_center_of_masses(heatmap)
 
     keypoints = []
     best_scores = []
@@ -123,7 +73,7 @@ def main():
         assert y_preds.shape[-1] == len(point_cols) // 2
         y_preds = np.moveaxis(y_preds, -1, 1)  # to channel first
         keypoints_per_ch_per_img = Parallel(n_jobs=os.cpu_count())(
-            delayed(local_center_of_masses)(y_pred)
+            delayed(point_utils.local_center_of_masses)(y_pred)
             for y_pred in tqdm(y_preds, desc='set {}'.format(set_id)))
         for i, keypoints_per_ch in enumerate(keypoints_per_ch_per_img):
             for ch, kps in enumerate(keypoints_per_ch):
