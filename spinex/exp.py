@@ -20,6 +20,7 @@ from joblib import Parallel, delayed
 from tqdm import tqdm
 
 import pretrained_models, transforms, point_utils, img_utils, exp_utils
+from settings import LABEL_NAMES
 
 import mhd
 
@@ -82,7 +83,6 @@ def main():
 
     args = parser.parse_args()
 
-    label_names = ['TL', 'TR', 'BL', 'BR']
     data_root = Path('../data/')
     outroot = Path(args.output)
     outroot.mkdir(parents=True, exist_ok=True)
@@ -96,7 +96,8 @@ def main():
         json.dump(args.__dict__, f, indent=2)
 
     dfs = []
-    for fn in ['script/verse.csv', 'script/spineweb.csv']:
+    # for fn in ['script/verse.csv', 'script/spineweb.csv']:
+    for fn in ['script/manual_annotation.csv', 'script/spineweb.csv']:
         df = pd.read_csv(fn)
         #        df['pid'] = df['filepath'].map(lambda pid: Path(pid).parts[-1])
         df['pid'] = df['filepath']  #.map(lambda pid: Path(pid).parts[-1])
@@ -171,7 +172,7 @@ def main():
             '''
 
             def load(row):
-                x, kp = exp_utils.load_data(row, data_root, label_names)
+                x, kp = exp_utils.load_data(row, data_root, LABEL_NAMES)
                 x, kp = img_utils.resize_height(height, x, kp)
                 if clahe:
                     x = transforms.apply_clahe(x)

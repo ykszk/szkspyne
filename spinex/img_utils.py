@@ -1,7 +1,7 @@
 '''
 Utility functions for image manipulation
 '''
-from typing import Sequence, Union, Tuple
+from typing import Sequence, Union, Tuple, List
 
 import numpy as np
 import skimage.transform
@@ -76,8 +76,8 @@ def pad_to_next_multiple(m: int, x: np.ndarray, axis: Sequence[int],
 def resize_height(
     height: int,
     img: np.ndarray,
-    kps: Union[np.ndarray, None] = None
-) -> Union[Tuple[np.ndarray, np.ndarray], np.ndarray]:
+    kps: Union[np.ndarray, List[np.ndarray], None] = None
+) -> Union[Tuple[np.ndarray, Union[np.ndarray, List[np.ndarray]]], np.ndarray]:
     '''
     Resize image to the height. Width is dynamically determined (i.e. aspect ratio is kept.)
 
@@ -104,7 +104,10 @@ def resize_height(
     img = skimage.transform.resize(img, (height, width), preserve_range=True)
     img = np.round(img).astype(dtype)
     if kps is not None:
-        kps = scale * kps
+        if isinstance(kps, list):
+            kps = [scale * kp for kp in kps]
+        else:
+            kps = scale * kps
         return img, kps
     else:
         return img

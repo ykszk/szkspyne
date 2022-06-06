@@ -3,11 +3,11 @@ import sys
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
-from typing import Sequence, Tuple
+from typing import Sequence, Tuple, List
 from pathlib import Path
 from PIL import Image
 
-LABEL_NAMES = ['TL', 'TR', 'BL', 'BR']
+from settings import LABEL_NAMES
 
 
 def plot_history(df, set_ylim=True):
@@ -20,7 +20,7 @@ def plot_history(df, set_ylim=True):
 
 
 def load_data(row, data_root: Path,
-              label_names: Sequence[str]) -> Tuple[np.ndarray, np.ndarray]:
+              label_names: Sequence[str]) -> Tuple[np.ndarray, List[np.ndarray]]:
     '''Load data from a row
     '''
     # img_path = (mha_root / row.filepath).with_suffix('.mha')
@@ -34,7 +34,7 @@ def load_data(row, data_root: Path,
         px, py = eval(px), eval(py)
         pts = np.array(((py, px)))
         kp.append(pts.T)
-    kp = np.array(kp)
+    # kp = np.array(kp)
     return x, kp
 
 

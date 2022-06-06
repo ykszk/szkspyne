@@ -4,7 +4,8 @@ import pandas as pd
 import numpy as np
 import scipy.io
 
-sw_dir = Path('../../data/spineweb')
+data_dir = Path('../../data')
+sw_dir = data_dir / 'spineweb'
 label_names = ['TL', 'TR', 'BL', 'BR']
 #%%
 rows = []
@@ -22,8 +23,28 @@ for subd in ['test', 'training']:
             row[ln + ' x'] = ps[:, 0].tolist()
             row[ln + ' y'] = ps[:, 1].tolist()
         rows.append(row)
-    break
+    # break
 df = pd.DataFrame(rows)
 df.to_csv('spineweb.csv', index=False)
 df.head()
-# %%
+# %% labelme
+import json
+import tqdm
+import sys
+
+sys.path.append('..')
+sys.path.append('../spinex')
+from spinex import labelme_utils
+import shutil
+
+outdir = sw_dir / 'labelme'
+for _, row in tqdm.tqdm(df.iterrows(), total=len(df)):
+    filepath = Path(row.filepath)
+    dst = outdir / filepath.name
+    shutil.copyfile(data_dir / filepath, dst)
+    kps = []
+    for label in label_names:
+        kps.append(np.array((row[label + ' y'], row[label + ' x'])).T.tolist())
+    lm_dict = labelme_utils.kps2labelme(kps, dst.name, [512, 512], label_names)
+    with open(dst.with_suffix('.json'), 'w') as f:
+        json.dump(lm_dict, f)
