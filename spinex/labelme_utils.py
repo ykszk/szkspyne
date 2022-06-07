@@ -7,6 +7,29 @@ import numpy as np
 from tqdm import tqdm
 from joblib import Parallel, delayed
 from settings import LABEL_NAMES
+from collections import defaultdict
+
+
+def conv2shape_dict(json_data: dict) -> dict:
+    '''Convert labelme dict to shape_type oriented dict
+
+
+    Examples:
+
+    >>> lm = {'shapes':[{'shape_type':'point','label':'l1','points':[[1,2]]}, {'shape_type':'circle','label':'l2','points':[[1,2],[3,4]]}]}
+    >>> conv2shape_dict(lm)
+    {'point': {'l1': [[[1, 2]]]}, 'circle': {'l2': [[[1, 2], [3, 4]]]}}
+    '''
+    shape_dict = defaultdict(lambda: defaultdict(list))
+    for shape in json_data['shapes']:
+        shape_dict[shape['shape_type']][shape['label']].append(shape['points'])
+    # defaultdict -> dict
+    shape_dict = {
+        k: {kk: vv
+            for kk, vv in v.items()}
+        for k, v in shape_dict.items()
+    }
+    return shape_dict
 
 
 def kps2labelme(kps, image_path, image_hw, label_names) -> dict:
@@ -33,7 +56,7 @@ def kps2labelme(kps, image_path, image_hw, label_names) -> dict:
     return json_data
 
 
-def labelme2ndjson(input_dir, output, n_jobs):
+def labelme2ndjson(input_dir, output, n_jobs: int):
     input_dir = Path(input_dir)
 
     def do(fn):

@@ -1,4 +1,6 @@
 import sys
+import json
+from typing import Union
 
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -19,8 +21,24 @@ def plot_history(df, set_ylim=True):
                  sorted(df['train_loss'])[-2])
 
 
-def load_data(row, data_root: Path,
-              label_names: Sequence[str]) -> Tuple[np.ndarray, List[np.ndarray]]:
+def load_data(
+        row, data_root: Path,
+        label_names: Sequence[str]) -> Tuple[np.ndarray, List[np.ndarray]]:
+    '''Load data from a row.
+    '''
+    img_path = data_root / row.filepath
+    x = np.array(Image.open(img_path))
+    kps = [row.get(l) for l in label_names]
+    kps = [
+        np.flip(kp, axis=-1) if isinstance(kp, np.ndarray) else np.array(())
+        for kp in kps
+    ]
+    return x, kps
+
+
+def _load_data(
+        row, data_root: Path,
+        label_names: Sequence[str]) -> Tuple[np.ndarray, List[np.ndarray]]:
     '''Load data from a row
     '''
     # img_path = (mha_root / row.filepath).with_suffix('.mha')
@@ -38,13 +56,33 @@ def load_data(row, data_root: Path,
     return x, kp
 
 
+def ndjson2csv(filename: Union[str, Path]) -> pd.DataFrame:
+    with open(filename) as f:
+        lines = f.readlines()
+    rows = []
+    for line in lines:
+        data = json.loads(line)
+        points = {
+            k: np.array(p)[:, 0]
+            for k, p in data['point'].items() if k in LABEL_NAMES
+        }
+        for name in LABEL_NAMES:
+            if name not in points.keys():
+                points[name] = np.array(())
+        row = {'filepath': data['filepath']}
+        row.update(points)
+        rows.append(row)
+    df = pd.DataFrame(rows)
+    return df
+
+
 def main():
     from logzero import logger
     import argparse
     parser = argparse.ArgumentParser(
         description='Try utility functions for debugging.')
     parser.add_argument('csv',
-                        help='CSV filename: %(default)s',
+                        help='CSV or NDJSON filename: %(default)s',
                         nargs='?',
                         default='../script/verse.csv')
     parser.add_argument('data_root',
@@ -67,16 +105,20 @@ def main():
 
     def command_load_data(args):
         csv_filename, data_root, label_names = args.csv, args.data_root, args.label_names
-        df = pd.read_csv(csv_filename)
+        if csv_filename.endswith('.ndjson'):
+            df = ndjson2csv(csv_filename)
+        else:
+            df = pd.read_csv(csv_filename)
         from img_utils import resize_height
         for _, row in df.iterrows():
             x, kps = load_data(row, Path(data_root), label_names)
             x, kps = resize_height(args.height, x, kps)
             print('Image shape:', x.shape)
-            print('Points shape:', kps.shape)
+            print('Points shape:', [kp.shape for kp in kps])
             plt.imshow(x, 'gray')
             for pts in kps:
-                plt.scatter(pts[:, 1], pts[:, 0], s=2)
+                if len(pts) > 0:
+                    plt.scatter(pts[:, 1], pts[:, 0], s=2)
             plt.axis('off')
             if args.output:
                 plt.gcf().savefig(args.output,
@@ -105,27 +147,32 @@ def main():
     def command_transform(args):
         logger.info('Transform')
         csv_filename, data_root, label_names = args.csv, args.data_root, args.label_names
-        df = pd.read_csv(csv_filename)
+        if csv_filename.endswith('.ndjson'):
+            df = ndjson2csv(csv_filename)
+        else:
+            df = pd.read_csv(csv_filename)
         from img_utils import resize_height
         from point_utils import flatten_nest, partition
         import transforms
+        import settings
+        flip_pairs = settings.get_flip_pairs()
+        print(flip_pairs)
         plt.figure(figsize=(7, 7))
         i_subplot = 1
-        for _, row in df[:args.rows].iterrows():
+        for idx, row in df[:args.rows].iterrows():
+            logger.info('%s', idx)
             x, kps = load_data(row, Path(data_root), label_names)
             x, kps = resize_height(args.height, x, kps)
-            sizes = [len(ps) for ps in kps]
-            flat_points = flatten_nest(kps)
             for _ in range(args.columns):
-                tx, tkps = transforms.random_transform(x, flat_points)
+                tx, tkps = transforms.random_transform(x, kps, flip_pairs)
                 tx = tx.squeeze()
-                tkps = partition(tkps, sizes)
-                tkps = np.array(tkps)
+                tkps = [np.array(tkp) for tkp in tkps]
                 plt.subplot(args.rows, args.columns, i_subplot)
                 i_subplot += 1
                 plt.imshow(tx, 'gray')
                 for pts in tkps:
-                    plt.scatter(pts[:, 1], pts[:, 0], s=2)
+                    if len(pts) > 0:
+                        plt.scatter(pts[:, 1], pts[:, 0], s=2)
                 plt.axis('off')
         if args.output:
             plt.gcf().savefig(args.output,

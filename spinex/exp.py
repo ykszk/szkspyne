@@ -8,6 +8,7 @@ import shutil
 from pathlib import Path
 import argparse
 import json
+from typing import Tuple
 
 import pandas as pd
 import numpy as np
@@ -20,7 +21,7 @@ from joblib import Parallel, delayed
 from tqdm import tqdm
 
 import pretrained_models, transforms, point_utils, img_utils, exp_utils
-from settings import LABEL_NAMES
+from settings import LABEL_NAMES, get_flip_pairs
 
 import mhd
 
@@ -97,8 +98,11 @@ def main():
 
     dfs = []
     # for fn in ['script/verse.csv', 'script/spineweb.csv']:
-    for fn in ['script/manual_annotation.csv', 'script/spineweb.csv']:
-        df = pd.read_csv(fn)
+    for fn in ['script/manual_annotation.ndjson', 'script/spineweb.ndjson']:
+        if fn.endswith('csv'):
+            df = pd.read_csv(fn)
+        else:
+            df = exp_utils.ndjson2csv(fn)
         #        df['pid'] = df['filepath'].map(lambda pid: Path(pid).parts[-1])
         df['pid'] = df['filepath']  #.map(lambda pid: Path(pid).parts[-1])
         dfs.append(df)
@@ -159,7 +163,7 @@ def main():
 
         logger.info('Create model')
         n_chs = 1
-        N_CLASSES = 4
+        N_CLASSES = len(LABEL_NAMES)
         lit_model = pretrained_models.LitSMP(n_chs, N_CLASSES, args)
         down_factor = 256
 
@@ -200,6 +204,7 @@ def main():
         logger.info('load val set')
         val_xs, val_kps = load_dataset(df_val, HEIGHT, True)
         logger.info('val size %d', len(val_xs))
+        flip_pairs = get_flip_pairs()
 
         loader_kwargs = dict(batch_size=BATCH_SIZE,
                              pin_memory=True,
@@ -208,6 +213,7 @@ def main():
         dataset = point_utils.KeypointDataset(train_xs,
                                               train_kps,
                                               None,
+                                              flip_pairs,
                                               transforms.random_transform,
                                               sigma=SIGMA)
         train_loader = DataLoader(
@@ -220,10 +226,17 @@ def main():
             **loader_kwargs,
         )
 
+        def base_kps_transform(
+                img, kps,
+                flip_pairs) -> Tuple[np.ndarray, point_utils.PointsList]:
+            img, kps = transforms.base_transform(img, kps)
+            return img, kps
+
         dataset = point_utils.KeypointDataset(val_xs,
                                               val_kps,
                                               None,
-                                              transforms.base_transform,
+                                              flip_pairs,
+                                              base_kps_transform,
                                               sigma=SIGMA)
         val_loader = DataLoader(dataset,
                                 shuffle=False,
@@ -268,7 +281,13 @@ def main():
         import pickle
         with open(outdir / 'kps.pickle', 'wb') as f:
             pickle.dump(test_kps, f)
-        dataset = point_utils.ImageDataset(test_xs, transforms.base_transform)
+
+        def test_transform(img) -> np.ndarray:
+            img = transforms.base_transform(img)
+            assert isinstance(img, np.ndarray)
+            return img
+
+        dataset = point_utils.ImageDataset(test_xs, test_transform)
         test_loader = DataLoader(dataset, shuffle=False, **loader_kwargs)
 
         logger.info('Start test')

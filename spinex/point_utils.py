@@ -2,10 +2,11 @@
 Utility functions for point manipulation
 '''
 
-from typing import Sequence, Callable, Tuple, Optional, TypeVar
+from typing import Sequence, Callable, Tuple, Optional, TypeVar, Iterable, List
 import itertools
 
 import numpy as np
+import numpy.typing as npt
 import scipy
 import scipy.stats
 import torch
@@ -22,7 +23,7 @@ ImageType = np.ndarray
 GenericType = TypeVar('GenericType')
 
 
-def flatten_nest(l: Sequence[Sequence[GenericType]]) -> Sequence[GenericType]:
+def flatten_nest(l: List[List[GenericType]]) -> List[GenericType]:
     '''
     Flatten nested list
 
@@ -35,8 +36,8 @@ def flatten_nest(l: Sequence[Sequence[GenericType]]) -> Sequence[GenericType]:
     return list(itertools.chain.from_iterable(l))
 
 
-def partition(lst: Sequence[GenericType],
-              sizes: Sequence[int]) -> Sequence[Sequence[GenericType]]:
+def partition(lst: List[GenericType],
+              sizes: List[int]) -> List[List[GenericType]]:
     '''
     Partition list into sub lists with given sizes
 
@@ -50,14 +51,6 @@ def partition(lst: Sequence[GenericType],
     cs = np.insert(cs, 0, 0)  # prepend 0
     assert len(lst) == cs[-1]
     return [lst[cs[i]:cs[i + 1]] for i in range(len(cs) - 1)]
-
-
-def flat_apply_partition(lst: Sequence[Sequence[GenericType]],
-                         f) -> Sequence[Sequence[GenericType]]:
-    sizes = [len(e) for e in lst]
-    flat = flatten_nest(lst)
-    result = f(flat)
-    return partition(result, sizes)
 
 
 class ImageDataset(torch.utils.data.Dataset):
@@ -91,14 +84,14 @@ class KeypointDataset(torch.utils.data.Dataset):
     '''
 
     def __init__(self, xs: Sequence[np.ndarray], points: Sequence[PointsList],
-                 point_pairs,
-                 transform: Optional[Callable[[np.ndarray, PointsType],
-                                              Tuple[np.ndarray, PointsType]]],
-                 sigma: float):
+                 point_pairs, flip_pairs: List[Tuple[int, int]],
+                 transform: Optional[
+                     Callable[[np.ndarray, PointsList, List[Tuple[int, int]]],
+                              Tuple[np.ndarray, PointsList]]], sigma: float):
         '''
         Args:
             xs: list of x.
-            points: list of 2D points.
+            points: list of 2D point sets.
             point_pairs: pair of 2D points.
             transform: transformation.
             sigma: sigma for heatmap generation
@@ -109,6 +102,7 @@ class KeypointDataset(torch.utils.data.Dataset):
             self.point_pairs = [[]] * len(xs)
         else:
             self.point_pairs = point_pairs
+        self.flip_pairs = flip_pairs
         self.transform = transform
         self.sigma = sigma
 
@@ -119,11 +113,7 @@ class KeypointDataset(torch.utils.data.Dataset):
         x, points, point_pairs = self.xs[idx], self.points[
             idx], self.point_pairs[idx]
         if self.transform is not None:
-            sizes = [len(ps) for ps in points]
-            flat_points = flatten_nest(points)
-            x, points = self.transform(x, flat_points)
-            points = partition(points, sizes)
-
+            x, points = self.transform(x, points, self.flip_pairs)
         n_chs = len(points) + len(point_pairs)
         y = np.zeros((n_chs, x.shape[1], x.shape[2]), dtype=np.float32)
         for i, p in enumerate(points):
@@ -173,6 +163,8 @@ def create_prob_image(shape: Sequence[int],
     '''
     Create heatmap from the given points
     '''
+    if len(points) == 0:
+        return np.zeros(shape)
     if out is None:
         out = multivariate_normal(shape, points[0], sigma)
     else:
@@ -252,7 +244,7 @@ def extract_center_of_masses(heatmaps):
     return keypoints
 
 
-def local_center_of_masses(heatmaps):
+def local_center_of_masses(heatmaps, min_thresh=.25):
     '''
 
     Note. Channel axis is 0.
@@ -270,7 +262,7 @@ def local_center_of_masses(heatmaps):
         max_value = np.max(ch)
         if max_value <= 0:
             raise RuntimeError('Empty heatmap')
-        thresh = max_value / 2
+        thresh = max(min_thresh, max_value / 2)
         all_labels = measure.label(ch >= thresh)
         local_centers = []
         for i in range(1, np.max(all_labels) + 1):

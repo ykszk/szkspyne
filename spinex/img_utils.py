@@ -77,7 +77,7 @@ def resize_height(
     height: int,
     img: np.ndarray,
     kps: Union[np.ndarray, List[np.ndarray], None] = None
-) -> Union[Tuple[np.ndarray, Union[np.ndarray, List[np.ndarray]]], np.ndarray]:
+) -> Union[Tuple[np.ndarray, List[np.ndarray]], np.ndarray]:
     '''
     Resize image to the height. Width is dynamically determined (i.e. aspect ratio is kept.)
 
@@ -104,10 +104,7 @@ def resize_height(
     img = skimage.transform.resize(img, (height, width), preserve_range=True)
     img = np.round(img).astype(dtype)
     if kps is not None:
-        if isinstance(kps, list):
-            kps = [scale * kp for kp in kps]
-        else:
-            kps = scale * kps
+        kps = [scale * kp for kp in kps]
         return img, kps
     else:
         return img

@@ -99,15 +99,14 @@ def main():
         cl = clahe.apply(img)
         return cl
 
-    def save_kps_json(pred, original_shape, image_filename, json_filename):
-        kps_per_ch = point_utils.local_center_of_masses(pred)
+    def save_kps_json(pred, original_shape, image_filename, json_filename, min_thresh=.25):
+        kps_per_ch = point_utils.local_center_of_masses(pred, min_thresh)
         # half_shape = (np.array(original_shape, dtype=np.float32) // 2).tolist()
         # scale = half_shape[0] / pred.shape[1]
         scale = original_shape[0] / pred.shape[1]
         kps_per_ch = [(np.array(kps, dtype=np.float32) * scale).tolist()
                       for kps in kps_per_ch]
-        json_data = labelme_utils.kps2labelme(kps_per_ch,
-                                              image_filename,
+        json_data = labelme_utils.kps2labelme(kps_per_ch, image_filename,
                                               original_shape,
                                               labelme_utils.LABEL_NAMES)
         with open(json_filename, 'w') as f:
@@ -122,17 +121,18 @@ def main():
         if args.preproc:
             mhd.write(args.preproc, x)
         assert isinstance(x, np.ndarray)
-        x = torch.from_numpy(x[np.newaxis])
         if x.ndim == 2:
             x = x[np.newaxis]
+        x = torch.from_numpy(x[np.newaxis])
         with torch.no_grad():
             pred = lit_model(x)
-        pred = pred.to('cpu').detach().numpy().copy()
+        pred = pred.to('cpu').detach().numpy().copy()[0]
         logger.info('Pred max: %s, Pred min: %s', pred.min(), pred.max())
-        pred = np.round(np.clip(pred[0], 0, 1) * 255).astype(np.uint8)
         if args.labelme:
             logger.info('Save %s', args.labelme)
-            save_kps_json(pred, original_shape, Path(args.input).name, args.labelme)
+            save_kps_json(pred, original_shape,
+                          Path(args.input).name, args.labelme)
+        pred = np.round(np.clip(pred, 0, 1) * 255).astype(np.uint8)
         if args.heatmap:
             pred = np.transpose(pred, [1, 2, 0])
             mhd.write(args.heatmap, pred,
@@ -180,19 +180,31 @@ def main():
 
         logger.info('Apply model')
         preds = []
-        for batch in loader:
+        for batch in tqdm.tqdm(loader):
             batch = batch.to(device)
             with torch.no_grad():
-                pred = lit_model(batch).to('cpu').detach().numpy().copy()
-                preds.append(pred)
-        preds = np.concatenate(preds, axis=0)
-        print(preds.shape)
+                pred =torch.clip(lit_model(batch), 0, 1)
+                pred *= np.iinfo(np.uint16).max
+                pred = pred.to('cpu').detach().numpy().copy()
+                preds.append(pred.astype(np.uint16))
+        preds = point_utils.flatten_nest(preds)
+        print(len(preds), preds[0].shape, preds[0].dtype)
+        del batch, loader, xs, lit_model
         if args.labelme:
             logger.info('Save jsons')
-            json_filenames = [fn.with_suffix('.json') for fn in input_filenames]
+            json_filenames = [
+                fn.with_suffix('.json') for fn in input_filenames
+            ]
             image_filenames = [fn.name for fn in input_filenames]
-            Parallel(n_jobs=args.workers)(delayed(save_kps_json)(*arg)
-                                    for arg in tqdm.tqdm(zip(preds, original_shapes, image_filenames, json_filenames), total=len(preds)))
+            import functools
+            save_json = lambda args: save_kps_json(*args, min_thresh=.1*np.iinfo(np.uint16).max)
+            Parallel(n_jobs=args.workers)(
+                delayed(save_json)(arg)
+                for arg in tqdm.tqdm(zip(preds, original_shapes,
+                                         image_filenames, json_filenames),
+                                     total=len(preds)))
+        # if args.heatmap:
+        #     raise NotImplementedError
 
     if args.mode == 'single':
         apply_single(args)

@@ -1,12 +1,14 @@
 import sys
 import argparse
 import random
+from typing import List, Dict, Tuple
 
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 from albumentations.core.transforms_interface import ImageOnlyTransform
 import numpy as np
 import cv2
+import point_utils
 
 cv2.setNumThreads(0)
 cv2.ocl.setUseOpenCL(False)
@@ -21,7 +23,7 @@ def percentile_normalize(x, percentile, clip=False, sampling_step=10):
     return x
 
 
-def base_transform(x, kps=None):
+def base_transform(x: np.ndarray, kps=None):
     if x.dtype == np.uint8:
         x = x / 255
     else:
@@ -76,9 +78,10 @@ class RandomClahe(ImageOnlyTransform):
 
 
 img_tfs = [
-    # A.HorizontalFlip(p=0.25),
+    A.HorizontalFlip(p=0.25),
     RandomClahe(always_apply=True),
-    A.RandomBrightnessContrast(brightness_limit=0.4, contrast_limit=0.2, p=.25),
+    A.RandomBrightnessContrast(brightness_limit=0.4, contrast_limit=0.2,
+                               p=.25),
     A.Affine(scale={
         'x': (.8, 1.2),
         'y': (.8, 1.2)
@@ -90,20 +93,25 @@ img_tfs = [
     A.Normalize(mean=0.485, std=0.229),
     # ToTensorV2()
 ]
-album_transform = A.Compose(img_tfs,
-                            keypoint_params=A.KeypointParams(
-                                format='yx', remove_invisible=False))
+album_transform = A.ReplayCompose(img_tfs,
+                                  keypoint_params=A.KeypointParams(
+                                      format='yx', remove_invisible=False))
 
+import warnings
 
-def random_transform(x, keypoints):
-    # clipLimit = random.choice([10, 100])
-    # gridSize = random.choice([16, 32])
-    # x = apply_clahe(x, clipLimit, (gridSize, gridSize))
-    # x, keypoints = base_transform(x, keypoints)
-    # x = x.transpose((1, 2, 0))  # to channel last
-    tfed = album_transform(image=x, keypoints=keypoints)
+def random_transform(x: np.ndarray, keypoints, flip_pairs: List[Tuple[int,
+                                                                      int]]):
+    sizes = [len(ps) for ps in keypoints]
+    flat_points = point_utils.flatten_nest(keypoints)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        tfed = album_transform(image=x, keypoints=flat_points)
     x, keypoints = tfed['image'], tfed['keypoints']
-    # x = x.transpose((2, 0, 1))  # to channel first
+    keypoints = point_utils.partition(keypoints, sizes)
+    for tf in tfed['replay']['transforms']:
+        if tf['__class_fullname__'] == 'HorizontalFlip':
+            if tf['applied']:
+                for i, j in flip_pairs:
+                    keypoints[i], keypoints[j] = keypoints[j], keypoints[i]
     x = x[np.newaxis]
-    # return x.astype(np.float32), keypoints
     return x, keypoints
