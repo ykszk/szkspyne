@@ -9,10 +9,12 @@ FLIPPED_NAMES = [
     'FemoralHead'
 ]
 
+flip_pairs = []
+for i, (ln, fn) in enumerate(zip(LABEL_NAMES, FLIPPED_NAMES)):
+    if ln != fn and (i not in set([e[1] for e in flip_pairs])):
+        flip_pairs.append((i, FLIPPED_NAMES.index(ln)))
+FLIP_PAIRS = flip_pairs
 
 def get_flip_pairs() -> List[Tuple[int, int]]:
-    flip_pairs = []
-    for i, (ln, fn) in enumerate(zip(LABEL_NAMES, FLIPPED_NAMES)):
-        if ln != fn and (i not in set([e[1] for e in flip_pairs])):
-            flip_pairs.append((i, FLIPPED_NAMES.index(ln)))
-    return flip_pairs
+    return FLIP_PAIRS
+
