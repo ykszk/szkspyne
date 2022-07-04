@@ -1,0 +1,38 @@
+<! DOCTYPE html>
+    <html>
+
+    <head>
+        <meta charset="utf-8">
+        <title>{{title}}</title>
+        <link rel="stylesheet" type="text/css" href="default.css">
+        <script>
+            function toggle_visibility(cb, target_class) {
+                let visibility = cb.checked ? "visible" : "hidden";
+                var elms = document.getElementsByClassName(target_class);
+                for (elm of elms) {
+                    elm.style.visibility = visibility;
+                }
+            }
+        </script>
+    </head>
+
+    <body>
+        <div class="header">
+            <div class="legend">
+                {{legend}}
+                <div title="Toggle annotation's visibility">
+                    <input type="checkbox" id="cb_annotation_visibility" checked onchange="toggle_visibility(this, 'annotation')">
+                    <label for="cb_annotation_visibility">Show Annotation</label>
+                </div>
+                <div title="Toggle rectangles's visibility">
+                    <input type="checkbox" id="cb_rectangle_visibility" onchange="toggle_visibility(this, 'rectangle')">
+                    <label for="cb_rectangle_visibility">Show Rectangle</label>
+                </div>
+            </div>
+        </div>
+        <div class="main">
+            {{main}}
+        </div>
+    </body>
+
+    </html>
