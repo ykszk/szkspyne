@@ -10,7 +10,7 @@ sys.path.append('../spinex')
 from spinex import labelme_utils
 
 data_root = Path('../../data')
-indir = data_root / 'annotation/annotated'
+indir = data_root / 'annotation/annotated/'
 imgdir = data_root / 'jpg_half'
 sorted_fns = sorted(indir.glob('**/*.ndjson'))
 logger.info('file list done')
@@ -38,8 +38,11 @@ for fn in sorted_fns:
         dataset.append(shape_data)
 #    break
 logger.info('done processing')
-# df = pd.DataFrame(dataset)
 print(len(dataset))
+#%% check for duplications
+filepaths = [d['filepath'] for d in dataset]
+assert len(dataset)==len(set(filepaths))
+#%%
 outname = 'manual_annotation.ndjson'
 with open(outname, 'w') as f:
     for data in dataset:
