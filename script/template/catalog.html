@@ -13,6 +13,15 @@
                     elm.style.visibility = visibility;
                 }
             }
+            function toggle_img_visibility(cb, target_tag) {
+                let display = cb.checked ? "block" : "none";
+                var elms = document.getElementsByClassName("img");
+                for (elm of elms) {
+                    if (elm.classList.contains(target_tag)) {
+                        elm.style.display = display;
+                    }
+                }
+            }
         </script>
     </head>
 
@@ -28,6 +37,7 @@
                     <input type="checkbox" id="cb_rectangle_visibility" onchange="toggle_visibility(this, 'rectangle')">
                     <label for="cb_rectangle_visibility">Show Rectangle</label>
                 </div>
+                {{tag_checkboxes}}
             </div>
         </div>
         <div class="main">

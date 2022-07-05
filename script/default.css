@@ -29,6 +29,7 @@ figcaption {
 
 div.header {
     background: #002;
+    font-size: .8em;
     position: sticky;
     top: 0;
 }
@@ -47,9 +48,14 @@ div.legendItem {
     align-items: center;
     align-self: center;
 }
+
+div.legend label {
+    user-select: none;
+}
+
 div.box {
-    width: 20px;
-    height: 20px;
+    width: .8em;
+    height: .8em;
     display: inline-block;
 }
 div.legend div {

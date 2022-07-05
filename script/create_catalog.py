@@ -44,7 +44,7 @@ env = Environment(loader=FileSystemLoader('template', encoding='utf8'))
 t_catalog = env.get_template('catalog.html')
 t_img = env.get_template('img.html')
 t_legend = env.get_template('legend.html')
-
+t_tag = env.get_template('tag_checkbox.html')
 img_dir = Path('../../data/jpg_half')
 
 
@@ -57,8 +57,8 @@ def json2imgpath(filename):
 for direction, ndj in d_ndj.items():
     logger.info(direction)
     body = []
+    all_tags = set()
     for data in ndj:
-        flags = ', '.join([f for f, b in data['flags'].items() if b])
         img_filename = json2imgpath(data['filepath'].split('/')[-1])
 
         shapes = labelme_utils.conv2shape_dict(data)
@@ -128,9 +128,12 @@ for direction, ndj in d_ndj.items():
 
         svg_str = dwg.tostring()
         body.append(
-            t_img.render(svg=svg_str,
-                         flags=flags,
-                         name=Path(data['filepath']).stem))
+            t_img.render(
+                svg=svg_str,
+                flags=', '.join([f for f, b in data['flags'].items() if b]),
+                tags=' '.join([f for f, b in data['flags'].items() if b]),
+                name=Path(data['filepath']).stem))
+        all_tags |= set([f for f, b in data['flags'].items() if b])
 
     body = '\n'.join(body)
     legend = []
@@ -139,5 +142,10 @@ for direction, ndj in d_ndj.items():
             ['{:02x}'.format(c) for c in label_colors[label]])
         legend.append(t_legend.render(label=label, color=color))
     legend = '\n'.join(legend)
+    tag_cbs = '\n'.join([t_tag.render(tag=t) for t in all_tags])
     with open(f'output/catalog_{direction}.html', 'w', encoding='utf8') as f:
-        f.write(t_catalog.render(title=direction, legend=legend, main=body))
+        f.write(
+            t_catalog.render(title=direction,
+                             legend=legend,
+                             tag_checkboxes=tag_cbs,
+                             main=body))
