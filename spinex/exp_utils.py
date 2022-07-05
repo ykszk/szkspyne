@@ -136,10 +136,12 @@ def main():
         'transform', help="Test transforms.random_transform.")
     p_transform.add_argument('--rows',
                              help='The number of rample data: %(default)d',
+                             type=int,
                              default=5)
     p_transform.add_argument(
         '--columns',
         help='The number of random transformations: %(default)d',
+        type=int,
         default=5)
     p_transform.add_argument(
         '--output', help='Optional output image. e.g. random_transforms.svg')
@@ -156,10 +158,9 @@ def main():
         import transforms
         import settings
         flip_pairs = settings.get_flip_pairs()
-        print(flip_pairs)
         plt.figure(figsize=(7, 7))
         i_subplot = 1
-        for idx, row in df[:args.rows].iterrows():
+        for idx, row in df.sample(n=args.rows).iterrows():
             logger.info('%s', idx)
             x, kps = load_data(row, Path(data_root), label_names)
             x, kps = resize_height(args.height, x, kps)
@@ -173,6 +174,8 @@ def main():
                 for pts in tkps:
                     if len(pts) > 0:
                         plt.scatter(pts[:, 1], pts[:, 0], s=2)
+                    else:
+                        next(plt.gca()._get_lines.prop_cycler)
                 plt.axis('off')
         if args.output:
             plt.gcf().savefig(args.output,
@@ -184,6 +187,82 @@ def main():
         return 0
 
     p_transform.set_defaults(handler=command_transform)
+
+    p_loader = subparsers.add_parser('loader', help="Test KeypointDataset.")
+    p_loader.add_argument('--rows',
+                          help='The number of rample data: %(default)d',
+                          type=int,
+                          default=5)
+    p_loader.add_argument('--sigma',
+                          help='Sigma for heatmaps: %(default)d',
+                          type=int,
+                          default=5)
+    p_loader.add_argument('--output',
+                          help='Optional output image. e.g. kp_dataset.svg')
+
+    def command_loader(args):
+        logger.info('Loader')
+        csv_filename, data_root, label_names = args.csv, args.data_root, args.label_names
+        if csv_filename.endswith('.ndjson'):
+            df = ndjson2csv(csv_filename)
+        else:
+            df = pd.read_csv(csv_filename)
+        from img_utils import resize_height, pad_to_shape
+        from point_utils import flatten_nest, partition, KeypointDataset
+        import transforms
+        import settings
+        from torch.utils.data import DataLoader
+
+        flip_pairs = settings.get_flip_pairs()
+        plt.figure(figsize=(7, 7))
+        xs, kps = [], []
+        for idx, row in df.sample(n=args.rows).iterrows():
+            logger.info('%s', idx)
+            x, kp = load_data(row, Path(data_root), label_names)
+            x, kp = resize_height(args.height, x, kp)
+            xs.append(x), kps.append(kp)
+        shapes = [x.shape for x in xs]
+        max_shape = np.max(shapes, axis=0)
+        down_factor = 256
+        new_shape = (down_factor *
+                        np.ceil(np.array(max_shape) / down_factor)).astype(
+                            np.int64).tolist()
+        logger.info('Pad to %s', new_shape)
+        xs = [pad_to_shape(x, new_shape, 0) for x in xs]
+        dataset = KeypointDataset(xs,
+                                  kps,
+                                  None,
+                                  flip_pairs,
+                                  transforms.random_transform,
+                                  sigma=args.sigma)
+        loader = DataLoader(
+            dataset,
+            shuffle=False,
+            batch_size=args.rows,
+            num_workers=4,
+        )
+        for batch_xs, batch_ys in loader:
+            for i_subplot, (x, y) in enumerate(zip(batch_xs, batch_ys)):
+                # import mhd
+                # mhd.write(f'{i_subplot}.mha', y.numpy())
+                plt.subplot(args.rows, len(y)+1, i_subplot*(len(y)+1)+1)
+                plt.imshow(x.squeeze(), 'gray')
+                plt.axis('off')
+                for i, hm in enumerate(y):
+                    u8img = np.round(np.clip(hm.numpy(), 0, 1)*255).astype(np.uint8)
+                    plt.subplot(args.rows, len(y)+1, i_subplot*(len(y)+1)+i+2)
+                    plt.imshow(u8img, 'gray')
+                    plt.axis('off')
+        if args.output:
+            plt.gcf().savefig(args.output,
+                              transparent=True,
+                              bbox_inches='tight')
+        else:
+            plt.show()
+        plt.close()
+        return 0
+
+    p_loader.set_defaults(handler=command_loader)
 
     # parser.add_argument('-s',
     #                     '--switch',
