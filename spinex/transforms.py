@@ -86,8 +86,8 @@ img_tfs = [
         'x': (.9, 1.1),
         'y': (.9, 1.1)
     },
-             rotate=[-30, 30],
-             shear=[-10, 10],
+             rotate=[-5, 5],
+             shear=[-5, 5],
              p=.25),
     A.GaussNoise(var_limit=.02, p=.25),
     A.Normalize(mean=0.485, std=0.229),
