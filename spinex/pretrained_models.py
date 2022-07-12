@@ -3,11 +3,13 @@ import segmentation_models_pytorch as smp
 import torch
 from torch import nn
 import torch.optim as optim
+import math
 
 import pytorch_lightning as pl
 
 
 class LitSMP(pl.LightningModule):
+
     def __init__(self, in_chs, out_chs, hparams):
         super().__init__()
         kwargs = dict(encoder_name=hparams.encoder_name,
@@ -17,7 +19,8 @@ class LitSMP(pl.LightningModule):
                       classes=out_chs)
         model = smp.DeepLabV3Plus(**kwargs)
         self.model = model
-        self.loss = torch.nn.MSELoss()
+        # self.loss = torch.nn.MSELoss()
+        self.loss = torch.nn.BCEWithLogitsLoss()
         self.lr = hparams.lr
         self.save_hyperparameters()
 
@@ -69,7 +72,11 @@ class LitSMP(pl.LightningModule):
         scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer,
                                                          factor=.1,
                                                          patience=4)
-        scheduler = {'scheduler': scheduler, 'monitor': 'train_loss', 'interval': 'epoch'}
+        scheduler = {
+            'scheduler': scheduler,
+            'monitor': 'train_loss',
+            'interval': 'epoch'
+        }
         return {
             'optimizer': optimizer,
             'lr_scheduler': scheduler,
@@ -82,6 +89,7 @@ class LitSMP(pl.LightningModule):
 
 
 class Seg2Cls(nn.Module):
+
     def __init__(self, base_model, aux_params):
         super(Seg2Cls, self).__init__()
         self.encoder = base_model.encoder
@@ -90,16 +98,13 @@ class Seg2Cls(nn.Module):
         middle_channels = 64
         self.classification_head = nn.Sequential(
             nn.MaxPool2d(2),
-                nn.Conv2d(self.encoder.out_channels[-1], middle_channels, kernel_size=3),
-                nn.BatchNorm2d(middle_channels),
-                nn.ReLU(inplace=True),
-                nn.MaxPool2d(2),
-                nn.Conv2d(middle_channels, middle_channels, kernel_size=3),
-                nn.BatchNorm2d(middle_channels),
-                nn.AdaptiveAvgPool2d(1),
-                nn.Flatten(),
-                nn.Linear(middle_channels, 1, bias=True)
-            )
+            nn.Conv2d(self.encoder.out_channels[-1],
+                      middle_channels,
+                      kernel_size=3), nn.BatchNorm2d(middle_channels),
+            nn.ReLU(inplace=True), nn.MaxPool2d(2),
+            nn.Conv2d(middle_channels, middle_channels, kernel_size=3),
+            nn.BatchNorm2d(middle_channels), nn.AdaptiveAvgPool2d(1),
+            nn.Flatten(), nn.Linear(middle_channels, 1, bias=True))
 
     def forward(self, x):
         self.encoder.eval()
@@ -122,7 +127,9 @@ class Seg2Cls(nn.Module):
     #     from torchinfo import summary
     #     return summary(self, shape, device='cpu')
 
+
 class LitCls(pl.LightningModule):
+
     def __init__(self, seg_model, aux_params, hparams):
         super().__init__()
         self.model = Seg2Cls(seg_model, aux_params)
@@ -157,7 +164,8 @@ class LitCls(pl.LightningModule):
         return loss
 
     def configure_optimizers(self):
-        optimizer = optim.Adam(self.model.classification_head.parameters(), self.lr)
+        optimizer = optim.Adam(self.model.classification_head.parameters(),
+                               self.lr)
         scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer,
                                                          factor=.1,
                                                          patience=4)
@@ -171,12 +179,15 @@ class LitCls(pl.LightningModule):
         from torchinfo import summary
         return summary(self.model, shape, device='cpu')
 
+
 def show_summary(args):
     model = LitSMP(1, 6, args)
     print(model.summary((1, 1, 512, 512)))
 
+
 def create_onnx(args):
     model = LitSMP(args.in_chs, args.out_chs, args).model
+
     def set_align_false(model):
         for l in model.children():
             set_align_false(l)
@@ -185,6 +196,7 @@ def create_onnx(args):
             print(model, model.align_corners)
             setattr(model, 'align_corners', False)
             # model.align_corners = False
+
     set_align_false(model)
 
     model.load_state_dict(torch.load(args.weights))
@@ -193,24 +205,36 @@ def create_onnx(args):
         model.encoder.set_swish(memory_efficient=False)
     except Exception as e:
         print(e)
-    model.eval() 
+    model.eval()
 
-    # Let's create a dummy input tensor  
-    dummy_input = torch.randn((1, 1, 768, 768), requires_grad=True)  
+    # Let's create a dummy input tensor
+    dummy_input = torch.randn((1, 1, 768, 768), requires_grad=True)
 
-    # Export the model   
-    torch.onnx.export(model,         # model being run 
-         dummy_input,       # model input (or a tuple for multiple inputs) 
-         args.output,       # where to save the model  
-         export_params=True,  # store the trained parameter weights inside the model file 
-         opset_version=12,    # the ONNX version to export the model to 
-         do_constant_folding=True,  # whether to execute constant folding for optimization 
-         input_names = ['modelInput'],   # the model's input names 
-         output_names = ['modelOutput'], # the model's output names 
-         dynamic_axes={'modelInput' : {0 : 'batch_size', 3: 'image_width'},    # variable length axes 
-                                'modelOutput' : {0 : 'batch_size', 3: 'image_width'}}) 
-    print(" ") 
-    print('Model has been converted to ONNX') 
+    # Export the model
+    torch.onnx.export(
+        model,  # model being run 
+        dummy_input,  # model input (or a tuple for multiple inputs) 
+        args.output,  # where to save the model  
+        export_params=
+        True,  # store the trained parameter weights inside the model file 
+        opset_version=12,  # the ONNX version to export the model to 
+        do_constant_folding=
+        True,  # whether to execute constant folding for optimization 
+        input_names=['modelInput'],  # the model's input names 
+        output_names=['modelOutput'],  # the model's output names 
+        dynamic_axes={
+            'modelInput': {
+                0: 'batch_size',
+                3: 'image_width'
+            },  # variable length axes 
+            'modelOutput': {
+                0: 'batch_size',
+                3: 'image_width'
+            }
+        })
+    print(" ")
+    print('Model has been converted to ONNX')
+
 
 if __name__ == "__main__":
     import argparse
@@ -218,21 +242,20 @@ if __name__ == "__main__":
         description='Pytorch lightning with segmentation_models_pytorch.')
     LitSMP.add_model_specific_args(parser)
     subparsers = parser.add_subparsers(help='Commands')
-    parser_summary = subparsers.add_parser('summary', help="Show the network summary of the specified model.")
+    parser_summary = subparsers.add_parser(
+        'summary', help="Show the network summary of the specified model.")
     parser_summary.set_defaults(func=show_summary)
 
     parser_onnx = subparsers.add_parser('onnx', help="Create ONNX model.")
     parser_onnx.set_defaults(func=create_onnx)
     parser_onnx.add_argument('in_chs',
-                    help='The # of input channels',
-                    type=int)
+                             help='The # of input channels',
+                             type=int)
     parser_onnx.add_argument('out_chs',
-                    help='The # of output channels',
-                    type=int)
-    parser_onnx.add_argument('weights',
-                    help='Path of the trained weight')
-    parser_onnx.add_argument('output',
-                    help='Output onnx filename')
+                             help='The # of output channels',
+                             type=int)
+    parser_onnx.add_argument('weights', help='Path of the trained weight')
+    parser_onnx.add_argument('output', help='Output onnx filename')
     args = parser.parse_args()
 
     has_func = hasattr(args, 'func')
