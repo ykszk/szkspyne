@@ -125,14 +125,15 @@ def main():
             x = x[np.newaxis]
         x = torch.from_numpy(x[np.newaxis])
         with torch.no_grad():
-            pred = lit_model(x)
+            pred = torch.sigmoid(lit_model(x))
+            # pred = lit_model(x)
         pred = pred.to('cpu').detach().numpy().copy()[0]
-        logger.info('Pred max: %s, Pred min: %s', pred.min(), pred.max())
+        logger.info('Pred min: %s, Pred max: %s', pred.min(), pred.max())
         if args.labelme:
             logger.info('Save %s', args.labelme)
             save_kps_json(pred, original_shape,
                           Path(args.input).name, args.labelme)
-        pred = np.round(np.clip(pred, 0, 1) * 255).astype(np.uint8)
+        # pred = np.round(np.clip(pred, 0, 1) * 255).astype(np.uint8)
         if args.heatmap:
             pred = np.transpose(pred, [1, 2, 0])
             mhd.write(args.heatmap, pred,
@@ -183,7 +184,8 @@ def main():
         for batch in tqdm.tqdm(loader):
             batch = batch.to(device)
             with torch.no_grad():
-                pred =torch.clip(lit_model(batch), 0, 1)
+                pred = torch.sigmoid(lit_model(batch))
+                # pred =torch.clip(lit_model(batch), 0, 1)
                 pred *= np.iinfo(np.uint16).max
                 pred = pred.to('cpu').detach().numpy().copy()
                 preds.append(pred.astype(np.uint16))
