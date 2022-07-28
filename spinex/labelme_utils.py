@@ -73,6 +73,21 @@ def labelme2ndjson(input_dir, output, n_jobs: int):
         f.write('\n'.join(lines))
 
 
+def split_ndjson(filename, output_dir):
+    with open(filename) as f:
+        jsons = [json.loads(line) for line in f]
+    output_dir = Path(output_dir)
+    for data in jsons:
+        if 'filename' in data:
+            outname = output_dir / Path(data.pop('filename')).name
+        else:
+            outname = output_dir / Path(data.pop('filepath')).name
+        mtime = data.pop('mtime', None)
+        with open(outname, 'w') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        if mtime:
+            os.utime(outname, (mtime, mtime))
+
 def diff_ndjsons(fn1, fn2):
     from logzero import logger
 
@@ -110,6 +125,17 @@ def main():
         labelme2ndjson(args.input, args.output, len(os.sched_getaffinity(0)))
 
     p_ndjson.set_defaults(func=command_ndjson)
+
+    p_split = subparsers.add_parser(
+        'split_ndjson', help="Split input ndjson and save as json file in the output directory.")
+    p_split.add_argument('input', help='Input ndjson')
+    p_split.add_argument('output', help='Output directory')
+
+    def command_split(args):
+        split_ndjson(args.input, args.output)
+
+    p_split.set_defaults(func=command_split)
+
 
     p_diff = subparsers.add_parser('diff', help="Compare two ndjsons.")
     p_diff.add_argument('input1', help='Input ndjson')
