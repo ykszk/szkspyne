@@ -13,6 +13,7 @@ import torch
 import torch.utils.data
 from numba import njit
 from scipy.ndimage.measurements import center_of_mass
+from scipy.ndimage import distance_transform_edt
 from skimage import measure
 
 PointType = np.ndarray  # Tuple[float, float]
@@ -271,3 +272,32 @@ def local_center_of_masses(heatmaps, min_thresh=.25):
             local_centers.append(center)
         local_centers_per_ch.append(local_centers)
     return local_centers_per_ch
+
+
+def create_dist_image(shape_: Sequence[int], points_: PointsType,
+                      margin: int) -> np.ndarray:
+    '''
+    Create distance map from the given points
+
+    ```
+    dist = create_dist_image((512, 512), [[128, 128], [
+    128,
+    156,
+    ], [0, 128]], 20)
+    ```
+    '''
+    if len(points_) == 0:
+        return np.zeros(shape_)
+    shape: np.ndarray = np.array(shape_)
+    points: np.ndarray = np.array(points_)
+    top_left = points.min(axis=0)
+    btm_right = points.max(axis=0)
+    top_left = np.clip(top_left - margin, 0, None)
+    btm_right = np.minimum(btm_right + margin, shape)
+    src = np.ones(btm_right - top_left)
+    roi_points = points - top_left
+    src[roi_points[:, 0], roi_points[:, 1]] = 0
+    dist = distance_transform_edt(src).astype(np.float32)
+    out = np.full(shape, dist.max(), dtype=np.float32)
+    out[top_left[0]:btm_right[0], top_left[1]:btm_right[1]] = dist
+    return out

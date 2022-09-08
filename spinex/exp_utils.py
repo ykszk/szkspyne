@@ -62,6 +62,8 @@ def ndjson2csv(filename: Union[str, Path]) -> pd.DataFrame:
     rows = []
     for line in lines:
         data = json.loads(line)
+        if 'circle' in data:  # TODO: This is temporary. Circles should be handled properly in the future!
+            data['point'].update(data['circle'])
         points = {
             k: np.array(p)[:, 0]
             for k, p in data['point'].items() if k in LABEL_NAMES

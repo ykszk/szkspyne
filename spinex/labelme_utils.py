@@ -64,7 +64,7 @@ def labelme2ndjson(input_dir, output, n_jobs: int):
             data = json.load(f)
         data['filename'] = fn.name
         data['mtime'] = fn.stat().st_mtime
-        l = json.dumps(data)
+        l = json.dumps(data, ensure_ascii=False)
         return l
 
     lines = Parallel(n_jobs=n_jobs)(delayed(do)(fn)
