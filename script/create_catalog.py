@@ -18,10 +18,7 @@ for fn in fns:
     direction = '_'.join(fn.stem.split('_')[-2:])
     d_ndj[direction] = d_ndj.get(direction, []) + ndj
 
-import sys
-
-sys.path.append('../spinex')
-import labelme_utils
+from szkspyne import labelme_utils
 import io
 from base64 import b64encode
 import svgwrite

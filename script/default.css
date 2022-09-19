@@ -3,14 +3,6 @@ body {
     color: white;
 }
 
-.annotation {
-    visibility: visible;
-}
-
-.rectangle {
-    visibility: hidden;
-}
-
 div.main {
     display: flex;
     flex-wrap: wrap;
