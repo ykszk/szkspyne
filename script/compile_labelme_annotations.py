@@ -5,9 +5,7 @@ from logzero import logger
 from typing import Dict, Any
 import sys
 
-sys.path.append('..')
-sys.path.append('../spinex')
-from spinex import labelme_utils
+from szkspyne import labelme_utils
 
 data_root = Path('../../data')
 indir = data_root / 'annotation/annotated/'
@@ -28,6 +26,7 @@ for fn in sorted_fns:
         data = json.loads(line)
         if data['flags'].get('側面右向き', False):
             print('右向き')
+            continue
             raise NotImplemented
         filename = '/'.join(
             Path(data['filepath']).with_suffix('.jpg').name.split('_'))

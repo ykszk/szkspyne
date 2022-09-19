@@ -6,7 +6,6 @@ import json
 import numpy as np
 from tqdm import tqdm
 from joblib import Parallel, delayed
-from settings import LABEL_NAMES
 from collections import defaultdict
 
 

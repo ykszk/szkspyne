@@ -33,8 +33,8 @@ import tqdm
 import sys
 
 sys.path.append('..')
-sys.path.append('../spinex')
-from spinex import labelme_utils
+sys.path.append('../szkspyne')
+from szkspyne import labelme_utils
 import shutil
 
 outdir = sw_dir / 'labelme'
