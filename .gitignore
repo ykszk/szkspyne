@@ -4,6 +4,7 @@
 *.jsonl
 docs/
 output/
+.vscode/
 tmp*
 dev*
 
