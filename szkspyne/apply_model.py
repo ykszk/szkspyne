@@ -1,6 +1,8 @@
 import sys
 import argparse
 
+PROB_MAX = 4000
+
 
 def main():
     parser = argparse.ArgumentParser(description='Apply spine model.')
@@ -42,6 +44,7 @@ def main():
     p_batch.add_argument('--labelme',
                          help='Save labelme json file',
                          action='store_true')
+    p_batch.add_argument('--heatmap', help='Save heatmap', action='store_true')
     p_batch.add_argument('--height',
                          help='Image height: %(default)s',
                          metavar='<int>',
@@ -69,6 +72,7 @@ def main():
     import point_utils
     import img_utils
     import labelme_utils
+    import settings
 
     import torch
     import cv2
@@ -99,7 +103,11 @@ def main():
         cl = clahe.apply(img)
         return cl
 
-    def save_kps_json(pred, original_shape, image_filename, json_filename, min_thresh=.25):
+    def save_kps_json(pred,
+                      original_shape,
+                      image_filename,
+                      json_filename,
+                      min_thresh=.25):
         kps_per_ch = point_utils.local_center_of_masses(pred, min_thresh)
         # half_shape = (np.array(original_shape, dtype=np.float32) // 2).tolist()
         # scale = half_shape[0] / pred.shape[1]
@@ -108,7 +116,7 @@ def main():
                       for kps in kps_per_ch]
         json_data = labelme_utils.kps2labelme(kps_per_ch, image_filename,
                                               original_shape,
-                                              labelme_utils.LABEL_NAMES)
+                                              settings.LABEL_NAMES)
         with open(json_filename, 'w') as f:
             json.dump(json_data, f, indent=2)
 
@@ -145,7 +153,7 @@ def main():
         logger.info('load images')
         indir = Path(args.input)
         n_jobs = args.workers
-        input_filenames = sorted(indir.glob('*' + args.ext))
+        input_filenames = sorted(indir.glob('*' + args.ext))[:50]
         xs, original_shapes = zip(*Parallel(n_jobs=n_jobs)(
             delayed(load)(fn, args.height, False)
             for fn in tqdm.tqdm(input_filenames)))
@@ -180,17 +188,19 @@ def main():
         lit_model.eval()
 
         logger.info('Apply model')
+        batch = None # initialize batch with None to avoid possibly unbound warning
         preds = []
         for batch in tqdm.tqdm(loader):
             batch = batch.to(device)
             with torch.no_grad():
                 pred = torch.sigmoid(lit_model(batch))
                 # pred =torch.clip(lit_model(batch), 0, 1)
-                pred *= np.iinfo(np.uint16).max
+                pred *= PROB_MAX  # np.iinfo(np.uint16).max
                 pred = pred.to('cpu').detach().numpy().copy()
                 preds.append(pred.astype(np.uint16))
         preds = point_utils.flatten_nest(preds)
         print(len(preds), preds[0].shape, preds[0].dtype)
+
         del batch, loader, xs, lit_model
         if args.labelme:
             logger.info('Save jsons')
@@ -198,15 +208,25 @@ def main():
                 fn.with_suffix('.json') for fn in input_filenames
             ]
             image_filenames = [fn.name for fn in input_filenames]
-            import functools
-            save_json = lambda args: save_kps_json(*args, min_thresh=.1*np.iinfo(np.uint16).max)
+            save_json = lambda args: save_kps_json(*args,
+                                                   min_thresh=.1 * PROB_MAX)
             Parallel(n_jobs=args.workers)(
-                delayed(save_json)(arg)
-                for arg in tqdm.tqdm(zip(preds, original_shapes,
-                                         image_filenames, json_filenames),
+                delayed(save_json)(arg) for arg in tqdm.tqdm(zip(
+                    preds, original_shapes, image_filenames, json_filenames),
+                                                             total=len(preds)))
+        if args.heatmap:
+
+            def save_hm(pred, fn):
+                pred = np.transpose(pred, [1, 2, 0])
+                mhd.write(fn, pred,
+                          {'ElementNumberOfChannels': pred.shape[-1]})
+
+            logger.info('Save heatmaps')
+            hm_filenames = [fn.with_suffix('.mha') for fn in input_filenames]
+            Parallel(n_jobs=args.workers)(
+                delayed(save_hm)(*arg)
+                for arg in tqdm.tqdm(zip(preds, hm_filenames),
                                      total=len(preds)))
-        # if args.heatmap:
-        #     raise NotImplementedError
 
     if args.mode == 'single':
         apply_single(args)
