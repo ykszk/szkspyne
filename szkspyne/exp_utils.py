@@ -218,7 +218,7 @@ def main():
         import settings
         from torch.utils.data import DataLoader
 
-        flip_pairs = settings.get_flip_pairs()
+        flip_pairs = settings.FLIP_PAIRS
         plt.figure(figsize=(7, 7))
         xs, kps = [], []
         for idx, row in df.sample(n=args.rows).iterrows():

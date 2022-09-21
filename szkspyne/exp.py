@@ -269,7 +269,7 @@ def main():
         logger.info('Finish training')
         df_logs = pd.read_csv(csv_logger.experiment.metrics_file_path)
         exp_utils.plot_history(df_logs)
-        plt.gcf().savefig(outdir / 'history.png',
+        plt.gcf().savefig(str(outdir / 'history.png'),
                           transparent=True,
                           bbox_inches='tight')
 

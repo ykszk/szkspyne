@@ -45,13 +45,14 @@ def kps2labelme(kps, image_path, image_hw, label_names) -> dict:
     assert len(label_names) == len(kps)
     for kps, label in zip(kps, label_names):
         for kp in kps:
-            shapes.append({
-                "label": label,
-                "points": [[kp[1], kp[0]]],
-                "group_id": None,
-                "shape_type": "point",
-                "flags": {}
-            })
+            if len(kp) >= 2:
+                shapes.append({
+                    "label": label,
+                    "points": [[kp[1], kp[0]]],
+                    "group_id": None,
+                    "shape_type": "point",
+                    "flags": {}
+                })
     return json_data
 
 
@@ -68,6 +69,7 @@ def labelme2ndjson(input_dir, output, n_jobs: int):
 
     lines = Parallel(n_jobs=n_jobs)(delayed(do)(fn)
                                     for fn in tqdm(input_dir.glob('*.json')))
+    assert lines is not None, 'Empty directory'
     with open(output, 'w') as f:
         f.write('\n'.join(lines))
 
