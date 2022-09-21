@@ -29,6 +29,7 @@ def load_data(
     img_path = data_root / row.filepath
     x = np.array(Image.open(img_path))
     kps = [row.get(l) for l in label_names]
+    # flip kps to change format from (x, y) to (y, x)
     kps = [
         np.flip(kp, axis=-1) if isinstance(kp, np.ndarray) else np.array(())
         for kp in kps
@@ -62,6 +63,8 @@ def ndjson2csv(filename: Union[str, Path]) -> pd.DataFrame:
     rows = []
     for line in lines:
         data = json.loads(line)
+        if '側面右向き' in data['flags']:
+            print('Skip right facing', data['filepath'])
         if 'circle' in data:  # TODO: This is temporary. Circles should be handled properly in the future!
             data['point'].update(data['circle'])
         points = {
@@ -159,7 +162,7 @@ def main():
         from point_utils import flatten_nest, partition
         import transforms
         import settings
-        flip_pairs = settings.get_flip_pairs()
+        flip_pairs = settings.FLIP_PAIRS
         plt.figure(figsize=(7, 7))
         i_subplot = 1
         for idx, row in df.sample(n=args.rows).iterrows():

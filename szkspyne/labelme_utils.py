@@ -110,6 +110,18 @@ def diff_ndjsons(fn1, fn2):
             print(filename)
 
 
+def sort_kps(points):
+    '''Sort keypoints by y position in ascending order
+
+    Args:
+        points (Dict[str, points]): keypoints
+    '''
+    kps = {
+        k: np.array(sorted(v, key=lambda e: e[1]))
+        for k, v in points.items()
+    }
+    return kps
+
 def main():
     import argparse
     parser = argparse.ArgumentParser(

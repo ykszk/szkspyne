@@ -21,7 +21,7 @@ from joblib import Parallel, delayed
 from tqdm import tqdm
 
 import pretrained_models, transforms, point_utils, img_utils, exp_utils
-from settings import LABEL_NAMES, get_flip_pairs
+from settings import LABEL_NAMES, FLIP_PAIRS
 
 import mhd
 
@@ -98,7 +98,7 @@ def main():
 
     dfs = []
     # for fn in ['script/verse.csv', 'script/spineweb.csv']:
-    for fn in ['script/manual_annotation.ndjson', 'script/spineweb.ndjson']:
+    for fn in ['script/manual_annotation.ndjson']: #, 'script/spineweb.ndjson']:
         if fn.endswith('csv'):
             df = pd.read_csv(fn)
         else:
@@ -204,7 +204,7 @@ def main():
         logger.info('load val set')
         val_xs, val_kps = load_dataset(df_val, HEIGHT, True)
         logger.info('val size %d', len(val_xs))
-        flip_pairs = get_flip_pairs()
+        flip_pairs = FLIP_PAIRS
 
         loader_kwargs = dict(batch_size=BATCH_SIZE,
                              pin_memory=True,
