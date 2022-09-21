@@ -14,7 +14,7 @@ parser.add_argument('output', help='Output directory', metavar='<output>')
 parser.add_argument('--annotators',
                     help='List of annotators. default: %(default)s',
                     metavar='<list>',
-                    default=['藤森', '中嶋'])
+                    default=['藤森', '中嶋', '蟹江'])
 args = parser.parse_args()
 
 data_dir = Path(args.input)
