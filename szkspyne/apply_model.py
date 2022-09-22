@@ -141,7 +141,6 @@ def main():
             logger.info('Save %s', args.labelme)
             save_kps_json(pred, original_shape,
                           Path(args.input).name, args.labelme)
-        # pred = np.round(np.clip(pred, 0, 1) * 255).astype(np.uint8)
         if args.heatmap:
             pred = np.transpose(pred, [1, 2, 0])
             mhd.write(args.heatmap, pred,
@@ -169,6 +168,7 @@ def main():
         class NDArray(Dataset):
 
             def __init__(self, arr, aux):
+                assert len(arr) == len(aux)
                 self.arr = arr
                 self.aux = aux
 
@@ -178,9 +178,12 @@ def main():
             def __len__(self):
                 return len(self.arr)
 
-        loader = DataLoader(NDArray(xs, [str(fn) for fn in input_filenames]),
+        loader = DataLoader(NDArray(
+            xs, [(str(fn), o_s)
+                 for fn, o_s in zip(input_filenames, original_shapes)]),
                             batch_size=args.batch_size,
-                            num_workers=args.workers)
+                            num_workers=args.workers,
+                            shuffle=False)
         device = torch.device(
             'cuda:0') if torch.cuda.is_available() else torch.device('cpu')
         logger.info('load model')
@@ -189,35 +192,38 @@ def main():
         lit_model.eval()
 
         logger.info('Apply model')
-        for batch, filenames in tqdm.tqdm(loader):
+        for batch, (filenames, original_shapes) in tqdm.tqdm(loader):
             batch = batch.to(device)
             with torch.no_grad():
                 pred = torch.sigmoid(lit_model(batch))
-                pred *= PROB_MAX  # np.iinfo(np.uint16).max
+                pred *= PROB_MAX
                 pred = pred.to('cpu').detach().numpy().astype(np.uint16)
 
             filenames = [Path(fn) for fn in filenames]
+            original_shapes = list(
+                zip(*[t.to('cpu').tolist() for t in original_shapes]))
             if args.labelme:
-                json_filenames = [
-                    fn.with_suffix('.json') for fn in filenames
-                ]
+                json_filenames = [fn.with_suffix('.json') for fn in filenames]
                 image_filenames = [fn.name for fn in filenames]
 
-                def save_json(args): return save_kps_json(*args,
-                                                          min_thresh=.1 * PROB_MAX)
+                def save_json(args):
+                    return save_kps_json(*args, min_thresh=.1 * PROB_MAX)
+
                 Parallel(n_jobs=args.workers)(
-                    delayed(save_json)(arg) for arg in zip(
-                        pred, original_shapes, image_filenames, json_filenames))
+                    delayed(save_json)(arg)
+                    for arg in zip(pred, original_shapes, image_filenames,
+                                   json_filenames))
 
             if args.heatmap:
+
                 def save_hm(pred, fn):
                     pred = np.transpose(pred, [1, 2, 0])
                     mhd.write(fn, pred,
                               {'ElementNumberOfChannels': pred.shape[-1]})
+
                 hm_filenames = [fn.with_suffix('.mha') for fn in filenames]
                 Parallel(n_jobs=args.workers)(
-                    delayed(save_hm)(*arg)
-                    for arg in zip(pred, hm_filenames))
+                    delayed(save_hm)(*arg) for arg in zip(pred, hm_filenames))
 
     if args.mode == 'single':
         apply_single(args)

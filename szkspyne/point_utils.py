@@ -269,9 +269,10 @@ def local_center_of_masses(heatmaps, min_thresh=.25):
             all_labels = measure.label(ch >= thresh)
             local_centers = []
             for i in range(1, np.max(all_labels) + 1):
-                cc = (all_labels == i)
-                local_max = ch[cc].max()
-                center = center_of_mass(ch == local_max)
+                island = ch.copy()
+                island[all_labels != i] = ch.min()
+                local_max = island.max()
+                center = center_of_mass(island == local_max)
                 local_centers.append(center)
         local_centers_per_ch.append(local_centers)
     return local_centers_per_ch
@@ -301,7 +302,7 @@ def create_dist_image(shape_: Sequence[int], points_: PointsType,
     roi_points = points - top_left
     src[roi_points[:, 0], roi_points[:, 1]] = 0
     dist = distance_transform_edt(src)
-    assert isinstance(dist, np.ndarray) # for type checking
+    assert isinstance(dist, np.ndarray)  # for type checking
     dist = dist.astype(np.float32)
     out = np.full(shape, dist.max(), dtype=np.float32)
     out[top_left[0]:btm_right[0], top_left[1]:btm_right[1]] = dist
