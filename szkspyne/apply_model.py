@@ -94,7 +94,7 @@ def main():
             x = img_utils.pad_to_next_multiple(DOWN_FACTOR, x, [1], 0)
         logger.info('Padded to %s', x.shape)
         x = apply_clahe(x)
-        x = transforms.percentile_normalize(x, 1)  #, clip=True)
+        x = transforms.percentile_normalize(x, 1)  # , clip=True)
         x = x.astype(np.float32)
         return x, original_shape
 
@@ -153,7 +153,7 @@ def main():
         logger.info('load images')
         indir = Path(args.input)
         n_jobs = args.workers
-        input_filenames = sorted(indir.glob('*' + args.ext))[:50]
+        input_filenames = sorted(indir.glob('*' + args.ext))
         xs, original_shapes = zip(*Parallel(n_jobs=n_jobs)(
             delayed(load)(fn, args.height, False)
             for fn in tqdm.tqdm(input_filenames)))
@@ -168,16 +168,17 @@ def main():
 
         class NDArray(Dataset):
 
-            def __init__(self, arr):
+            def __init__(self, arr, aux):
                 self.arr = arr
+                self.aux = aux
 
             def __getitem__(self, index):
-                return self.arr[index]
+                return self.arr[index], self.aux[index]
 
             def __len__(self):
                 return len(self.arr)
 
-        loader = DataLoader(NDArray(xs),
+        loader = DataLoader(NDArray(xs, [str(fn) for fn in input_filenames]),
                             batch_size=args.batch_size,
                             num_workers=args.workers)
         device = torch.device(
@@ -188,45 +189,35 @@ def main():
         lit_model.eval()
 
         logger.info('Apply model')
-        batch = None # initialize batch with None to avoid possibly unbound warning
-        preds = []
-        for batch in tqdm.tqdm(loader):
+        for batch, filenames in tqdm.tqdm(loader):
             batch = batch.to(device)
             with torch.no_grad():
                 pred = torch.sigmoid(lit_model(batch))
-                # pred =torch.clip(lit_model(batch), 0, 1)
                 pred *= PROB_MAX  # np.iinfo(np.uint16).max
-                pred = pred.to('cpu').detach().numpy().copy()
-                preds.append(pred.astype(np.uint16))
-        preds = point_utils.flatten_nest(preds)
-        print(len(preds), preds[0].shape, preds[0].dtype)
+                pred = pred.to('cpu').detach().numpy().astype(np.uint16)
 
-        del batch, loader, xs, lit_model
-        if args.labelme:
-            logger.info('Save jsons')
-            json_filenames = [
-                fn.with_suffix('.json') for fn in input_filenames
-            ]
-            image_filenames = [fn.name for fn in input_filenames]
-            save_json = lambda args: save_kps_json(*args,
-                                                   min_thresh=.1 * PROB_MAX)
-            Parallel(n_jobs=args.workers)(
-                delayed(save_json)(arg) for arg in tqdm.tqdm(zip(
-                    preds, original_shapes, image_filenames, json_filenames),
-                                                             total=len(preds)))
-        if args.heatmap:
+            filenames = [Path(fn) for fn in filenames]
+            if args.labelme:
+                json_filenames = [
+                    fn.with_suffix('.json') for fn in filenames
+                ]
+                image_filenames = [fn.name for fn in filenames]
 
-            def save_hm(pred, fn):
-                pred = np.transpose(pred, [1, 2, 0])
-                mhd.write(fn, pred,
-                          {'ElementNumberOfChannels': pred.shape[-1]})
+                def save_json(args): return save_kps_json(*args,
+                                                          min_thresh=.1 * PROB_MAX)
+                Parallel(n_jobs=args.workers)(
+                    delayed(save_json)(arg) for arg in zip(
+                        pred, original_shapes, image_filenames, json_filenames))
 
-            logger.info('Save heatmaps')
-            hm_filenames = [fn.with_suffix('.mha') for fn in input_filenames]
-            Parallel(n_jobs=args.workers)(
-                delayed(save_hm)(*arg)
-                for arg in tqdm.tqdm(zip(preds, hm_filenames),
-                                     total=len(preds)))
+            if args.heatmap:
+                def save_hm(pred, fn):
+                    pred = np.transpose(pred, [1, 2, 0])
+                    mhd.write(fn, pred,
+                              {'ElementNumberOfChannels': pred.shape[-1]})
+                hm_filenames = [fn.with_suffix('.mha') for fn in filenames]
+                Parallel(n_jobs=args.workers)(
+                    delayed(save_hm)(*arg)
+                    for arg in zip(pred, hm_filenames))
 
     if args.mode == 'single':
         apply_single(args)
