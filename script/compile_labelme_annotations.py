@@ -19,6 +19,7 @@ dataset = {}
 for fn in sorted_fns:
     with open(str(fn)) as f:
         lines = f.readlines()
+    image_type = '_'.join(fn.stem.split('_')[1:])
     for line in lines:
         data = json.loads(line)
         filename = '/'.join(
@@ -35,6 +36,7 @@ for fn in sorted_fns:
             d_points['S-TL'] = [[tl[-1].tolist()]]
             d_points['S-TR'] = [[tr[-1].tolist()]]
         shape_data['filepath'] = filepath
+        shape_data['image_type'] = image_type
         shape_data['flags'] = [k for k, v in data['flags'].items() if v]
         dataset[filepath] = shape_data
 logger.info('done processing')
