@@ -2,6 +2,7 @@
 *.svg
 *.ndjson
 *.jsonl
+*.npz
 docs/
 output/
 .vscode/

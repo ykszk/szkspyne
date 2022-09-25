@@ -6,9 +6,17 @@ import numpy as np
 import torch
 from torch.autograd import Variable
 from torch.optim import Adam
+from logzero import logger
+import matplotlib.pyplot as plt
+from scipy.ndimage import gaussian_filter
+
+from PIL import Image
+from szkspyne import labelme_utils
+import json
 
 ANCHOR_LABELS = ['C7-TL', 'C7-TR', 'S-TL', 'S-TR']
 ANCHOR_INDICES = [settings.LABEL_NAMES.index(l) for l in ANCHOR_LABELS]
+IMG_HEIGHT = 768
 
 data_dir = Path('../../data/annotation/images')
 image_type = 'lateral_whole'
@@ -85,9 +93,6 @@ class TorchPCA():
         return unraveled
 
 
-pca = TorchPCA('./pca_lateral_whole.npz')
-
-
 class PatientPCA():
 
     def __init__(self, pca, heatmap, top_anchor, bottom_anchor):
@@ -117,10 +122,6 @@ class PatientPCA():
         return self.ref2pt(self.pca.warp(coefs))
 
 
-import matplotlib.pyplot as plt
-from scipy.ndimage import gaussian_filter
-
-
 def lerp2d(arr, idx):
     '''
     Args:
@@ -137,61 +138,71 @@ def lerp2d(arr, idx):
     return torch.lerp(ab, cd, wy)
 
 
-n_comps = 60
+N_ITER = 100
+LR = 0.05
+d_loss = {}
+for name, image_type in (('L4', image_type), ('L5', image_type)):
+    pca = TorchPCA(f'pca_{image_type}_{name}.npz')
 
-coefs = Variable(torch.FloatTensor(np.zeros((n_comps), dtype=np.float32)),
-                 requires_grad=True)
+    n_comps = 50
 
-for blur_sigma in [10, 5, 1]:
-    if blur_sigma == 0:
-        blurred_hm = heatmaps[:4]
-    else:
-        blurred_hm = np.array(
-            [gaussian_filter(hm, blur_sigma) for hm in heatmaps[:4]])
-    pt_pca = PatientPCA(pca, blurred_hm, top_anchor, bottom_anchor)
-    optimizer = Adam([coefs], lr=.05, maximize=True)
+    coefs = Variable(torch.FloatTensor(np.zeros((n_comps), dtype=np.float32)),
+                     requires_grad=True)
 
-    history = []
-    for i in range(100):
-        warped = pca.unravel(pt_pca.warp(coefs))
-        probas = []
-        for ch, pts in zip(pt_pca.t_heatmap, warped):
-            probas.append(lerp2d(ch, pts))
-        loss = torch.log(torch.concat(probas)).mean()
-        history.append(loss.detach().item())
-        # print(i, loss)
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-    plt.plot(history, label=f'{blur_sigma}')
-plt.legend()
-# %%
-import matplotlib.pyplot as plt
+    for blur_sigma in [10, 1]:
+        logger.info('sigma %f', blur_sigma)
+        if blur_sigma == 0:
+            blurred_hm = heatmaps[:4]
+        else:
+            blurred_hm = np.array(
+                [gaussian_filter(hm, blur_sigma) for hm in heatmaps[:4]])
+        pt_pca = PatientPCA(pca, blurred_hm, top_anchor, bottom_anchor)
+        optimizer = Adam([coefs], lr=LR, maximize=True)
 
-mip = heatmaps.max(axis=0)
-warped = pca.unravel(pt_pca.ref2pt(pca.warp(coefs.detach().numpy())))
-plt.figure(figsize=(10, 10))
-plt.imshow(mip, 'gray')
-for m in warped:
-    plt.scatter(m[:, 1], m[:, 0], s=10)
+        history = []
+        for i in range(N_ITER):
+            warped = pca.unravel(pt_pca.warp(coefs))
+            probas = []
+            for ch, pts in zip(pt_pca.t_heatmap, warped):
+                probas.append(lerp2d(ch, pts))
+            loss = torch.log(torch.concat(
+                probas)).mean()  # - 0.01 * torch.linalg.norm(coefs)
+            history.append(loss.detach().item())
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+        plt.plot(history, label=f'{blur_sigma}')
+    plt.legend()
+    d_loss[name] = history[0]
 
-# %%
-from PIL import Image
+    bg = Image.open(str(data_dir / image_type / f'{file_id}.jpg'))
+    original_shape = bg.size[::-1]
 
-bg = Image.open(str(data_dir / image_type / f'{file_id}.jpg'))
-original_shape = bg.size[::-1]
-bg.thumbnail((2000, 768))
-plt.figure(figsize=(10, 10))
-plt.imshow(np.array(bg), 'gray')
-for m in warped:
-    plt.scatter(m[:, 1], m[:, 0], s=10)
-# %%
-from szkspyne import labelme_utils
-import json
+    # mip = heatmaps.max(axis=0)
+    mip = heatmaps[:3].transpose((1, 2, 0)).copy()
+    mip[:, :, 0] = np.maximum(mip[:, :, 0], heatmaps[3])
+    mip = mip[:, :int((IMG_HEIGHT / original_shape[0]) * original_shape[1])]
+    mip[..., 0] = 0
+    warped = pca.unravel(pt_pca.ref2pt(pca.warp(coefs.detach().numpy())))
+    if True:
+        plt.figure(figsize=(10, 10))
+        plt.imshow(mip, 'gray')
+        for m in warped:
+            plt.scatter(m[:, 1], m[:, 0], s=10)
+        plt.show()
 
-s = original_shape[0] / 768
-scaled_warped = [(s * w.numpy()).tolist() for w in warped]
-json_data = labelme_utils.kps2labelme(scaled_warped, 'tmp.jpg', original_shape,
-                                      ['TL', 'TR', 'BL', 'BR'])
-with open('tmp/tmp.json', 'w') as f:
-    json.dump(json_data, f)
+    bg.thumbnail((IMG_HEIGHT, IMG_HEIGHT))
+    plt.figure(figsize=(10, 10))
+    plt.imshow(np.array(bg), 'gray')
+    for m in warped:
+        plt.scatter(m[:, 1], m[:, 0], s=10)
+    plt.title(name)
+    plt.show()
+
+    s = original_shape[0] / IMG_HEIGHT
+    scaled_warped = [(s * w.numpy()).tolist() for w in warped]
+    json_data = labelme_utils.kps2labelme(scaled_warped, 'tmp.jpg',
+                                          original_shape,
+                                          ['TL', 'TR', 'BL', 'BR'])
+    with open(f'tmp/{name}_{image_type}.json', 'w') as f:
+        json.dump(json_data, f)
