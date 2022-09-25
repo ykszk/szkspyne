@@ -25,6 +25,12 @@ class PointsPCA(PCA):
         t = top
         return s * (points - t)
 
+    def to_target_space(self, top, bottom, points):
+        height = bottom[1] - top[1]
+        s = self.ref_height / height
+        t = top
+        return points / s + t
+
     def save(self, filename: Union[str, Path], point_counts: List[int]):
         assert 2 * sum(point_counts) == self.mean_.shape[0]
         np.savez(
@@ -80,7 +86,7 @@ if __name__ == '__main__':
         pca = PointsPCA(REF_HEIGHT)
         for vd in valid_data:
             tl = vd['point']['TL'][0]
-            bl = vd['point']['BL'][-1]
+            bl = vd['point']['TL'][-1]
             for l in ['TL', 'TR', 'BL', 'BR']:
                 vd['point'][l] = pca.to_ref_space(tl, bl, vd['point'][l])
 
