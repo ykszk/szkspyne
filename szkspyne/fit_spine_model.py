@@ -9,12 +9,13 @@ from torch.optim import Adam
 from logzero import logger
 import matplotlib.pyplot as plt
 from scipy.ndimage import gaussian_filter
+import point_utils
 
 from PIL import Image
 from szkspyne import labelme_utils
 import json
 
-ANCHOR_LABELS = ['C7-TL', 'C7-TR', 'S-TL', 'S-TR']
+ANCHOR_LABELS = ['C7-TL', 'S-TL']
 ANCHOR_INDICES = [settings.LABEL_NAMES.index(l) for l in ANCHOR_LABELS]
 IMG_HEIGHT = 768
 
@@ -28,29 +29,29 @@ file_id = 'OSC00411_20150805_14'
 heatmaps, h = mhd.read(str(data_dir / image_type / f'{file_id}.mha'))
 heatmaps = heatmaps.transpose(2, 0, 1)
 anchor_maps = [heatmaps[i] for i in ANCHOR_INDICES]
-# %%
-import point_utils
 
-anchor_candidates = point_utils.local_center_of_masses(anchor_maps)
-anchors = []
-for candidates, hm in zip(anchor_candidates, anchor_maps):
-    if len(candidates) == 0:
-        raise NotImplementedError
-    if len(candidates) == 1:
-        anchors.append(candidates[0])
-    else:
-        probas = [hm[int(p[0]), int(p[1])] for p in candidates]
-        anchors.append(candidates[np.argmax(probas)])
 
-# %%
-if True:  #anchors[0][0] <= anchors[1][0]:
-    top_anchor = anchors[0]
-else:
-    top_anchor = anchors[1]
-if True:  #anchors[2][0] >= anchors[3][0]:
-    bottom_anchor = anchors[2]
-else:
-    bottom_anchor = anchors[3]
+def calculate_anchors(anchor_maps):
+    '''
+    Args:
+        anchor_maps: [ch, y, x]
+    '''
+
+    anchor_candidates = point_utils.local_center_of_masses(anchor_maps)
+    anchors = []
+    for candidates, hm in zip(anchor_candidates, anchor_maps):
+        if len(candidates) == 0:
+            raise NotImplementedError
+        if len(candidates) == 1:
+            anchors.append(candidates[0])
+        else:
+            probas = [hm[int(p[0]), int(p[1])] for p in candidates]
+            anchors.append(candidates[np.argmax(probas)])
+
+    return anchors
+
+
+top_anchor, bottom_anchor = calculate_anchors(anchor_maps)
 
 
 class TorchPCA():
@@ -149,7 +150,7 @@ for name, image_type in (('L4', image_type), ('L5', image_type)):
     coefs = Variable(torch.FloatTensor(np.zeros((n_comps), dtype=np.float32)),
                      requires_grad=True)
 
-    for blur_sigma in [10, 1]:
+    for blur_sigma in [10, 0]:
         logger.info('sigma %f', blur_sigma)
         if blur_sigma == 0:
             blurred_hm = heatmaps[:4]
@@ -166,7 +167,7 @@ for name, image_type in (('L4', image_type), ('L5', image_type)):
             for ch, pts in zip(pt_pca.t_heatmap, warped):
                 probas.append(lerp2d(ch, pts))
             loss = torch.log(torch.concat(
-                probas)).mean()  # - 0.01 * torch.linalg.norm(coefs)
+                probas)).mean()  - 0.01 * torch.linalg.norm(coefs)
             history.append(loss.detach().item())
             optimizer.zero_grad()
             loss.backward()
@@ -178,17 +179,16 @@ for name, image_type in (('L4', image_type), ('L5', image_type)):
     bg = Image.open(str(data_dir / image_type / f'{file_id}.jpg'))
     original_shape = bg.size[::-1]
 
-    # mip = heatmaps.max(axis=0)
     mip = heatmaps[:3].transpose((1, 2, 0)).copy()
     mip[:, :, 0] = np.maximum(mip[:, :, 0], heatmaps[3])
     mip = mip[:, :int((IMG_HEIGHT / original_shape[0]) * original_shape[1])]
-    mip[..., 0] = 0
     warped = pca.unravel(pt_pca.ref2pt(pca.warp(coefs.detach().numpy())))
     if True:
         plt.figure(figsize=(10, 10))
         plt.imshow(mip, 'gray')
-        for m in warped:
-            plt.scatter(m[:, 1], m[:, 0], s=10)
+        for m, label in zip(warped, pca.pca['labels']):
+            plt.scatter(m[:, 1], m[:, 0], s=10, label=label)
+        plt.legend()
         plt.show()
 
     bg.thumbnail((IMG_HEIGHT, IMG_HEIGHT))
