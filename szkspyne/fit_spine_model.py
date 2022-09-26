@@ -1,7 +1,5 @@
 # %%
 from pathlib import Path
-import mhd
-import settings
 import numpy as np
 import torch
 from torch.autograd import Variable
@@ -9,11 +7,15 @@ from torch.optim import Adam
 from logzero import logger
 import matplotlib.pyplot as plt
 from scipy.ndimage import gaussian_filter
-import point_utils
-
-from PIL import Image
-from szkspyne import labelme_utils
 import json
+from PIL import Image
+from tqdm import tqdm
+
+import mhd
+from szkspyne import labelme_utils
+from pca_spine import PointsPCA
+import point_utils
+import settings
 
 ANCHOR_LABELS = ['C7-TL', 'S-TL']
 ANCHOR_INDICES = [settings.LABEL_NAMES.index(l) for l in ANCHOR_LABELS]
@@ -90,7 +92,6 @@ class TorchPCA():
 
 EPSILON = np.finfo(float).eps
 
-from pca_spine import PointsPCA
 
 class PatientPCA():
 
@@ -103,11 +104,13 @@ class PatientPCA():
         self.t_heatmap.requires_grad = True
         self.top_anchor = top_anchor
         self.bottom_anchor = bottom_anchor
-        mat_ref2pt = PointsPCA(pca.pca['ref_height']).to_target_mat(top_anchor[::-1], bottom_anchor[::-1]).astype(np.float32)
+        mat_ref2pt = PointsPCA(pca.pca['ref_height']).to_target_mat(
+            top_anchor[::-1], bottom_anchor[::-1]).astype(np.float32)
         # (x, y) to (y, x)
         mat_ref2pt[0, 0], mat_ref2pt[1, 1] = mat_ref2pt[1, 1], mat_ref2pt[0, 0]
         t = mat_ref2pt[:2, 2].copy()
-        mat_ref2pt[0, 2], mat_ref2pt[1, 2] = t[1]/mat_ref2pt[-1,-1], t[0]/mat_ref2pt[-1,-1]
+        mat_ref2pt[0, 2], mat_ref2pt[
+            1, 2] = t[1] / mat_ref2pt[-1, -1], t[0] / mat_ref2pt[-1, -1]
         self.mat_ref2pt = torch.from_numpy(mat_ref2pt)
 
     def ref2pt(self, vec):
@@ -123,6 +126,17 @@ class PatientPCA():
         warp model in the patient space
         '''
         return self.ref2pt(self.pca.warp(coefs))
+
+    def eval_coefs(self, coefs):
+        '''
+        Evaluate given coefs and return probabilities of the points
+        warp -> ref2pt -> unravel -> get probabilities
+        '''
+        warped = self.pca.unravel(self.ref2pt(self.pca.warp(coefs)))
+        probas = []
+        for ch, pts in zip(self.t_heatmap, warped):
+            probas.append(lerp2d(ch, pts))
+        return probas
 
 
 def lerp2d(arr, idx):
@@ -149,7 +163,6 @@ image_type = 'lateral_whole'
 data_dir = Path('../../data/annotation/images') / image_type
 outdir = data_dir  #Path('tmp')
 skipped = []
-from tqdm import tqdm
 for fn in tqdm(sorted((data_dir).glob('*.json'))):
     file_id = fn.stem
     # logger.info(file_id)
@@ -163,7 +176,7 @@ for fn in tqdm(sorted((data_dir).glob('*.json'))):
 
     results = []
     histories = []
-    for name, image_type in (('L4', image_type), ('L5', image_type)):
+    for name in ('L4', 'L5'):
         pca = TorchPCA(f'pca_{image_type}_{name}.npz')
 
         n_comps = pca.calc_n_comps(CONTR_RATE)
@@ -171,32 +184,19 @@ for fn in tqdm(sorted((data_dir).glob('*.json'))):
         coefs = Variable(torch.FloatTensor(
             np.zeros((n_comps), dtype=np.float32)),
                          requires_grad=True)
-        # coefs = coefs.detach().numpy()
-        # pt_pca = PatientPCA(pca, heatmaps, top_anchor, bottom_anchor)
-        # plt.imshow(heatmaps.max(axis=0), 'gray')
-        # warped = pca.unravel(pt_pca.ref2pt(pca.warp(coefs)))
-        # for m, label in zip(warped, pca.pca['labels']):
-        #     plt.scatter(m[:, 1], m[:, 0], s=10, label=label)
-        # plt.legend()
-        # plt.show()
         try:
-        # if True:
             for blur_sigma in [10, 1]:
                 if blur_sigma == 0:
                     blurred_hm = heatmaps
                 else:
-                    blurred_hm = np.array([
-                        gaussian_filter(hm, blur_sigma) for hm in heatmaps
-                    ])
+                    blurred_hm = np.array(
+                        [gaussian_filter(hm, blur_sigma) for hm in heatmaps])
                 pt_pca = PatientPCA(pca, blurred_hm, top_anchor, bottom_anchor)
                 optimizer = Adam([coefs], lr=LR)
 
                 history = []
                 for i in range(N_ITER):
-                    warped = pca.unravel(pt_pca.ref2pt(pca.warp(coefs)))
-                    probas = []
-                    for ch, pts in zip(pt_pca.t_heatmap, warped):
-                        probas.append(lerp2d(ch, pts))
+                    probas = pt_pca.eval_coefs(coefs)
                     loss = -torch.log(torch.concat(
                         probas)).mean() + 0.01 * torch.linalg.norm(coefs)
                     history.append(loss.detach().item())
@@ -205,36 +205,9 @@ for fn in tqdm(sorted((data_dir).glob('*.json'))):
                     optimizer.step()
                 histories.append((name, blur_sigma, history))
             coefs = coefs.detach().numpy()
-        except IndexError:
+        except IndexError:  # updated coefs become really big when warped points completely miss the heatmaps
             continue
-        # except Exception as e:
-        #     print(e)
         results.append((name, history[0], coefs))
-
-        if False:
-            bg = Image.open(str(data_dir / f'{file_id}.jpg'))
-            original_shape = bg.size[::-1]
-
-            mip = heatmaps[:3].transpose((1, 2, 0)).copy()
-            mip[:, :, 0] = np.maximum(mip[:, :, 0], heatmaps[3])
-            mip = mip[:, :int((IMG_HEIGHT / original_shape[0]) *
-                              original_shape[1])]
-            warped = pca.unravel(pt_pca.ref2pt(pca.warp(coefs)))
-            if True:
-                plt.figure(figsize=(10, 10))
-                plt.imshow(mip, 'gray')
-                for m, label in zip(warped, pca.pca['labels']):
-                    plt.scatter(m[:, 1], m[:, 0], s=10, label=label)
-                plt.legend()
-                plt.show()
-
-            bg.thumbnail((IMG_HEIGHT, IMG_HEIGHT))
-            plt.figure(figsize=(10, 10))
-            plt.imshow(np.array(bg), 'gray')
-            for m in warped:
-                plt.scatter(m[:, 1], m[:, 0], s=10)
-            plt.title(name)
-            plt.show()
 
     if len(results) == 0:
         skipped.append(file_id)
@@ -245,7 +218,8 @@ for fn in tqdm(sorted((data_dir).glob('*.json'))):
     results.sort(key=lambda e: e[1])  # sort results by loss
     best_name, best_loss, best_coefs = results[0]
     pca = TorchPCA(f'pca_{image_type}_{best_name}.npz')
-    pt_pca = PatientPCA(pca, heatmaps, top_anchor, bottom_anchor)  # TODO: refactor
+    pt_pca = PatientPCA(pca, heatmaps, top_anchor,
+                        bottom_anchor)  # TODO: refactor
     warped = pca.unravel(pt_pca.ref2pt(pca.warp(best_coefs)))
     s = original_json['imageHeight'] / IMG_HEIGHT
     scaled_warped = [(s * w.numpy()).tolist() for w in warped]

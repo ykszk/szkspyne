@@ -6,6 +6,7 @@ from sklearn.decomposition import PCA
 from logzero import logger
 from pathlib import Path
 from typing import NamedTuple, List, Union
+import itertools
 
 
 class PointConfig(NamedTuple):
@@ -22,7 +23,7 @@ class PointsPCA(PCA):
 
     def to_ref_mat(self, top, bottom):
         top, bottom = np.array(top), np.array(bottom)
-        v = bottom - top
+        v = bottom - top  # type: ignore
         s = self.ref_height / np.linalg.norm(v)
         cos = v[1] / np.linalg.norm(v)
         sin = np.sign(v[0]) * np.sqrt(1 - cos**2)
@@ -37,16 +38,18 @@ class PointsPCA(PCA):
 
     def to_ref_space(self, top, bottom, points):
         mat = self.to_ref_mat(top, bottom)
-        padded = np.pad(points, ((0,0),(0,1)), mode='constant', constant_values=1)
+        padded = np.pad(points, ((0, 0), (0, 1)),
+                        constant_values=1)
         return (mat @ padded.T).T[:, :2]
 
     def to_target_space(self, top, bottom, points):
         mat = self.to_target_mat(top, bottom)
-        padded = np.pad(points, ((0,0),(0,1)), mode='constant', constant_values=1)
+        padded = np.pad(points, ((0, 0), (0, 1)),
+                        constant_values=1)
         return (mat @ padded.T).T[:, :2]
 
     def save(self, filename: Union[str, Path], point_counts: List[int]):
-        assert 2 * sum(point_counts) == self.mean_.shape[0]
+        assert 2 * sum(point_counts) == self.mean_.shape[0]  # type: ignore
         np.savez(
             filename,
             ref_height=self.ref_height,
@@ -58,7 +61,7 @@ class PointsPCA(PCA):
             point_format='xy',
             labels=LABELS,
             point_counts=point_counts)
-import matplotlib.pyplot as plt
+
 
 if __name__ == '__main__':
     filename = '../script/manual_annotation.ndjson'
@@ -72,7 +75,6 @@ if __name__ == '__main__':
         PointConfig('L5', LABELS, L5_POINT_COUNTS),
         # PointConfig('L6', LABELS, L6_POINT_COUNTS, 'lateral_whole'),
     ]
-    import itertools
     for config, image_type in itertools.product(CONFIGS,
                                                 ('ap_whole', 'lateral_whole')):
         logger.info('%s %s', config.name, image_type)
@@ -103,9 +105,6 @@ if __name__ == '__main__':
             bl = vd['point']['TL'][-1]
             for l in ['TL', 'TR', 'BL', 'BR']:
                 vd['point'][l] = pca.to_ref_space(tl, bl, vd['point'][l])
-        # for vd in valid_data[:5]:
-        #     pts = vd['point']['TL']
-        #     plt.scatter(pts[:, 0], pts[:, 1], alpha=.2)
 
         vecs = []
         for vd in valid_data:

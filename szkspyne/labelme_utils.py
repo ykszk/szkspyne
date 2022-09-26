@@ -34,6 +34,8 @@ def conv2shape_dict(json_data: dict) -> dict:
 def kps2shapes(kps, label_names) -> list:
     '''
     Create labelme's `shape` element
+
+    input point format is 'yx'
     '''
     shapes = []
     assert len(label_names) == len(kps)
@@ -51,6 +53,9 @@ def kps2shapes(kps, label_names) -> list:
 
 
 def kps2labelme(kps, image_path, image_hw, label_names, flags={}) -> dict:
+    '''
+    input point format is 'yx'
+    '''
     json_data = {
         "version": "4.5.7",
         "flags": flags,
