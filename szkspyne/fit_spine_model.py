@@ -148,13 +148,11 @@ CONTR_RATE = .999
 image_type = 'lateral_whole'
 data_dir = Path('../../data/annotation/images') / image_type
 outdir = data_dir  #Path('tmp')
-for fn in sorted((data_dir).glob('*.json')):
+skipped = []
+from tqdm import tqdm
+for fn in tqdm(sorted((data_dir).glob('*.json'))):
     file_id = fn.stem
-    logger.info(file_id)
-    # file_id = 'OSC00020_20060809_1'
-    # file_id = 'OSC00029_20061220_1'
-    # file_id = 'OSC00408_20150617_12'
-    # file_id = 'OSC00411_20150805_14'
+    # logger.info(file_id)
 
     heatmaps, h = mhd.read(str(data_dir / f'{file_id}.mha'))
     heatmaps = heatmaps.transpose(2, 0, 1)
@@ -239,7 +237,7 @@ for fn in sorted((data_dir).glob('*.json')):
             plt.show()
 
     if len(results) == 0:
-        print('Skip', file_id)
+        skipped.append(file_id)
         continue
     with open(str(data_dir / f'{file_id}.json')) as f:
         original_json = json.load(f)
@@ -262,6 +260,8 @@ for fn in sorted((data_dir).glob('*.json')):
                                              ['TL', 'TR', 'BL', 'BR'])
     result_shapes.extend(original_shapes)
     result_json['shapes'] = result_shapes
-    result_json['flags'][best_name] = True
+    result_json['flags'] = {best_name: True}
     with open(outdir / f'{file_id}.json', 'w') as f:
         json.dump(result_json, f, indent=2)
+with open('skipped.txt', 'w') as f:
+    f.write('\n'.join(skipped))
