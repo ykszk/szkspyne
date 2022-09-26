@@ -31,17 +31,11 @@ def conv2shape_dict(json_data: dict) -> dict:
     return shape_dict
 
 
-def kps2labelme(kps, image_path, image_hw, label_names) -> dict:
-    json_data = {
-        "version": "4.5.7",
-        "flags": {},
-        "shapes": [],
-        "imagePath": image_path,
-        "imageData": None,
-        "imageHeight": image_hw[0],
-        "imageWidth": image_hw[1]
-    }
-    shapes = json_data['shapes']
+def kps2shapes(kps, label_names) -> list:
+    '''
+    Create labelme's `shape` element
+    '''
+    shapes = []
     assert len(label_names) == len(kps)
     for kps, label in zip(kps, label_names):
         for kp in kps:
@@ -53,6 +47,19 @@ def kps2labelme(kps, image_path, image_hw, label_names) -> dict:
                     "shape_type": "point",
                     "flags": {}
                 })
+    return shapes
+
+
+def kps2labelme(kps, image_path, image_hw, label_names, flags={}) -> dict:
+    json_data = {
+        "version": "4.5.7",
+        "flags": flags,
+        "shapes": kps2shapes(kps, label_names),
+        "imagePath": image_path,
+        "imageData": None,
+        "imageHeight": image_hw[0],
+        "imageWidth": image_hw[1]
+    }
     return json_data
 
 
@@ -89,6 +96,7 @@ def split_ndjson(filename, output_dir):
         if mtime:
             os.utime(outname, (mtime, mtime))
 
+
 def diff_ndjsons(fn1, fn2):
     from logzero import logger
 
@@ -124,6 +132,7 @@ def sort_kps(points):
     }
     return kps
 
+
 def main():
     import argparse
     parser = argparse.ArgumentParser(
@@ -140,7 +149,9 @@ def main():
     p_ndjson.set_defaults(func=command_ndjson)
 
     p_split = subparsers.add_parser(
-        'split_ndjson', help="Split input ndjson and save as json file in the output directory.")
+        'split_ndjson',
+        help="Split input ndjson and save as json file in the output directory."
+    )
     p_split.add_argument('input', help='Input ndjson')
     p_split.add_argument('output', help='Output directory')
 
@@ -148,7 +159,6 @@ def main():
         split_ndjson(args.input, args.output)
 
     p_split.set_defaults(func=command_split)
-
 
     p_diff = subparsers.add_parser('diff', help="Compare two ndjsons.")
     p_diff.add_argument('input1', help='Input ndjson')

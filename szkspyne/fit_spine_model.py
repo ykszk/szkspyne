@@ -19,17 +19,6 @@ ANCHOR_LABELS = ['C7-TL', 'S-TL']
 ANCHOR_INDICES = [settings.LABEL_NAMES.index(l) for l in ANCHOR_LABELS]
 IMG_HEIGHT = 768
 
-data_dir = Path('../../data/annotation/images')
-image_type = 'lateral_whole'
-# file_id = 'OSC00020_20060809_1'
-# file_id = 'OSC00029_20061220_1'
-# file_id = 'OSC00408_20150617_12'
-file_id = 'OSC00411_20150805_14'
-
-heatmaps, h = mhd.read(str(data_dir / image_type / f'{file_id}.mha'))
-heatmaps = heatmaps.transpose(2, 0, 1)
-anchor_maps = [heatmaps[i] for i in ANCHOR_INDICES]
-
 
 def calculate_anchors(anchor_maps):
     '''
@@ -51,9 +40,6 @@ def calculate_anchors(anchor_maps):
     return anchors
 
 
-top_anchor, bottom_anchor = calculate_anchors(anchor_maps)
-
-
 class TorchPCA():
 
     def __init__(self, filename):
@@ -72,6 +58,14 @@ class TorchPCA():
             self.scaled_components.astype(np.float32))
         point_counts = pca['point_counts']
         self.split = [0] + np.cumsum(2 * point_counts).tolist()
+
+    def calc_n_comps(self, contr_rate) -> int:
+        '''
+        calculate the number of components required for the specified contribution ratio
+        '''
+        cs = np.cumsum(self.pca['explained_variance_ratio_'])
+        idx = np.nonzero(cs >= contr_rate)[0][0]
+        return idx + 1
 
     def warp(self, coefs):
         '''
@@ -94,13 +88,17 @@ class TorchPCA():
         return unraveled
 
 
+EPSILON = np.finfo(float).eps
+
+
 class PatientPCA():
 
     def __init__(self, pca, heatmap, top_anchor, bottom_anchor):
         self.pca = pca
+        heatmap = (heatmap / heatmap.max()).astype(np.float32)
+        # heatmap = np.clip(heatmap, EPSILON, None)
         self.heatmap = heatmap
-        self.t_heatmap = torch.from_numpy(
-            (heatmap / heatmap.max()).astype(np.float32))
+        self.t_heatmap = torch.from_numpy(heatmap)
         self.t_heatmap.requires_grad = True
         self.top_anchor = top_anchor
         self.t_top_anchor = torch.from_numpy(
@@ -141,68 +139,114 @@ def lerp2d(arr, idx):
 
 N_ITER = 100
 LR = 0.05
-d_loss = {}
-for name, image_type in (('L4', image_type), ('L5', image_type)):
-    pca = TorchPCA(f'pca_{image_type}_{name}.npz')
+CONTR_RATE = .999
 
-    n_comps = 50
+image_type = 'lateral_whole'
+data_dir = Path('../../data/annotation/images') / image_type
+outdir = data_dir  #Path('tmp')
+for fn in sorted((data_dir).glob('*.json')):
+    file_id = fn.stem
+    logger.info(file_id)
+    # file_id = 'OSC00020_20060809_1'
+    # file_id = 'OSC00029_20061220_1'
+    # file_id = 'OSC00408_20150617_12'
+    # file_id = 'OSC00411_20150805_14'
 
-    coefs = Variable(torch.FloatTensor(np.zeros((n_comps), dtype=np.float32)),
-                     requires_grad=True)
+    heatmaps, h = mhd.read(str(data_dir / f'{file_id}.mha'))
+    heatmaps = heatmaps.transpose(2, 0, 1)
+    heatmaps = heatmaps[:4]
+    anchor_maps = [heatmaps[i] for i in ANCHOR_INDICES]
 
-    for blur_sigma in [10, 0]:
-        logger.info('sigma %f', blur_sigma)
-        if blur_sigma == 0:
-            blurred_hm = heatmaps[:4]
-        else:
-            blurred_hm = np.array(
-                [gaussian_filter(hm, blur_sigma) for hm in heatmaps[:4]])
-        pt_pca = PatientPCA(pca, blurred_hm, top_anchor, bottom_anchor)
-        optimizer = Adam([coefs], lr=LR, maximize=True)
+    top_anchor, bottom_anchor = calculate_anchors(anchor_maps)
 
-        history = []
-        for i in range(N_ITER):
-            warped = pca.unravel(pt_pca.warp(coefs))
-            probas = []
-            for ch, pts in zip(pt_pca.t_heatmap, warped):
-                probas.append(lerp2d(ch, pts))
-            loss = torch.log(torch.concat(
-                probas)).mean()  - 0.01 * torch.linalg.norm(coefs)
-            history.append(loss.detach().item())
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-        plt.plot(history, label=f'{blur_sigma}')
-    plt.legend()
-    d_loss[name] = history[0]
+    results = []
+    histories = []
+    for name, image_type in (('L4', image_type), ('L5', image_type)):
+        pca = TorchPCA(f'pca_{image_type}_{name}.npz')
 
-    bg = Image.open(str(data_dir / image_type / f'{file_id}.jpg'))
-    original_shape = bg.size[::-1]
+        n_comps = pca.calc_n_comps(CONTR_RATE)
 
-    mip = heatmaps[:3].transpose((1, 2, 0)).copy()
-    mip[:, :, 0] = np.maximum(mip[:, :, 0], heatmaps[3])
-    mip = mip[:, :int((IMG_HEIGHT / original_shape[0]) * original_shape[1])]
-    warped = pca.unravel(pt_pca.ref2pt(pca.warp(coefs.detach().numpy())))
-    if True:
-        plt.figure(figsize=(10, 10))
-        plt.imshow(mip, 'gray')
-        for m, label in zip(warped, pca.pca['labels']):
-            plt.scatter(m[:, 1], m[:, 0], s=10, label=label)
-        plt.legend()
-        plt.show()
+        coefs = Variable(torch.FloatTensor(
+            np.zeros((n_comps), dtype=np.float32)),
+                         requires_grad=True)
+        try:
+            for blur_sigma in [10, 1]:
+                if blur_sigma == 0:
+                    blurred_hm = heatmaps
+                else:
+                    blurred_hm = np.array([
+                        gaussian_filter(hm, blur_sigma) for hm in heatmaps
+                    ])
+                pt_pca = PatientPCA(pca, blurred_hm, top_anchor, bottom_anchor)
+                optimizer = Adam([coefs], lr=LR)
 
-    bg.thumbnail((IMG_HEIGHT, IMG_HEIGHT))
-    plt.figure(figsize=(10, 10))
-    plt.imshow(np.array(bg), 'gray')
-    for m in warped:
-        plt.scatter(m[:, 1], m[:, 0], s=10)
-    plt.title(name)
-    plt.show()
+                history = []
+                for i in range(N_ITER):
+                    warped = pca.unravel(pt_pca.warp(coefs))
+                    probas = []
+                    for ch, pts in zip(pt_pca.t_heatmap, warped):
+                        probas.append(lerp2d(ch, pts))
+                    loss = -torch.log(torch.concat(
+                        probas)).mean() + 0.01 * torch.linalg.norm(coefs)
+                    history.append(loss.detach().item())
+                    optimizer.zero_grad()
+                    loss.backward()
+                    optimizer.step()
+                histories.append((name, blur_sigma, history))
+            coefs = coefs.detach().numpy()
+        except Exception as e:
+            break
+        results.append((name, history[0], coefs))
 
-    s = original_shape[0] / IMG_HEIGHT
+        if False:
+            bg = Image.open(str(data_dir / image_type / f'{file_id}.jpg'))
+            original_shape = bg.size[::-1]
+
+            mip = heatmaps[:3].transpose((1, 2, 0)).copy()
+            mip[:, :, 0] = np.maximum(mip[:, :, 0], heatmaps[3])
+            mip = mip[:, :int((IMG_HEIGHT / original_shape[0]) *
+                              original_shape[1])]
+            warped = pca.unravel(pt_pca.ref2pt(pca.warp(coefs)))
+            if True:
+                plt.figure(figsize=(10, 10))
+                plt.imshow(mip, 'gray')
+                for m, label in zip(warped, pca.pca['labels']):
+                    plt.scatter(m[:, 1], m[:, 0], s=10, label=label)
+                plt.legend()
+                plt.show()
+
+            bg.thumbnail((IMG_HEIGHT, IMG_HEIGHT))
+            plt.figure(figsize=(10, 10))
+            plt.imshow(np.array(bg), 'gray')
+            for m in warped:
+                plt.scatter(m[:, 1], m[:, 0], s=10)
+            plt.title(name)
+            plt.show()
+
+    if len(results) == 0:
+        print('Skip', file_id)
+        continue
+    with open(str(data_dir / f'{file_id}.json')) as f:
+        original_json = json.load(f)
+    result_json = original_json.copy()
+    results.sort(key=lambda e: e[1])  # sort results by loss
+    best_name, best_loss, best_coefs = results[0]
+    warped = pca.unravel(pt_pca.ref2pt(pca.warp(best_coefs)))
+    s = original_json['imageHeight'] / IMG_HEIGHT
     scaled_warped = [(s * w.numpy()).tolist() for w in warped]
-    json_data = labelme_utils.kps2labelme(scaled_warped, 'tmp.jpg',
-                                          original_shape,
-                                          ['TL', 'TR', 'BL', 'BR'])
-    with open(f'tmp/{name}_{image_type}.json', 'w') as f:
-        json.dump(json_data, f)
+
+    original_shapes = result_json['shapes']
+    for l in ['TL', 'TR', 'BL', 'BR', 'C7-TL', 'C7-TR', 'S-TL', 'S-TR']:
+        original_shapes = list(
+            filter(
+                lambda shape: shape['label'] != l or shape['shape_type'] !=
+                'point', original_shapes))
+    result_shapes = labelme_utils.kps2shapes(scaled_warped,
+                                             ['TL', 'TR', 'BL', 'BR'])
+    result_shapes.extend(original_shapes)
+    result_json['shapes'] = result_shapes
+    result_json['flags'][best_name] = True
+    with open(outdir / f'{file_id}.json', 'w') as f:
+        json.dump(result_json, f, indent=2)
+    if file_id == 'OSC00008_20060322_1':
+        break
