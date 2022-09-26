@@ -56,3 +56,19 @@ def gaussian2d(shape, mu, sigma, device, dtype):
         vs.append(v)
     gauss = vs[0].view((vs[0].shape[0], 1)) * vs[1].view((1, vs[1].shape[0]))
     return gauss
+
+
+def lerp2d(arr, idx):
+    '''
+    Args:
+        arr: 2d torch tensor
+        idx: [[y, x], ...]
+    '''
+    ia = torch.floor(idx).long()
+    ib = ia + 1
+    a, b = arr[ia[:, 0], ia[:, 1]], arr[ia[:, 0], ib[:, 1]]
+    c, d = arr[ib[:, 0], ia[:, 1]], arr[ib[:, 0], ib[:, 1]]
+    wx = idx[:, 1] - ia[:, 1]
+    wy = idx[:, 0] - ia[:, 0]
+    ab, cd = torch.lerp(a, b, wx), torch.lerp(c, d, wx)
+    return torch.lerp(ab, cd, wy)

@@ -10,16 +10,19 @@ from scipy.ndimage import gaussian_filter
 import json
 from PIL import Image
 from tqdm import tqdm
+import pandas as pd
 
 import mhd
 from szkspyne import labelme_utils
 from pca_spine import PointsPCA
 import point_utils
 import settings
+from torch_utils import lerp2d
 
 ANCHOR_LABELS = ['C7-TL', 'S-TL']
 ANCHOR_INDICES = [settings.LABEL_NAMES.index(l) for l in ANCHOR_LABELS]
 IMG_HEIGHT = 768
+EPSILON = np.finfo(float).eps
 
 
 def calculate_anchors(anchor_maps):
@@ -90,12 +93,9 @@ class TorchPCA():
         return unraveled
 
 
-EPSILON = np.finfo(float).eps
-
-
 class PatientPCA():
 
-    def __init__(self, pca, heatmap, top_anchor, bottom_anchor):
+    def __init__(self, pca: TorchPCA, heatmap, top_anchor, bottom_anchor):
         self.pca = pca
         heatmap = (heatmap / heatmap.max()).astype(np.float32)
         # heatmap = np.clip(heatmap, EPSILON, None)
@@ -139,33 +139,20 @@ class PatientPCA():
         return probas
 
 
-def lerp2d(arr, idx):
-    '''
-    Args:
-        arr: 2d torch tensor
-        idx: [[y, x], ...]
-    '''
-    ia = torch.floor(idx).long()
-    ib = ia + 1
-    a, b = arr[ia[:, 0], ia[:, 1]], arr[ia[:, 0], ib[:, 1]]
-    c, d = arr[ib[:, 0], ia[:, 1]], arr[ib[:, 0], ib[:, 1]]
-    wx = idx[:, 1] - ia[:, 1]
-    wy = idx[:, 0] - ia[:, 0]
-    ab, cd = torch.lerp(a, b, wx), torch.lerp(c, d, wx)
-    return torch.lerp(ab, cd, wy)
-
-
-N_ITER = 100
-LR = 0.05
+MAX_ITER = 200
+PATIENCE = 20
+LR = .1
 CONTR_RATE = .999
+SAVE_HISTORY = False
 
 image_type = 'lateral_whole'
 data_dir = Path('../../data/annotation/images') / image_type
 outdir = data_dir  #Path('tmp')
 skipped = []
+pca_models = [(name, TorchPCA(f'pca_{image_type}_{name}.npz'))
+              for name in ('L4', 'L5')]
 for fn in tqdm(sorted((data_dir).glob('*.json'))):
     file_id = fn.stem
-    # logger.info(file_id)
 
     heatmaps, h = mhd.read(str(data_dir / f'{file_id}.mha'))
     heatmaps = heatmaps.transpose(2, 0, 1)
@@ -176,9 +163,7 @@ for fn in tqdm(sorted((data_dir).glob('*.json'))):
 
     results = []
     histories = []
-    for name in ('L4', 'L5'):
-        pca = TorchPCA(f'pca_{image_type}_{name}.npz')
-
+    for name, pca in pca_models:
         n_comps = pca.calc_n_comps(CONTR_RATE)
 
         coefs = Variable(torch.FloatTensor(
@@ -195,19 +180,41 @@ for fn in tqdm(sorted((data_dir).glob('*.json'))):
                 optimizer = Adam([coefs], lr=LR)
 
                 history = []
-                for i in range(N_ITER):
+                best_loss = 10
+                best_coefs = 0
+                patience = 0
+                for i in range(MAX_ITER):
                     probas = pt_pca.eval_coefs(coefs)
                     loss = -torch.log(torch.concat(
                         probas)).mean() + 0.01 * torch.linalg.norm(coefs)
                     history.append(loss.detach().item())
+                    if history[-1] <= best_loss:
+                        best_loss = history[-1]
+                        best_coefs = coefs.detach().numpy()
+                        patience = 0
+                    else:
+                        patience += 1
+                    if patience >= PATIENCE:
+                        break
                     optimizer.zero_grad()
                     loss.backward()
                     optimizer.step()
-                histories.append((name, blur_sigma, history))
-            coefs = coefs.detach().numpy()
+                if SAVE_HISTORY:
+                    history = pd.DataFrame(history, columns=['loss'])
+                    history['x'] = np.arange(len(history))
+                    history['name'] = name
+                    history['sigma'] = blur_sigma
+                    history['model'] = f'{name}-{blur_sigma}'
+                    histories.append(history)
         except IndexError:  # updated coefs become really big when warped points completely miss the heatmaps
             continue
-        results.append((name, history[0], coefs))
+        results.append((name, best_loss, best_coefs))
+    if SAVE_HISTORY:
+        import seaborn as sns
+        df_history = pd.concat(histories, ignore_index=True)
+        sns.set(context='notebook', style='whitegrid', font='serif')
+        sns.lineplot(data=df_history, x='x', y='loss', hue='model')
+        plt.show()
 
     if len(results) == 0:
         skipped.append(file_id)
@@ -218,8 +225,7 @@ for fn in tqdm(sorted((data_dir).glob('*.json'))):
     results.sort(key=lambda e: e[1])  # sort results by loss
     best_name, best_loss, best_coefs = results[0]
     pca = TorchPCA(f'pca_{image_type}_{best_name}.npz')
-    pt_pca = PatientPCA(pca, heatmaps, top_anchor,
-                        bottom_anchor)  # TODO: refactor
+    pt_pca = PatientPCA(pca, heatmaps, top_anchor, bottom_anchor)
     warped = pca.unravel(pt_pca.ref2pt(pca.warp(best_coefs)))
     s = original_json['imageHeight'] / IMG_HEIGHT
     scaled_warped = [(s * w.numpy()).tolist() for w in warped]
@@ -237,5 +243,6 @@ for fn in tqdm(sorted((data_dir).glob('*.json'))):
     result_json['flags'] = {best_name: True}
     with open(outdir / f'{file_id}.json', 'w') as f:
         json.dump(result_json, f, indent=2)
-with open('skipped.txt', 'w') as f:
-    f.write('\n'.join(skipped))
+if len(skipped) > 0:
+    with open('skipped.txt', 'w') as f:
+        f.write('\n'.join(skipped))
