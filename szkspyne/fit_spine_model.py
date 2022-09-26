@@ -90,6 +90,7 @@ class TorchPCA():
 
 EPSILON = np.finfo(float).eps
 
+from pca_spine import PointsPCA
 
 class PatientPCA():
 
@@ -101,18 +102,21 @@ class PatientPCA():
         self.t_heatmap = torch.from_numpy(heatmap)
         self.t_heatmap.requires_grad = True
         self.top_anchor = top_anchor
-        self.t_top_anchor = torch.from_numpy(
-            np.array(top_anchor).astype(np.float32))
         self.bottom_anchor = bottom_anchor
-        self.pt_height = bottom_anchor[0] - top_anchor[0]
-        self.scale = self.pt_height / pca.pca['ref_height']
+        mat_ref2pt = PointsPCA(pca.pca['ref_height']).to_target_mat(top_anchor[::-1], bottom_anchor[::-1]).astype(np.float32)
+        # (x, y) to (y, x)
+        mat_ref2pt[0, 0], mat_ref2pt[1, 1] = mat_ref2pt[1, 1], mat_ref2pt[0, 0]
+        t = mat_ref2pt[:2, 2].copy()
+        mat_ref2pt[0, 2], mat_ref2pt[1, 2] = t[1]/mat_ref2pt[-1,-1], t[0]/mat_ref2pt[-1,-1]
+        self.mat_ref2pt = torch.from_numpy(mat_ref2pt)
 
     def ref2pt(self, vec):
         '''
         Map points from reference space to patient space
         '''
         vec2d = vec.reshape(-1, 2)
-        return (self.scale * vec2d + self.t_top_anchor).ravel()
+        pt_vec2d = vec2d @ self.mat_ref2pt[:2, :2] + self.mat_ref2pt[:2, 2]
+        return pt_vec2d.ravel()
 
     def warp(self, coefs):
         '''
@@ -154,8 +158,8 @@ for fn in sorted((data_dir).glob('*.json')):
 
     heatmaps, h = mhd.read(str(data_dir / f'{file_id}.mha'))
     heatmaps = heatmaps.transpose(2, 0, 1)
-    heatmaps = heatmaps[:4]
     anchor_maps = [heatmaps[i] for i in ANCHOR_INDICES]
+    heatmaps = heatmaps[:4]
 
     top_anchor, bottom_anchor = calculate_anchors(anchor_maps)
 
@@ -169,7 +173,16 @@ for fn in sorted((data_dir).glob('*.json')):
         coefs = Variable(torch.FloatTensor(
             np.zeros((n_comps), dtype=np.float32)),
                          requires_grad=True)
+        # coefs = coefs.detach().numpy()
+        # pt_pca = PatientPCA(pca, heatmaps, top_anchor, bottom_anchor)
+        # plt.imshow(heatmaps.max(axis=0), 'gray')
+        # warped = pca.unravel(pt_pca.ref2pt(pca.warp(coefs)))
+        # for m, label in zip(warped, pca.pca['labels']):
+        #     plt.scatter(m[:, 1], m[:, 0], s=10, label=label)
+        # plt.legend()
+        # plt.show()
         try:
+        # if True:
             for blur_sigma in [10, 1]:
                 if blur_sigma == 0:
                     blurred_hm = heatmaps
@@ -182,7 +195,7 @@ for fn in sorted((data_dir).glob('*.json')):
 
                 history = []
                 for i in range(N_ITER):
-                    warped = pca.unravel(pt_pca.warp(coefs))
+                    warped = pca.unravel(pt_pca.ref2pt(pca.warp(coefs)))
                     probas = []
                     for ch, pts in zip(pt_pca.t_heatmap, warped):
                         probas.append(lerp2d(ch, pts))
@@ -194,12 +207,14 @@ for fn in sorted((data_dir).glob('*.json')):
                     optimizer.step()
                 histories.append((name, blur_sigma, history))
             coefs = coefs.detach().numpy()
-        except Exception as e:
-            break
+        except IndexError:
+            continue
+        # except Exception as e:
+        #     print(e)
         results.append((name, history[0], coefs))
 
         if False:
-            bg = Image.open(str(data_dir / image_type / f'{file_id}.jpg'))
+            bg = Image.open(str(data_dir / f'{file_id}.jpg'))
             original_shape = bg.size[::-1]
 
             mip = heatmaps[:3].transpose((1, 2, 0)).copy()
@@ -231,6 +246,8 @@ for fn in sorted((data_dir).glob('*.json')):
     result_json = original_json.copy()
     results.sort(key=lambda e: e[1])  # sort results by loss
     best_name, best_loss, best_coefs = results[0]
+    pca = TorchPCA(f'pca_{image_type}_{best_name}.npz')
+    pt_pca = PatientPCA(pca, heatmaps, top_anchor, bottom_anchor)  # TODO: refactor
     warped = pca.unravel(pt_pca.ref2pt(pca.warp(best_coefs)))
     s = original_json['imageHeight'] / IMG_HEIGHT
     scaled_warped = [(s * w.numpy()).tolist() for w in warped]
@@ -248,5 +265,3 @@ for fn in sorted((data_dir).glob('*.json')):
     result_json['flags'][best_name] = True
     with open(outdir / f'{file_id}.json', 'w') as f:
         json.dump(result_json, f, indent=2)
-    if file_id == 'OSC00008_20060322_1':
-        break
