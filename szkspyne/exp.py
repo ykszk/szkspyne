@@ -104,7 +104,7 @@ def main():
         else:
             df = exp_utils.ndjson2csv(fn)
         #        df['pid'] = df['filepath'].map(lambda pid: Path(pid).parts[-1])
-        df['pid'] = df['filepath']  #.map(lambda pid: Path(pid).parts[-1])
+        df['pid'] = df['filepath'].map(lambda pid: Path(pid).parts[1])
         dfs.append(df)
     df_all = pd.concat(dfs, axis=0, ignore_index=True)
     logger.info('All data %d', len(df_all))
@@ -116,7 +116,9 @@ def main():
                   random_state=None if args.debug else 202105)
     for set_id, (_, test_index) in enumerate(kfold.split(pids)):
         idset = set(pids[test_index])
-        df_all.loc[test_index, 'set_id'] = set_id  # type: ignore
+        df_all.loc[df_all['pid'].map(lambda e: e in idset),
+                   'set_id'] = set_id
+        # df_all.loc[test_index, 'set_id'] = set_id  # type: ignore
 
     df_all.to_csv(outroot / 'dataset.csv', index=False)
 
