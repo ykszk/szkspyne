@@ -98,7 +98,7 @@ class PatientPCA():
     def __init__(self, pca: TorchPCA, heatmap, top_anchor, bottom_anchor):
         self.pca = pca
         heatmap = (heatmap / heatmap.max()).astype(np.float32)
-        # heatmap = np.clip(heatmap, EPSILON, None)
+        heatmap = np.clip(heatmap, EPSILON, None)
         self.heatmap = heatmap
         self.t_heatmap = torch.from_numpy(heatmap)
         self.t_heatmap.requires_grad = True
@@ -146,6 +146,7 @@ CONTR_RATE = .999
 SAVE_HISTORY = False
 
 image_type = 'lateral_whole'
+# image_type = 'ap_whole'
 data_dir = Path('../../data/annotation/images') / image_type
 outdir = data_dir  #Path('tmp')
 skipped = []
@@ -180,7 +181,7 @@ for fn in tqdm(sorted((data_dir).glob('*.json'))):
                 optimizer = Adam([coefs], lr=LR)
 
                 history = []
-                best_loss = 10
+                best_loss = 1e100
                 best_coefs = 0
                 patience = 0
                 for i in range(MAX_ITER):
@@ -244,5 +245,5 @@ for fn in tqdm(sorted((data_dir).glob('*.json'))):
     with open(outdir / f'{file_id}.json', 'w') as f:
         json.dump(result_json, f, indent=2)
 if len(skipped) > 0:
-    with open('skipped.txt', 'w') as f:
+    with open(f'skipped_{image_type}.txt', 'w') as f:
         f.write('\n'.join(skipped))
