@@ -34,6 +34,8 @@ device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 # The operator 'aten::index.Tensor' is not current implemented for the MPS device.
 # device = torch.device('mps' if torch.backends.mps.is_available() else 'cpu')
 
+logger.info('Device:%s', device)
+
 
 # %%
 class TorchPCA(nn.Module):
@@ -103,7 +105,7 @@ class PointAlignModel(nn.Module):
         t = mat_ref2pt[:2, 2].copy()
         mat_ref2pt[0, 2], mat_ref2pt[
             1, 2] = t[1] / mat_ref2pt[-1, -1], t[0] / mat_ref2pt[-1, -1]
-        self.mat_ref2pt = torch.from_numpy(mat_ref2pt)
+        self.mat_ref2pt = nn.parameter.Parameter(torch.from_numpy(mat_ref2pt))
         self.mat_ref2pt.requires_grad = False
 
     def ref2pt(self, vec):
@@ -120,9 +122,8 @@ class PointAlignModel(nn.Module):
         '''
         return self.ref2pt(self.pca.warp(self.coefs))
 
-    def to(self, device):
-        super().to(device)
-        self.mat_ref2pt = self.mat_ref2pt.to(device)
+    def parameters(self):
+        return [self.coefs]
 
     def forward(self, heatmap):
         warped = self.pca.unravel(self.warp())
@@ -237,10 +238,10 @@ for fn in tqdm(sorted((data_dir).glob('*.json'))):
     best_name, best_loss, best_coefs = results[0]
     pca = TorchPCA(f'pca_{image_type}_{best_name}.npz')
     pt_pca = PointAlignModel(pca, pca.calc_n_comps(CONTR_RATE), top_anchor,
-                             bottom_anchor)
-    warped = pca.unravel(pt_pca.ref2pt(pca.warp(best_coefs)))
+                             bottom_anchor).to(device)
+    warped = pca.unravel(pt_pca.ref2pt(pca.warp(best_coefs.to(device))))
     s = original_json['imageHeight'] / IMG_HEIGHT
-    scaled_warped = [(s * w.detach().numpy()).tolist() for w in warped]
+    scaled_warped = [(s * w.detach().cpu().numpy()).tolist() for w in warped]
 
     original_shapes = result_json['shapes']
     for l in ['TL', 'TR', 'BL', 'BR', 'C7-TL', 'C7-TR', 'S-TL', 'S-TR']:
