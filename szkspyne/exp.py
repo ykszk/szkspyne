@@ -149,7 +149,7 @@ def main():
                                  size=int(0.1 * len(non_test_pids)),
                                  replace=False))
             train_pids = set(pids) - val_pids
-            if True:  # create ndjson files for train and val sets
+            if True:  # create ndjson files for post processing
                 with open(NDJSON_FILENAME) as f:
                     all_data = [json.loads(l) for l in f.readlines()]
                 for d in all_data:
@@ -161,15 +161,17 @@ def main():
                         d['set'] = 'train'
                     else:
                         d['set'] = 'test'
+
                 def save_ndjson(pids, filename):
-                    save_data = filter(lambda d: d['pid'] in pids,
-                                        all_data)
+                    save_data = filter(lambda d: d['pid'] in pids, all_data)
                     with open(filename, 'w') as f:
                         for d in save_data:
                             f.write(json.dumps(d, ensure_ascii=False))
                             f.write('\n')
+
                 save_ndjson(set(non_test_pids), outdir / 'train_val.ndjson')
-                save_ndjson(set(pids) - set(non_test_pids), outdir / 'test.ndjson')
+                save_ndjson(
+                    set(pids) - set(non_test_pids), outdir / 'test.ndjson')
             df_val = df_train[df_train['pid'].map(lambda e: e in val_pids)]
             df_train = df_train[df_train['pid'].map(lambda e: e in train_pids)]
         df_test = df_all[df_all['set_id'] == test_id]
@@ -292,11 +294,6 @@ def main():
         del dataset, train_loader, val_loader, train_xs, val_xs  # release memory
 
         test_xs, test_kps = load_dataset(df_test, HEIGHT, True)
-        # np.save(outdir / 'kps.npy', np.array(test_kps))
-        mhd.write(outdir / 'x_test.mha', np.stack(test_xs))
-        import pickle
-        with open(outdir / 'kps.pickle', 'wb') as f:
-            pickle.dump(test_kps, f)
 
         def test_transform(img) -> np.ndarray:
             img = transforms.base_transform(img)
@@ -311,12 +308,26 @@ def main():
         assert y_preds is not None
         from szkspyne.apply_model import PROB_MAX
         y_preds = np.concatenate(
-            [(PROB_MAX*y_pred).cpu().numpy().astype(np.int16) for y_pred in y_preds],  # type: ignore
+            [(PROB_MAX * y_pred).cpu().numpy().astype(np.int16)
+             for y_pred in y_preds],  # type: ignore
             axis=0)
         logger.info('End test')
-        y_preds = np.moveaxis(y_preds, 1, -1)  # to channel last
-        mhd.write(outdir / 'y_pred.mha', y_preds,
-                  {'ElementNumberOfChannels': y_preds.shape[-1]})
+        y_preds = np.moveaxis(y_preds, 1, -1).copy()  # to channel last
+        for image_type in ['ap_whole', 'lateral_whole']:
+            with open(outdir / 'test.ndjson') as f:
+                test_data = [json.loads(l) for l in f.readlines()]
+            indices = []
+            for i, data in enumerate(test_data):
+                if data['image_type'] == image_type:
+                    indices.append(i)
+            y_preds_it = y_preds[indices].copy()
+            mhd.write(outdir / f'y_pred_{image_type}.mha', y_preds_it,
+                        {'ElementNumberOfChannels': y_preds_it.shape[-1]})
+            it_data = [test_data[i] for i in indices]
+            with open(outdir / f'test_{image_type}.json', 'w') as f:
+                for data in it_data:
+                    f.write(json.dumps(data))
+                    f.write('\n')
         logger.info('End saving results')
         if USE_TEST_AS_VAL:
             torch.save(
