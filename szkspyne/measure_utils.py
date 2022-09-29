@@ -21,10 +21,10 @@ def corners2midpoints(corners: np.ndarray) -> np.ndarray:
     midpoints = corners[[0, 1]].mean(axis=0), corners[[
         2, 3
     ]].mean(axis=0), corners[[0, 2]].mean(axis=0), corners[[1, 3]].mean(axis=0)
-    return midpoints
+    return np.array(midpoints)
 
 
-def perp(a: np.array) -> np.array:
+def perp(a: np.ndarray) -> np.ndarray:
     b = np.empty_like(a)
     b[0] = -a[1]
     b[1] = a[0]
@@ -53,8 +53,8 @@ def calc_cobb(sup_cnrs: np.ndarray, inf_cnrs: np.ndarray) -> float:
     return np.rad2deg(angle_rad)
 
 
-def calc_intersection(A: np.array, B: np.array, C: np.array,
-                      D: np.array) -> np.array:
+def calc_intersection(A: np.ndarray, B: np.ndarray, C: np.ndarray,
+                      D: np.ndarray) -> np.ndarray:
     '''
 
     https://stackoverflow.com/a/57821199
@@ -74,7 +74,7 @@ def calc_intersection(A: np.array, B: np.array, C: np.array,
 
     # parallel line
     if det == 0:
-        return (float('inf'), float('inf'))
+        return np.array((float('inf'), float('inf')))
 
     # intersect point(x,y)
     x = ((b2 * c1) - (b1 * c2)) / det
@@ -138,8 +138,4 @@ def get_vert_corners(kps):
     vert_corners = np.array(
         [kps[l][:n_vertebrae] for l in ['TL', 'TR', 'BL', 'BR']]).transpose(
             (1, 0, 2))
-    disc_corners = np.array([
-        kps[l][(1 if l in ['TL', 'TR'] else 0):]
-        for l in ['TL', 'TR', 'BL', 'BR']
-    ]).transpose((1, 0, 2))
-    return sacrum_tltr, vert_corners, disc_corners
+    return sacrum_tltr, vert_corners

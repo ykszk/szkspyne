@@ -21,7 +21,7 @@ def measure_ap(lm_data: dict) -> dict:
     points = utils.get_point_dict(lm_data)
     kps = utils.sort_kps(points)
     n_vertebrae = len(kps['BR'])
-    sacrum_tltr, vert_corners, disc_corners = utils.get_vert_corners(kps)
+    sacrum_tltr, vert_corners = utils.get_vert_corners(kps)
 
     logger.info('Compute centroids')
     sacrum_center = sacrum_tltr.mean(axis=0)
@@ -113,7 +113,7 @@ def measure_lateral(lm_data: dict) -> dict:
     measurements = {}
     points = utils.get_point_dict(lm_data)
     kps = utils.sort_kps(points)
-    sacrum_tltr, vert_corners, disc_corners = utils.get_vert_corners(kps)
+    sacrum_tltr, vert_corners = utils.get_vert_corners(kps)
 
     logger.info('Compute centroids')
     sacrum_center = sacrum_tltr.mean(axis=0)
@@ -143,10 +143,12 @@ def measure_lateral(lm_data: dict) -> dict:
 
     # Pelvic Incidence
     circles = get_circle_dict(lm_data)
-    femoral_heads = np.array(circles['FemoralHead'])
-    femoral_center = femoral_heads[:, 0].mean(axis=0)
-    angle = Line(*sacrum_tltr).angle_between(Line(femoral_center, sacrum_center))
-    measurements['PelvicIncidence'] = 90 - np.rad2deg(float(angle.evalf()))
+    femoral_center = None
+    if 'FemoralHead' in circles and len(circles['FemoralHead'])==2:
+        femoral_heads = np.array(circles['FemoralHead'])
+        femoral_center = femoral_heads[:, 0].mean(axis=0)
+        angle = Line(*sacrum_tltr).angle_between(Line(femoral_center, sacrum_center))
+        measurements['PelvicIncidence'] = 90 - np.rad2deg(float(angle.evalf()))
 
     # Sacral Slope
     sacrum_width = np.linalg.norm(sacrum_tltr[1] - sacrum_tltr[0])
@@ -156,14 +158,16 @@ def measure_lateral(lm_data: dict) -> dict:
     measurements['SacralSlope'] = 90 - np.rad2deg(float(angle.evalf()))
 
     # Pelvic Radius Angle
-    angle = Line(*sacrum_tltr).angle_between(Line(femoral_center, sacrum_tltr[1]))
-    measurements['PelvicRadiusAngle'] = (np.rad2deg(float(angle.evalf())))
+    if femoral_center is not None:
+        angle = Line(*sacrum_tltr).angle_between(Line(femoral_center, sacrum_tltr[1]))
+        measurements['PelvicRadiusAngle'] = (np.rad2deg(float(angle.evalf())))
 
     # L5 Incidence Angle
-    l5_sup = vert_sup_cnrs[-1]
-    l5_sup_center = l5_sup.mean(axis=0)
-    angle = Line(*l5_sup).angle_between(Line(femoral_center, l5_sup_center))
-    measurements['L5IncidenceAngle'] = 90 - np.rad2deg(float(angle.evalf()))
+    if femoral_center is not None:
+        l5_sup = vert_sup_cnrs[-1]
+        l5_sup_center = l5_sup.mean(axis=0)
+        angle = Line(*l5_sup).angle_between(Line(femoral_center, l5_sup_center))
+        measurements['L5IncidenceAngle'] = 90 - np.rad2deg(float(angle.evalf()))
 
     # Lumbosacral Angle
     measurements['LumbosacralAngle'] = calc_cobb(vert_inf_cnrs[-1],
