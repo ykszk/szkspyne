@@ -4,7 +4,6 @@ from sympy.geometry import Line, intersection
 from sympy.geometry import Point, Line, Polygon, Segment, Circle, intersection
 import io
 from base64 import b64encode
-import svgwrite
 
 
 def img2b64(img):
@@ -31,14 +30,15 @@ def perp(a: np.array) -> np.array:
     b[1] = a[0]
     return b / np.linalg.norm(b)
 
+
 def rotate_around(pts, angle_rad, origin):
     s, c = np.sin(angle_rad), np.cos(angle_rad)
     r = np.array(((c, -s), (s, c)))
     t = origin
     return r @ (pts - t) + t
 
-def calc_cobb(sup_cnrs: np.ndarray,
-              inf_cnrs: np.ndarray) -> float:
+
+def calc_cobb(sup_cnrs: np.ndarray, inf_cnrs: np.ndarray) -> float:
     '''Calculate Cobb angle in degrees
     '''
     up_line = Line(sup_cnrs[0], sup_cnrs[1])
@@ -51,48 +51,6 @@ def calc_cobb(sup_cnrs: np.ndarray,
     else:
         angle_rad *= -1
     return np.rad2deg(angle_rad)
-
-
-def draw_cobb(sup_cnrs: np.ndarray,
-              inf_cnrs: np.ndarray,
-              dwg: svgwrite.Drawing,
-              group_id: str,
-              color: str,
-              aux_dist: float = 3,
-              text_attrs: dict = {}) -> svgwrite.container.Group:
-    up_line = Line(sup_cnrs[0], sup_cnrs[1])
-    low_line = Line(inf_cnrs[0], inf_cnrs[1])
-    up_low_cross = tuple(intersection(up_line, low_line)[0].evalf())
-    angle_rad = float(up_line.angle_between(low_line).evalf())
-
-    if up_low_cross[0] < sup_cnrs[0, 0]:
-        up_end = sup_cnrs[1]
-        low_end = inf_cnrs[1]
-        pts = up_end + aux_dist * (sup_cnrs[0] - sup_cnrs[1])
-    else:
-        up_end = sup_cnrs[0]
-        low_end = inf_cnrs[0]
-        pts = up_end + aux_dist * (sup_cnrs[1] - sup_cnrs[0])
-        angle_rad *= -1
-
-    aux_cross = Point(rotate_around(pts, angle_rad / 2, up_low_cross))
-    up_aux1 = up_line.projection(aux_cross)
-    up_aux2 = up_aux1 + 1.5 * (aux_cross - up_aux1)
-    up_auxs = np.array((up_aux1.evalf(), up_aux2.evalf()))
-    low_aux1 = low_line.projection(aux_cross)
-    low_aux2 = low_aux1 + 1.5 * (aux_cross - low_aux1)
-    low_auxs = np.array((low_aux1.evalf(), low_aux2.evalf()))
-
-    grp = dwg.add(
-        dwg.g(id=group_id, stroke=color, stroke_width=2.0, fill='none'))
-    grp.add(dwg.path((['M'] + up_end.tolist() + up_auxs[0].tolist())))
-    grp.add(dwg.path((['M'] + up_auxs.tolist())))
-    grp.add(dwg.path((['M'] + low_end.tolist() + low_auxs[0].tolist())))
-    grp.add(dwg.path((['M'] + low_auxs.tolist())))
-    text_angle = '{:.1f}°'.format(np.rad2deg(angle_rad))
-    grp.add(dwg.text(text_angle, insert=tuple(aux_cross.evalf()),
-                     **text_attrs))
-    return grp
 
 
 def calc_intersection(A: np.array, B: np.array, C: np.array,
@@ -131,6 +89,7 @@ def calc_centroid(corners: np.ndarray) -> np.ndarray:
 
 from collections import defaultdict
 
+
 def _get_shape_dict(json_data, shape_type):
     # points = defaultdict(list)
     # for shape in json_data['shapes']:
@@ -145,6 +104,7 @@ def _get_shape_dict(json_data, shape_type):
             points[label].append(shape['points'])
     return points
 
+
 def get_point_dict(json_data):
     points = defaultdict(list)
     for shape in json_data['shapes']:
@@ -152,6 +112,7 @@ def get_point_dict(json_data):
         if shape['shape_type'] == 'point':
             points[label].append(shape['points'][0])
     return points
+
 
 def get_circle_dict(json_data):
     return _get_shape_dict(json_data, 'circle')

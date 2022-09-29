@@ -1,46 +1,22 @@
 from pathlib import Path
 import json
 
-from PIL import Image
 import numpy as np
 from logzero import logger
-import sympy
-from sympy.geometry import Point, Line, Polygon, Segment, Circle, intersection
+from sympy.geometry import Line, intersection
 from sympy import solve
 from sympy.abc import x, y
-import svgwrite
-import yaml
 from szkspyne import measure_utils as utils
-from szkspyne.measure_utils import calc_centroid
+from szkspyne.measure_utils import calc_cobb, calc_centroid, get_circle_dict, perp
 import argparse
-
+LABEL_NAMES = ['TL', 'TR', 'BL', 'BR']
 LINE_WIDTH = 2.0
 POINT_RADIUS = 2.0
 PERP_BOX_SIZE = (20, 20) # perpendicular sign
+HEIGHT, WIDTH = 1000, 1000
 
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(
-        description='argparse example.')  # TODO: change description
-    parser.add_argument('input', help='Input labelme json filename', metavar='<input>', nargs='?', default='data/OSC00503_20210330_1.json')
-    parser.add_argument('output', help='Output json filename', metavar='<output>', nargs='?', default='measurements.json')
-    # parser.add_argument('-o',
-    #                     '--option',
-    #                     help='Optional argument. default: %(default)s',
-    #                     metavar='<name>',
-    #                     default='default')
-    # parser.add_argument('-s',
-    #                     '--switch',
-    #                     help='Switch argument',
-    #                     action='store_true')
-
-    args, unknown = parser.parse_known_args()
-
-    json_fn = Path(args.input)
-    with open(json_fn, encoding='utf8') as f:
-        lm_data = json.load(f)
-
-    LABEL_NAMES = ['TL', 'TR', 'BL', 'BR']
+def measure_ap(lm_data: dict) -> dict:
     measurements = {}
     points = utils.get_point_dict(lm_data)
     kps = utils.sort_kps(points)
@@ -50,7 +26,6 @@ if __name__ == '__main__':
     logger.info('Compute centroids')
     sacrum_center = sacrum_tltr.mean(axis=0)
     vert_centroids = np.array([calc_centroid(c) for c in vert_corners])
-    disc_centroids = np.array([calc_centroid(c) for c in disc_corners])
     logger.info('Compute vecs')
     vert_sup_cnrs = vert_corners[:, :2]
     vert_sup_vecs = vert_sup_cnrs[:, 1] - vert_sup_cnrs[:, 0]
@@ -67,9 +42,9 @@ if __name__ == '__main__':
 
     # cobb angles
     logger.info('Cobb angles')
-    measurements['CobbPT'] = utils.calc_cobb(vert_sup_cnrs[1], vert_inf_cnrs[i_uiv])
-    measurements['CobbMT'] = utils.calc_cobb(vert_sup_cnrs[i_uiv], vert_inf_cnrs[i_liv])
-    measurements['CobbLT'] = utils.calc_cobb(vert_sup_cnrs[i_liv], vert_inf_cnrs[n_vertebrae - 2])
+    measurements['CobbPT'] = calc_cobb(vert_sup_cnrs[1], vert_inf_cnrs[i_uiv])
+    measurements['CobbMT'] = calc_cobb(vert_sup_cnrs[i_uiv], vert_inf_cnrs[i_liv])
+    measurements['CobbLT'] = calc_cobb(vert_sup_cnrs[i_liv], vert_inf_cnrs[n_vertebrae - 2])
 
     # Apical Translation
     vert_apex = vert_centroids[i_apex]
@@ -80,13 +55,8 @@ if __name__ == '__main__':
     measurements['CoronalBalance'] = c7_centroid[0] - sacrum_center[0]
 
     # T1 tilt
-    HEIGHT, WIDTH = 1000, 1000
     c7_centroid = vert_centroids[0]
     c7pl = np.array((c7_centroid, (c7_centroid[0], HEIGHT)))
-    t1_corners = vert_corners[1]
-    t1_sup_vec = vert_sup_vecs[1]
-    aux_vec = np.array([1, 0])
-    t1_width = np.linalg.norm(t1_corners[1] - t1_corners[0])
     line_t1 = Line(vert_corners[1, 0], vert_corners[1, 1])
     aux_t1_tilt = np.array([
         float(e) for e in intersection(Line(c7pl[0], c7pl[1]), line_t1)[0].evalf()
@@ -118,9 +88,6 @@ if __name__ == '__main__':
     pelvic_ref_line = Line(pelvic_kps[0], pelvic_kps[1])
     y_up = pelvic_kps[:, 1].min()
     hline = Line((0, y_up), (WIDTH, y_up))
-    pelvic_cross = [
-        float(e) for e in intersection(pelvic_ref_line, hline)[0].evalf()
-    ]
     angle = hline.angle_between(pelvic_ref_line)
     if pelvic_kps[0, 1] > pelvic_kps[1, 1]:
         angle *= -1
@@ -131,16 +98,98 @@ if __name__ == '__main__':
     assert femoral_kps.shape == (2, 2)
     femoral_kps = np.array(sorted(femoral_kps, key=lambda e: e[0]))  # sort by x
     y_up = femoral_kps[:, 1].min()
-    y_low = femoral_kps[:, 1].max()
     measurements['LegLengthDiscrepancy'] = femoral_kps[1, 1] - femoral_kps[0, 1]
 
     # Sacral Obliquity
-    femoral_line = Line(femoral_kps[0], femoral_kps[1])
     sacrum_line = Line(sacrum_tltr[0], sacrum_tltr[1])
     x_pos1, x_pos2 = femoral_kps[:, 0]
     y_pos1 = float(solve(sacrum_line.equation(x, y).subs(x, x_pos1).evalf())[0])
     y_pos2 = float(solve(sacrum_line.equation(x, y).subs(x, x_pos2).evalf())[0])
-    measurements['SacralObliquity'] = utils.calc_cobb(np.array([[x_pos1, y_pos1], [x_pos2, y_pos2]]), femoral_kps)
+    measurements['SacralObliquity'] = calc_cobb(np.array([[x_pos1, y_pos1], [x_pos2, y_pos2]]), femoral_kps)
 
+    return measurements
+
+def measure_lateral(lm_data: dict) -> dict:
+    measurements = {}
+    points = utils.get_point_dict(lm_data)
+    kps = utils.sort_kps(points)
+    sacrum_tltr, vert_corners, disc_corners = utils.get_vert_corners(kps)
+
+    logger.info('Compute centroids')
+    sacrum_center = sacrum_tltr.mean(axis=0)
+    logger.info('Compute vecs')
+    vert_sup_cnrs = vert_corners[:, :2]
+    vert_sup_vecs = vert_sup_cnrs[:, 1] - vert_sup_cnrs[:, 0]
+    vert_sup_vecs /= np.linalg.norm(vert_sup_vecs, axis=1, keepdims=True)
+    vert_inf_cnrs = vert_corners[:, 2:]
+    vert_inf_vecs = vert_inf_cnrs[:, 1] - vert_inf_cnrs[:, 0]
+    vert_inf_vecs /= np.linalg.norm(vert_inf_vecs, axis=1, keepdims=True)
+
+
+    # Thoracic kyphosis
+    sup = vert_sup_cnrs[2]
+    inf = vert_inf_cnrs[12]
+    measurements['Thoracickyphosis'] = calc_cobb(sup, inf)
+
+    # Mid/Lower thoracic kyphosis
+    sup = vert_sup_cnrs[5]
+    inf = vert_inf_cnrs[12]
+    measurements['Mid/Lowerthoracickyphosis'] = calc_cobb(sup, inf)
+
+    # Proximal thoracic kyphosis
+    sup = vert_sup_cnrs[2]
+    inf = vert_inf_cnrs[5]
+    measurements['Proximalthoracickyphosis'] = calc_cobb(sup, inf)
+
+    # Pelvic Incidence
+    circles = get_circle_dict(lm_data)
+    femoral_heads = np.array(circles['FemoralHead'])
+    femoral_center = femoral_heads[:, 0].mean(axis=0)
+    angle = Line(*sacrum_tltr).angle_between(Line(femoral_center, sacrum_center))
+    measurements['PelvicIncidence'] = 90 - np.rad2deg(float(angle.evalf()))
+
+    # Sacral Slope
+    sacrum_width = np.linalg.norm(sacrum_tltr[1] - sacrum_tltr[0])
+    sacrum_hl = sacrum_tltr[0] + sacrum_width * np.array(
+        (np.sign(sacrum_tltr[1, 0] - sacrum_tltr[0, 0]), 0))
+    angle = Line(*sacrum_tltr).angle_between(Line(sacrum_tltr[0], sacrum_hl))
+    measurements['SacralSlope'] = 90 - np.rad2deg(float(angle.evalf()))
+
+    # Pelvic Radius Angle
+    angle = Line(*sacrum_tltr).angle_between(Line(femoral_center, sacrum_tltr[1]))
+    measurements['PelvicRadiusAngle'] = (np.rad2deg(float(angle.evalf())))
+
+    # L5 Incidence Angle
+    l5_sup = vert_sup_cnrs[-1]
+    l5_sup_center = l5_sup.mean(axis=0)
+    angle = Line(*l5_sup).angle_between(Line(femoral_center, l5_sup_center))
+    measurements['L5IncidenceAngle'] = 90 - np.rad2deg(float(angle.evalf()))
+
+    # Lumbosacral Angle
+    measurements['LumbosacralAngle'] = calc_cobb(vert_inf_cnrs[-1],
+                    sacrum_tltr)
+    return measurements
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(
+        description='Measure scoliosis parameters from the given labelme annotation file.')
+    parser.add_argument('input', help='Input labelme json filename', metavar='<input>')
+    parser.add_argument('output', help='Output json filename', metavar='<output>')
+    parser.add_argument('--image_type',
+                        help='Image type. default: %(default)s',
+                        choices=['ap', 'lateral'],
+                        metavar='<name>',
+                        default='ap')
+
+    args, unknown = parser.parse_known_args()
+
+    json_fn = Path(args.input)
+    with open(json_fn, encoding='utf8') as f:
+        lm_data = json.load(f)
+
+    if args.image_type == 'ap':
+        measurements = measure_ap(lm_data)
+    else:
+        measurements = measure_lateral(lm_data)
     with open(args.output, 'w') as f:
         json.dump(measurements, f, indent=False)
