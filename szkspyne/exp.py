@@ -108,7 +108,7 @@ def main():
         dfs.append(df)
     df_all = pd.concat(dfs, axis=0, ignore_index=True)
     logger.info('All data %d', len(df_all))
-    pids = df_all['pid']
+    pids = df_all['pid'].unique()
     K_FOLD = args.fold
     df_all['set_id'] = -1
     kfold = KFold(n_splits=K_FOLD,
@@ -119,7 +119,6 @@ def main():
         df_all.loc[df_all['pid'].map(lambda e: e in idset),
                    'set_id'] = set_id
         # df_all.loc[test_index, 'set_id'] = set_id  # type: ignore
-
     df_all.to_csv(outroot / 'dataset.csv', index=False)
 
     USE_TEST_AS_VAL = args.holdout
@@ -149,15 +148,17 @@ def main():
         logger.info('test set: %d', test_id)
         outdir = outroot / '{}'.format(test_id)
         outdir.mkdir(parents=True, exist_ok=True)
-        val_id = (test_id + 1) % K_FOLD
-        train_ids = [i for i in range(K_FOLD) if i != test_id and i != val_id]
+        train_ids = [i for i in range(K_FOLD) if i != test_id]
         if USE_TEST_AS_VAL:
-            train_ids = train_ids + [val_id]
             df_train = df_all[df_all['set_id'].map(lambda e: e in train_ids)]
             df_val = df_all[df_all['set_id'] == test_id]
         else:
             df_train = df_all[df_all['set_id'].map(lambda e: e in train_ids)]
-            df_val = df_all[df_all['set_id'] == val_id]
+            pids = df_train['pid'].unique()
+            val_pids = set(np.random.choice(pids, size=int(0.1 * len(pids)), replace=False))
+            train_pids = set(pids) - val_pids
+            df_val = df_train[df_train['pid'].map(lambda e: e in val_pids)]
+            df_train = df_train[df_train['pid'].map(lambda e: e in train_pids)]
         df_test = df_all[df_all['set_id'] == test_id]
         df_test.to_csv(outdir / 'testset.csv', index=False)
         logger.info('train, val, test = %d, %d, %d', len(df_train),
