@@ -46,10 +46,11 @@ class PointsPCA(PCA):
         padded = np.pad(points, ((0, 0), (0, 1)), constant_values=1)
         return (mat @ padded.T).T[:, :2]
 
-    def save(self, filename: Union[str, Path], point_counts: List[int]):
+    def save(self, filename: Union[str, Path], model_name: str, point_counts: List[int]):
         assert 2 * sum(point_counts) == self.mean_.shape[0]  # type: ignore
         np.savez(
             filename,
+            model_name=model_name,
             ref_height=self.ref_height,
             mean=self.mean_,  # type: ignore
             components=self.components_,  # type: ignore
@@ -86,7 +87,7 @@ if __name__ == '__main__':
     #                     action='store_true')
 
     args, unknown = parser.parse_known_args()
-    logger.warn('Unknown arguments:%s', unknown)
+    logger.warning('Unknown arguments:%s', unknown)
     outdir = Path(args.output)
     REF_HEIGHT = 1000
     LABELS = ['TL', 'TR', 'BL', 'BR']
@@ -140,4 +141,4 @@ if __name__ == '__main__':
 
         pca.fit(vecs)
         npz_filename = outdir / f'pca_{image_type}_{config.name}.npz'
-        pca.save(npz_filename, config.point_counts)
+        pca.save(npz_filename, config.name, config.point_counts)
