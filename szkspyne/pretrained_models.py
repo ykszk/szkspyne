@@ -63,9 +63,8 @@ class LitSMP(pl.LightningModule):
         self.log('val_loss', loss, sync_dist=True)
         return loss
 
-    def predict_step(self, batch, batch_idx: int, dataloader_idx: int = None):
-        return torch.clamp(torch.round(255 * self(batch)), 0,
-                           255).to(torch.uint8)
+    def predict_step(self, batch, batch_idx, dataloader_idx = None):
+        return torch.sigmoid(self(batch))
 
     def configure_optimizers(self):
         optimizer = optim.Adam(self.parameters(), self.lr)

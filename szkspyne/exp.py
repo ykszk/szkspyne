@@ -153,14 +153,23 @@ def main():
                 with open(NDJSON_FILENAME) as f:
                     all_data = [json.loads(l) for l in f.readlines()]
                 for d in all_data:
-                    d['pid'] = Path(d['filepath']).parts[1]
-                    d['set'] = 'val' if d['pid'] in val_pids else 'train'
-                train_data = filter(lambda d: d['pid'] in non_test_pids,
-                                    all_data)
-                with open(outdir / 'train_val.ndjson', 'w') as f:
-                    for d in train_data:
-                        f.write(json.dumps(d, ensure_ascii=False))
-                        f.write('\n')
+                    pid = Path(d['filepath']).parts[1]
+                    d['pid'] = pid
+                    if pid in val_pids:
+                        d['set'] = 'val'
+                    elif pid in train_pids:
+                        d['set'] = 'train'
+                    else:
+                        d['set'] = 'test'
+                def save_ndjson(pids, filename):
+                    save_data = filter(lambda d: d['pid'] in pids,
+                                        all_data)
+                    with open(filename, 'w') as f:
+                        for d in save_data:
+                            f.write(json.dumps(d, ensure_ascii=False))
+                            f.write('\n')
+                save_ndjson(set(non_test_pids), outdir / 'train_val.ndjson')
+                save_ndjson(set(pids) - set(non_test_pids), outdir / 'test.ndjson')
             df_val = df_train[df_train['pid'].map(lambda e: e in val_pids)]
             df_train = df_train[df_train['pid'].map(lambda e: e in train_pids)]
         df_test = df_all[df_all['set_id'] == test_id]
@@ -216,7 +225,7 @@ def main():
         loader_kwargs = dict(batch_size=BATCH_SIZE,
                              pin_memory=True,
                              num_workers=NUM_WORKERS,
-                             prefetch_factor=4)
+                             prefetch_factor=2)
         dataset = point_utils.KeypointDataset(train_xs,
                                               train_kps,
                                               None,
@@ -280,7 +289,7 @@ def main():
                           transparent=True,
                           bbox_inches='tight')
 
-        del dataset, train_loader, val_loader  # release memory
+        del dataset, train_loader, val_loader, train_xs, val_xs  # release memory
 
         test_xs, test_kps = load_dataset(df_test, HEIGHT, True)
         # np.save(outdir / 'kps.npy', np.array(test_kps))
@@ -300,8 +309,9 @@ def main():
         logger.info('Start test')
         y_preds = trainer.predict(dataloaders=test_loader, ckpt_path='best')
         assert y_preds is not None
+        from szkspyne.apply_model import PROB_MAX
         y_preds = np.concatenate(
-            [y_pred.cpu().numpy() for y_pred in y_preds],  # type: ignore
+            [(PROB_MAX*y_pred).cpu().numpy().astype(np.int16) for y_pred in y_preds],  # type: ignore
             axis=0)
         logger.info('End test')
         y_preds = np.moveaxis(y_preds, 1, -1)  # to channel last
@@ -312,6 +322,7 @@ def main():
             torch.save(
                 lit_model.model.to('cpu').state_dict(),
                 outdir / 'checkpoint' / 'best.pth')
+        del y_preds, test_loader, dataset, test_xs, test_kps
 
     for test_id in range(K_FOLD):
         train_test(test_id)
