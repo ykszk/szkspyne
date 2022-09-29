@@ -44,6 +44,7 @@ class TorchPCA(nn.Module):
         super().__init__()
         pca = np.load(filename)
         self.pca = pca
+        self.model_name = str(pca['model_name'])
         if pca['point_format'] != 'xy':
             raise NotImplementedError
         self.mean = nn.parameter.Parameter(torch.from_numpy(
@@ -155,109 +156,138 @@ def calculate_anchors(anchor_maps):
 
 image_type = 'lateral_whole'
 # image_type = 'ap_whole'
-data_dir = Path('../../data/annotation/images') / image_type
-outdir = data_dir
-skipped = []
-l2_reg = .01
-pca_models = [(name, TorchPCA(f'pca_{image_type}_{name}.npz'))
-              for name in ('L4', 'L5')]
-for fn in tqdm(sorted((data_dir).glob('*.json'))):
-    file_id = fn.stem
+if __name__ == '__main__':
+    import argparse
+    parser = argparse.ArgumentParser(
+        description='Fit PCA point model to the given heatmap.')
+    parser.add_argument('input',
+                        help='Input data directory',
+                        metavar='<input>',
+                        nargs='?',
+                        default=Path('../../data/annotation/images') /
+                        image_type)
+    parser.add_argument(
+        '--output', help='Output directory. Use input directory by default.')
+    parser.add_argument('--skipped',
+                        help='Optional argument. default: %(default)s',
+                        metavar='<name>',
+                        default=f'skipped_{image_type}.txt')
+    parser.add_argument('--channel_first',
+                        help='Heatmap is in channel-first format',
+                        action='store_true')
 
-    heatmaps, h = mhd.read(str(data_dir / f'{file_id}.mha'))
-    heatmaps = heatmaps.transpose(2, 0, 1)
-    anchor_maps = [heatmaps[i] for i in ANCHOR_INDICES]
-    heatmaps = heatmaps[:4]
+    args, unknown = parser.parse_known_args()
+    logger.warning('Unknown arguments:%s', unknown)
 
-    top_anchor, bottom_anchor = calculate_anchors(anchor_maps)
+    data_dir = Path(args.input)
+    outdir = data_dir
+    if args.output:
+        outidr = Path(args.output)
+    skipped = []
+    l2_reg = .01
+    channel_first = False
+    pca_models = [TorchPCA(f'pca_{image_type}_{name}.npz')
+                  for name in ('L4', 'L5')]
+    for fn in tqdm(sorted((data_dir).glob('*.json'))):
+        file_id = fn.stem
 
-    results = []
-    histories = []
-    for name, pca in pca_models:
-        n_comps = pca.calc_n_comps(CONTR_RATE)
-        pt_pca = PointAlignModel(pca, n_comps, top_anchor, bottom_anchor)
-        pt_pca.to(device)
-        optimizer = Adam([pt_pca.coefs], lr=LR)
+        heatmaps, h = mhd.read(str(data_dir / f'{file_id}.mha'))
+        if not channel_first:
+            heatmaps = heatmaps.transpose(2, 0, 1)
+        anchor_maps = [heatmaps[i] for i in ANCHOR_INDICES]
+        heatmaps = heatmaps[:4]
 
-        try:
-            for blur_sigma in [10, 1]:
-                if blur_sigma == 0:
-                    blurred_hm = heatmaps
-                else:
-                    blurred_hm = np.array(
-                        [gaussian_filter(hm, blur_sigma) for hm in heatmaps])
-                blurred_hm = (blurred_hm / blurred_hm.max()).astype(np.float32)
-                blurred_hm = np.clip(blurred_hm, EPSILON, None)
-                t_heatmaps = torch.from_numpy(blurred_hm).to(device)
-                t_heatmaps.requires_grad = True
+        top_anchor, bottom_anchor = calculate_anchors(anchor_maps)
 
-                history = []
-                best_loss = 1e100
-                best_coefs = 0
-                patience = 0
-                for i in range(MAX_ITER):
-                    probas = pt_pca(t_heatmaps)
-                    loss = -torch.log(torch.concat(probas)).mean(
-                    ) + l2_reg * torch.linalg.norm(pt_pca.coefs)
-                    history.append(loss.detach().item())
-                    if history[-1] <= best_loss:
-                        best_loss = history[-1]
-                        best_coefs = pt_pca.coefs.detach()
-                        patience = 0
+        results = []
+        histories = []
+        for pca in pca_models:
+            name = pca.model_name
+            n_comps = pca.calc_n_comps(CONTR_RATE)
+            pt_pca = PointAlignModel(pca, n_comps, top_anchor, bottom_anchor)
+            pt_pca.to(device)
+            optimizer = Adam([pt_pca.coefs], lr=LR)
+
+            try:
+                for blur_sigma in [10, 1]:
+                    if blur_sigma == 0:
+                        blurred_hm = heatmaps
                     else:
-                        patience += 1
-                    if patience >= PATIENCE:
-                        break
-                    optimizer.zero_grad()
-                    loss.backward()
-                    optimizer.step()
-                if SAVE_HISTORY:
-                    history = pd.DataFrame(history, columns=['loss'])
-                    history['x'] = np.arange(len(history))
-                    history['name'] = name
-                    history['sigma'] = blur_sigma
-                    history['model'] = f'{name}-{blur_sigma}'
-                    histories.append(history)
-        except IndexError:  # updated coefs become really big when warped points completely miss the heatmaps
+                        blurred_hm = np.array([
+                            gaussian_filter(hm, blur_sigma) for hm in heatmaps
+                        ])
+                    blurred_hm = (blurred_hm / blurred_hm.max()).astype(
+                        np.float32)
+                    blurred_hm = np.clip(blurred_hm, EPSILON, None)
+                    t_heatmaps = torch.from_numpy(blurred_hm).to(device)
+                    t_heatmaps.requires_grad = True
+
+                    history = []
+                    best_loss = 1e100
+                    best_coefs = 0
+                    patience = 0
+                    for i in range(MAX_ITER):
+                        probas = pt_pca(t_heatmaps)
+                        loss = -torch.log(torch.concat(probas)).mean(
+                        ) + l2_reg * torch.linalg.norm(pt_pca.coefs)
+                        history.append(loss.detach().item())
+                        if history[-1] <= best_loss:
+                            best_loss = history[-1]
+                            best_coefs = pt_pca.coefs.detach()
+                            patience = 0
+                        else:
+                            patience += 1
+                        if patience >= PATIENCE:
+                            break
+                        optimizer.zero_grad()
+                        loss.backward()
+                        optimizer.step()
+                    if SAVE_HISTORY:
+                        history = pd.DataFrame(history, columns=['loss'])
+                        history['x'] = np.arange(len(history))
+                        history['name'] = name
+                        history['sigma'] = blur_sigma
+                        history['model'] = f'{name}-{blur_sigma}'
+                        histories.append(history)
+            except IndexError:  # updated coefs become really big when warped points completely miss the heatmaps
+                continue
+            results.append((name, best_loss, best_coefs))
+        if SAVE_HISTORY:
+            import seaborn as sns
+            df_history = pd.concat(histories, ignore_index=True)
+            sns.set(context='notebook', style='whitegrid', font='serif')
+            sns.lineplot(data=df_history, x='x', y='loss', hue='model')
+            plt.show()
+
+        if len(results) == 0:
+            skipped.append(file_id)
             continue
-        results.append((name, best_loss, best_coefs))
-    if SAVE_HISTORY:
-        import seaborn as sns
-        df_history = pd.concat(histories, ignore_index=True)
-        sns.set(context='notebook', style='whitegrid', font='serif')
-        sns.lineplot(data=df_history, x='x', y='loss', hue='model')
-        plt.show()
+        with open(str(data_dir / f'{file_id}.json')) as f:
+            original_json = json.load(f)
+        result_json = original_json.copy()
+        results.sort(key=lambda e: e[1])  # sort results by loss
+        best_name, best_loss, best_coefs = results[0]
+        pca = TorchPCA(f'pca_{image_type}_{best_name}.npz')
+        pt_pca = PointAlignModel(pca, pca.calc_n_comps(CONTR_RATE), top_anchor,
+                                 bottom_anchor).to(device)
+        warped = pca.unravel(pt_pca.ref2pt(pca.warp(best_coefs.to(device))))
+        s = original_json['imageHeight'] / IMG_HEIGHT
+        scaled_warped = [(s * w.detach().cpu().numpy()).tolist()
+                         for w in warped]
 
-    if len(results) == 0:
-        skipped.append(file_id)
-        continue
-    with open(str(data_dir / f'{file_id}.json')) as f:
-        original_json = json.load(f)
-    result_json = original_json.copy()
-    results.sort(key=lambda e: e[1])  # sort results by loss
-    best_name, best_loss, best_coefs = results[0]
-    pca = TorchPCA(f'pca_{image_type}_{best_name}.npz')
-    pt_pca = PointAlignModel(pca, pca.calc_n_comps(CONTR_RATE), top_anchor,
-                             bottom_anchor).to(device)
-    warped = pca.unravel(pt_pca.ref2pt(pca.warp(best_coefs.to(device))))
-    s = original_json['imageHeight'] / IMG_HEIGHT
-    scaled_warped = [(s * w.detach().cpu().numpy()).tolist() for w in warped]
-
-    original_shapes = result_json['shapes']
-    for l in ['TL', 'TR', 'BL', 'BR', 'C7-TL', 'C7-TR', 'S-TL', 'S-TR']:
-        original_shapes = list(
-            filter(
-                lambda shape: shape['label'] != l or shape['shape_type'] !=
-                'point', original_shapes))
-    result_shapes = labelme_utils.kps2shapes(scaled_warped,
-                                             ['TL', 'TR', 'BL', 'BR'])
-    result_shapes.extend(original_shapes)
-    result_json['shapes'] = result_shapes
-    result_json['flags'] = {best_name: True}
-    with open(outdir / f'{file_id}.json', 'w') as f:
-        json.dump(result_json, f, indent=2)
-if len(skipped) > 0:
-    with open(f'skipped_{image_type}.txt', 'w') as f:
-        f.write('\n'.join(skipped))
-
-# %%
+        original_shapes = result_json['shapes']
+        for l in ['TL', 'TR', 'BL', 'BR', 'C7-TL', 'C7-TR', 'S-TL', 'S-TR']:
+            original_shapes = list(
+                filter(
+                    lambda shape: shape['label'] != l or shape['shape_type'] !=
+                    'point', original_shapes))
+        result_shapes = labelme_utils.kps2shapes(scaled_warped,
+                                                 ['TL', 'TR', 'BL', 'BR'])
+        result_shapes.extend(original_shapes)
+        result_json['shapes'] = result_shapes
+        result_json['flags'] = {best_name: True}
+        with open(outdir / f'{file_id}.json', 'w') as f:
+            json.dump(result_json, f, indent=2)
+    if len(skipped) > 0:
+        with open(args.skipped, 'w') as f:
+            f.write('\n'.join(skipped))
