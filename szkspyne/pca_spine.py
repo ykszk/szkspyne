@@ -11,6 +11,7 @@ import itertools
 
 class PointConfig(NamedTuple):
     name: str
+    image_type: str
     labels: List[str]
     point_counts: List[int]
 
@@ -46,7 +47,7 @@ class PointsPCA(PCA):
         padded = np.pad(points, ((0, 0), (0, 1)), constant_values=1)
         return (mat @ padded.T).T[:, :2]
 
-    def save(self, filename: Union[str, Path], model_name: str, point_counts: List[int]):
+    def save(self, filename: Union[str, Path], model_name: str, labels: List[str], point_counts: List[int]):
         assert 2 * sum(point_counts) == self.mean_.shape[0]  # type: ignore
         np.savez(
             filename,
@@ -58,7 +59,7 @@ class PointsPCA(PCA):
             explained_variance_ratio_=self.
             explained_variance_ratio_,  # type: ignore
             point_format='xy',
-            labels=LABELS,
+            labels=labels,
             point_counts=point_counts)
 
 
@@ -94,13 +95,19 @@ if __name__ == '__main__':
     L5_POINT_COUNTS = [19, 19, 18, 18]
     L4_POINT_COUNTS = (np.array(L5_POINT_COUNTS) - 1).tolist()
     L6_POINT_COUNTS = (np.array(L5_POINT_COUNTS) + 1).tolist()
+    LABELS_EXT = LABELS + ['Shoulder', 'Clavicle', 'Pelvis', 'Iliac',
+    'FemoralHead']
     CONFIGS = [
-        PointConfig('L4', LABELS, L4_POINT_COUNTS),
-        PointConfig('L5', LABELS, L5_POINT_COUNTS),
+        PointConfig('L4', 'ap_whole', LABELS, L4_POINT_COUNTS),
+        PointConfig('L5', 'ap_whole', LABELS, L5_POINT_COUNTS),
+        PointConfig('L4', 'lateral_whole', LABELS, L4_POINT_COUNTS),
+        PointConfig('L5', 'lateral_whole', LABELS, L5_POINT_COUNTS),
+        PointConfig('L4-EXT', 'ap_whole', LABELS_EXT, L4_POINT_COUNTS + [2]*5),
+        PointConfig('L5-EXT', 'ap_whole', LABELS_EXT, L5_POINT_COUNTS + [2]*5),
         # PointConfig('L6', LABELS, L6_POINT_COUNTS, 'lateral_whole'),
     ]
-    for config, image_type in itertools.product(CONFIGS,
-                                                ('ap_whole', 'lateral_whole')):
+    for config in CONFIGS:
+        image_type = config.image_type
         logger.info('%s %s', config.name, image_type)
         with open(args.input) as f:
             data = [json.loads(line) for line in f]
@@ -116,7 +123,7 @@ if __name__ == '__main__':
             d['point'] = np_pts
             valid = True
             for l, n in zip(config.labels, config.point_counts):
-                if ns[l] != n:
+                if l not in ns or ns[l] != n:
                     valid = False
                     break
             if valid:
@@ -127,13 +134,13 @@ if __name__ == '__main__':
         for vd in valid_data:
             tl = vd['point']['TL'][0]
             bl = vd['point']['TL'][-1]
-            for l in ['TL', 'TR', 'BL', 'BR']:
+            for l in config.labels:
                 vd['point'][l] = pca.to_ref_space(tl, bl, vd['point'][l])
 
         vecs = []
         for vd in valid_data:
             pts = []
-            for l in ['TL', 'TR', 'BL', 'BR']:
+            for l in config.labels:
                 pts.append(vd['point'][l])
             pts = np.concatenate(pts).ravel()
             vecs.append(pts)
@@ -141,4 +148,4 @@ if __name__ == '__main__':
 
         pca.fit(vecs)
         npz_filename = outdir / f'pca_{image_type}_{config.name}.npz'
-        pca.save(npz_filename, config.name, config.point_counts)
+        pca.save(npz_filename, config.name, config.labels, config.point_counts)

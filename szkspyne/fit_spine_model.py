@@ -44,6 +44,7 @@ class TorchPCA(nn.Module):
         super().__init__()
         pca = np.load(filename)
         self.pca = pca
+        self.labels = [str(l) for l in pca['labels']]
         self.model_name = str(pca['model_name'])
         if pca['point_format'] != 'xy':
             raise NotImplementedError
@@ -129,6 +130,7 @@ class PointAlignModel(nn.Module):
     def forward(self, heatmap):
         warped = self.pca.unravel(self.warp())
         probas = []
+        assert len(heatmap) == len(warped)
         for ch, pts in zip(heatmap, warped):
             probas.append(lerp2d(ch, pts))
         return probas
@@ -200,7 +202,7 @@ if __name__ == '__main__':
         if not channel_first:
             heatmaps = heatmaps.transpose(2, 0, 1)
         anchor_maps = [heatmaps[i] for i in ANCHOR_INDICES]
-        heatmaps = heatmaps[:4]
+        # heatmaps = heatmaps[:4]
 
         top_anchor, bottom_anchor = calculate_anchors(anchor_maps)
 
@@ -216,10 +218,10 @@ if __name__ == '__main__':
             try:
                 for blur_sigma in [10, 1]:
                     if blur_sigma == 0:
-                        blurred_hm = heatmaps
+                        blurred_hm = heatmaps[:len(pca.labels)]
                     else:
                         blurred_hm = np.array([
-                            gaussian_filter(hm, blur_sigma) for hm in heatmaps
+                            gaussian_filter(hm, blur_sigma) for hm in heatmaps[:len(pca.labels)]
                         ])
                     blurred_hm = (blurred_hm / blurred_hm.max()).astype(
                         np.float32)
@@ -230,6 +232,7 @@ if __name__ == '__main__':
                     history = []
                     best_loss = 1e100
                     best_coefs = 0
+                    best_pca = None
                     patience = 0
                     for i in range(MAX_ITER):
                         probas = pt_pca(t_heatmaps)
@@ -239,6 +242,7 @@ if __name__ == '__main__':
                         if history[-1] <= best_loss:
                             best_loss = history[-1]
                             best_coefs = pt_pca.coefs.detach()
+                            best_pca = pca
                             patience = 0
                         else:
                             patience += 1
@@ -256,7 +260,7 @@ if __name__ == '__main__':
                         histories.append(history)
             except IndexError:  # updated coefs become really big when warped points completely miss the heatmaps
                 continue
-            results.append((name, best_loss, best_coefs))
+            results.append((name, best_loss, best_coefs, best_pca))
         if SAVE_HISTORY:
             import seaborn as sns
             df_history = pd.concat(histories, ignore_index=True)
@@ -271,8 +275,8 @@ if __name__ == '__main__':
             original_json = json.load(f)
         result_json = original_json.copy()
         results.sort(key=lambda e: e[1])  # sort results by loss
-        best_name, best_loss, best_coefs = results[0]
-        pca = TorchPCA(f'pca_{image_type}_{best_name}.npz')
+        best_name, best_loss, best_coefs, best_pca = results[0]
+        pca = best_pca #TorchPCA(f'pca_{image_type}_{best_name}.npz')
         pt_pca = PointAlignModel(pca, pca.calc_n_comps(CONTR_RATE), top_anchor,
                                  bottom_anchor).to(device)
         warped = pca.unravel(pt_pca.ref2pt(pca.warp(best_coefs.to(device))))
@@ -281,13 +285,13 @@ if __name__ == '__main__':
                          for w in warped]
 
         original_shapes = result_json['shapes']
-        for l in ['TL', 'TR', 'BL', 'BR', 'C7-TL', 'C7-TR', 'S-TL', 'S-TR']:
+        for l in pca.labels + ['C7-TL', 'C7-TR', 'S-TL', 'S-TR']:
             original_shapes = list(
                 filter(
                     lambda shape: shape['label'] != l or shape['shape_type'] !=
                     'point', original_shapes))
         result_shapes = labelme_utils.kps2shapes(scaled_warped,
-                                                 ['TL', 'TR', 'BL', 'BR'])
+                                                 pca.labels)
         result_shapes.extend(original_shapes)
         result_json['shapes'] = result_shapes
         result_json['flags'] = {best_name: True}
