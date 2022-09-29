@@ -61,6 +61,23 @@ def main():
                          type=int,
                          default=4)
     p_batch.set_defaults(mode='batch')
+
+    p_hm2lm = subparsers.add_parser(
+        'hm2lm',
+        help="Create labelme files from the given heatmaps (exp output).")
+    p_hm2lm.add_argument('heatmap', help='Input heatmap filename')
+    p_hm2lm.add_argument('ndjson', help='Input ndjson filename')
+    p_hm2lm.add_argument('output', help='Output directory')
+    p_hm2lm.add_argument('--save_heatmap',
+                         help='Save heatmap next to json',
+                         action='store_true')
+    p_hm2lm.add_argument('--workers',
+                         help='The number of workers: %(default)s',
+                         metavar='<int>',
+                         type=int,
+                         default=4)
+    p_hm2lm.set_defaults(mode='hm2lm')
+
     args = parser.parse_args()
     # lazy import
     from pathlib import Path
@@ -73,6 +90,7 @@ def main():
     import img_utils
     import labelme_utils
     import settings
+    from typing import Union
 
     import torch
     import cv2
@@ -105,8 +123,9 @@ def main():
 
     def save_kps_json(pred,
                       original_shape,
-                      image_filename,
-                      json_filename,
+                      image_filename: str,
+                      json_filename: str,
+                      label_names,
                       min_thresh=.25):
         kps_per_ch = point_utils.local_center_of_masses(pred, min_thresh)
         # half_shape = (np.array(original_shape, dtype=np.float32) // 2).tolist()
@@ -115,8 +134,7 @@ def main():
         kps_per_ch = [(np.array(kps, dtype=np.float32) * scale).tolist()
                       for kps in kps_per_ch]
         json_data = labelme_utils.kps2labelme(kps_per_ch, image_filename,
-                                              original_shape,
-                                              settings.LABEL_NAMES)
+                                              original_shape, label_names)
         with open(json_filename, 'w') as f:
             json.dump(json_data, f, indent=2)
 
@@ -140,7 +158,8 @@ def main():
         if args.labelme:
             logger.info('Save %s', args.labelme)
             save_kps_json(pred, original_shape,
-                          Path(args.input).name, args.labelme)
+                          Path(args.input).name, args.labelme,
+                          settings.LABEL_NAMES)
         if args.heatmap:
             pred = np.transpose(pred, [1, 2, 0])
             mhd.write(args.heatmap, pred,
@@ -207,6 +226,7 @@ def main():
                 image_filenames = [fn.name for fn in filenames]
 
                 def save_json(args):
+                    args += [settings.LABEL_NAMES]
                     return save_kps_json(*args, min_thresh=.1 * PROB_MAX)
 
                 Parallel(n_jobs=args.workers)(
@@ -225,10 +245,41 @@ def main():
                 Parallel(n_jobs=args.workers)(
                     delayed(save_hm)(*arg) for arg in zip(pred, hm_filenames))
 
+    def heatmap2labelme(heatmap_filename: str, ndjson_filename: str,
+                        outdir: Union[str,
+                                      Path], save_heatmap: bool, n_jobs: int):
+        from joblib import Parallel, delayed
+        import mhd
+        outdir = Path(outdir)
+        heatmaps, _ = mhd.read(heatmap_filename)
+        heatmaps = heatmaps.transpose(
+            (0, 3, 1, 2))  # from (B,Y,X,Ch) to (B,Ch,Y,X)
+        with open(ndjson_filename) as f:
+            json_data = [json.loads(l) for l in f.readlines()]
+
+        def save_json(args):
+            heatmap, data = args
+            original_shape = data['imageHeight'], data['imageWidth']
+            stem = '_'.join(Path(data['filepath']).parts[1:])
+            if save_heatmap:
+                mhd.write(outdir / f'{stem}.mha', heatmap)
+            return save_kps_json(heatmap,
+                                 original_shape,
+                                 str(outdir / f'{stem}.jpg'),
+                                 str(outdir / f'{stem}.json'),
+                                 settings.LABEL_NAMES,
+                                 min_thresh=.1 * PROB_MAX)
+
+        Parallel(n_jobs=n_jobs)(delayed(save_json)(arg)
+                                for arg in zip(heatmaps, json_data))
+
     if args.mode == 'single':
         apply_single(args)
     elif args.mode == 'batch':
         apply_batch(args)
+    elif args.mode == 'hm2lm':
+        heatmap2labelme(args.heatmap, args.ndjson, args.output,
+                        args.save_heatmap, args.workers)
     else:
         raise RuntimeError('Invalid command')
 
