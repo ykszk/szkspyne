@@ -168,6 +168,12 @@ if __name__ == '__main__':
                         image_type)
     parser.add_argument(
         '--output', help='Output directory. Use input directory by default.')
+    parser.add_argument(
+        '-m',
+        '--model',
+        help='PCA model filename(s).',
+        nargs='+',
+        default=[f'pca_{image_type}_L4.npz', f'pca_{image_type}_L5.npz'])
     parser.add_argument('--skipped',
                         help='Optional argument. default: %(default)s',
                         metavar='<name>',
@@ -185,9 +191,8 @@ if __name__ == '__main__':
         outidr = Path(args.output)
     skipped = []
     l2_reg = .01
-    channel_first = False
-    pca_models = [TorchPCA(f'pca_{image_type}_{name}.npz')
-                  for name in ('L4', 'L5')]
+    channel_first = args.channel_first
+    pca_models = [TorchPCA(fn) for fn in args.model]
     for fn in tqdm(sorted((data_dir).glob('*.json'))):
         file_id = fn.stem
 
