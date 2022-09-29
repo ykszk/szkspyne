@@ -38,6 +38,8 @@ for fn in sorted_fns:
         shape_data['filepath'] = filepath
         shape_data['image_type'] = image_type
         shape_data['flags'] = [k for k, v in data['flags'].items() if v]
+        for t_copy in ['imageHeight', 'imageWidth']:
+            shape_data[t_copy] = data[t_copy]
         dataset[filepath] = shape_data
 logger.info('done processing')
 print(len(dataset))
