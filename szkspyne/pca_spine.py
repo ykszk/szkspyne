@@ -38,14 +38,12 @@ class PointsPCA(PCA):
 
     def to_ref_space(self, top, bottom, points):
         mat = self.to_ref_mat(top, bottom)
-        padded = np.pad(points, ((0, 0), (0, 1)),
-                        constant_values=1)
+        padded = np.pad(points, ((0, 0), (0, 1)), constant_values=1)
         return (mat @ padded.T).T[:, :2]
 
     def to_target_space(self, top, bottom, points):
         mat = self.to_target_mat(top, bottom)
-        padded = np.pad(points, ((0, 0), (0, 1)),
-                        constant_values=1)
+        padded = np.pad(points, ((0, 0), (0, 1)), constant_values=1)
         return (mat @ padded.T).T[:, :2]
 
     def save(self, filename: Union[str, Path], point_counts: List[int]):
@@ -64,7 +62,32 @@ class PointsPCA(PCA):
 
 
 if __name__ == '__main__':
-    filename = '../script/manual_annotation.ndjson'
+    import argparse
+    parser = argparse.ArgumentParser(
+        description='Create PCA model(s) for 2D points.')
+    parser.add_argument('input',
+                        help='Input ndjson/csv filename',
+                        metavar='<input>',
+                        nargs='?',
+                        default='../script/manual_annotation.ndjson')
+    parser.add_argument('output',
+                        help='Output directory',
+                        metavar='<output>',
+                        nargs='?',
+                        default='.')
+    # parser.add_argument('-o',
+    #                     '--option',
+    #                     help='Optional argument. default: %(default)s',
+    #                     metavar='<name>',
+    #                     default='default')
+    # parser.add_argument('-s',
+    #                     '--switch',
+    #                     help='Switch argument',
+    #                     action='store_true')
+
+    args, unknown = parser.parse_known_args()
+    logger.warn('Unknown arguments:%s', unknown)
+    outdir = Path(args.output)
     REF_HEIGHT = 1000
     LABELS = ['TL', 'TR', 'BL', 'BR']
     L5_POINT_COUNTS = [19, 19, 18, 18]
@@ -78,7 +101,7 @@ if __name__ == '__main__':
     for config, image_type in itertools.product(CONFIGS,
                                                 ('ap_whole', 'lateral_whole')):
         logger.info('%s %s', config.name, image_type)
-        with open(filename) as f:
+        with open(args.input) as f:
             data = [json.loads(line) for line in f]
         valid_data = []
         for d in data:
@@ -116,5 +139,5 @@ if __name__ == '__main__':
         vecs = np.stack(vecs)
 
         pca.fit(vecs)
-        npz_filename = f'pca_{image_type}_{config.name}.npz'
+        npz_filename = outdir / f'pca_{image_type}_{config.name}.npz'
         pca.save(npz_filename, config.point_counts)
