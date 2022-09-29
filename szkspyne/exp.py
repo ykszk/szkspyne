@@ -324,7 +324,7 @@ def main():
             mhd.write(outdir / f'y_pred_{image_type}.mha', y_preds_it,
                         {'ElementNumberOfChannels': y_preds_it.shape[-1]})
             it_data = [test_data[i] for i in indices]
-            with open(outdir / f'test_{image_type}.json', 'w') as f:
+            with open(outdir / f'test_{image_type}.ndjson', 'w') as f:
                 for data in it_data:
                     f.write(json.dumps(data))
                     f.write('\n')
