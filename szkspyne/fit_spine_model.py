@@ -176,6 +176,12 @@ if __name__ == '__main__':
         help='PCA model filename(s).',
         nargs='+',
         default=[f'pca_{image_type}_L4.npz', f'pca_{image_type}_L5.npz'])
+    parser.add_argument(
+        '--sigma',
+        help='Sigma value(s) for heatmap blurring.',
+        nargs='+',
+        type=int,
+        default=[10, 1])
     parser.add_argument('--skipped',
                         help='Optional argument. default: %(default)s',
                         metavar='<name>',
@@ -216,7 +222,7 @@ if __name__ == '__main__':
             optimizer = Adam([pt_pca.coefs], lr=LR)
 
             try:
-                for blur_sigma in [10, 1]:
+                for blur_sigma in args.sigma:
                     if blur_sigma == 0:
                         blurred_hm = heatmaps[:len(pca.labels)]
                     else:
