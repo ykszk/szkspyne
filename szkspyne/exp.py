@@ -96,29 +96,20 @@ def main():
     with open(outroot / 'args.json', 'w') as f:
         json.dump(args.__dict__, f, indent=2)
 
-    dfs = []
-    # for fn in ['script/verse.csv', 'script/spineweb.csv']:
-    for fn in ['script/manual_annotation.ndjson']: #, 'script/spineweb.ndjson']:
-        if fn.endswith('csv'):
-            df = pd.read_csv(fn)
-        else:
-            df = exp_utils.ndjson2csv(fn)
-        #        df['pid'] = df['filepath'].map(lambda pid: Path(pid).parts[-1])
-        df['pid'] = df['filepath'].map(lambda pid: Path(pid).parts[1])
-        dfs.append(df)
-    df_all = pd.concat(dfs, axis=0, ignore_index=True)
+    NDJSON_FILENAME = 'script/manual_annotation.ndjson'
+    df = exp_utils.ndjson2csv(NDJSON_FILENAME)
+    df['pid'] = df['filepath'].map(lambda pid: Path(pid).parts[1])
+    df_all = df
     logger.info('All data %d', len(df_all))
     pids = df_all['pid'].unique()
     K_FOLD = args.fold
     df_all['set_id'] = -1
     kfold = KFold(n_splits=K_FOLD,
                   shuffle=not args.debug,
-                  random_state=None if args.debug else 202105)
+                  random_state=None if args.debug else 2022)
     for set_id, (_, test_index) in enumerate(kfold.split(pids)):
         idset = set(pids[test_index])
-        df_all.loc[df_all['pid'].map(lambda e: e in idset),
-                   'set_id'] = set_id
-        # df_all.loc[test_index, 'set_id'] = set_id  # type: ignore
+        df_all.loc[df_all['pid'].map(lambda e: e in idset), 'set_id'] = set_id
     df_all.to_csv(outroot / 'dataset.csv', index=False)
 
     USE_TEST_AS_VAL = args.holdout
@@ -126,8 +117,6 @@ def main():
     DEBUG = args.debug
     NUM_WORKERS = len(
         os.sched_getaffinity(0)) - 1  #2 if os.name == 'nt' else 0
-    # if NUM_WORKERS > 10:
-    #     NUM_WORKERS = NUM_WORKERS // 2
     logger.info('workers %d', NUM_WORKERS)
     EPOCHS = 2 if DEBUG else 128
     if DEBUG:
@@ -154,9 +143,24 @@ def main():
             df_val = df_all[df_all['set_id'] == test_id]
         else:
             df_train = df_all[df_all['set_id'].map(lambda e: e in train_ids)]
-            pids = df_train['pid'].unique()
-            val_pids = set(np.random.choice(pids, size=int(0.1 * len(pids)), replace=False))
+            non_test_pids = df_train['pid'].unique()
+            val_pids = set(
+                np.random.choice(non_test_pids,
+                                 size=int(0.1 * len(non_test_pids)),
+                                 replace=False))
             train_pids = set(pids) - val_pids
+            if True:  # create ndjson files for train and val sets
+                with open(NDJSON_FILENAME) as f:
+                    all_data = [json.loads(l) for l in f.readlines()]
+                for d in all_data:
+                    d['pid'] = Path(d['filepath']).parts[1]
+                    d['set'] = 'val' if d['pid'] in val_pids else 'train'
+                train_data = filter(lambda d: d['pid'] in non_test_pids,
+                                    all_data)
+                with open(outdir / 'train_val.ndjson', 'w') as f:
+                    for d in train_data:
+                        f.write(json.dumps(d, ensure_ascii=False))
+                        f.write('\n')
             df_val = df_train[df_train['pid'].map(lambda e: e in val_pids)]
             df_train = df_train[df_train['pid'].map(lambda e: e in train_pids)]
         df_test = df_all[df_all['set_id'] == test_id]
@@ -202,7 +206,7 @@ def main():
 
         logger.info('load train set')
         train_xs, train_kps = load_dataset(df_train, HEIGHT, False)
-        train_xs, train_kps = train_xs + train_xs + train_xs, train_kps + train_kps + train_kps  # TODO: remove
+        train_xs, train_kps = train_xs + train_xs, train_kps + train_kps  # TODO: remove
         logger.info('train size %d', len(train_xs))
         logger.info('load val set')
         val_xs, val_kps = load_dataset(df_val, HEIGHT, True)
