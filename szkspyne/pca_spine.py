@@ -77,18 +77,10 @@ if __name__ == '__main__':
                         metavar='<output>',
                         nargs='?',
                         default='.')
-    # parser.add_argument('-o',
-    #                     '--option',
-    #                     help='Optional argument. default: %(default)s',
-    #                     metavar='<name>',
-    #                     default='default')
-    # parser.add_argument('-s',
-    #                     '--switch',
-    #                     help='Switch argument',
-    #                     action='store_true')
 
     args, unknown = parser.parse_known_args()
-    logger.warning('Unknown arguments:%s', unknown)
+    if unknown:
+        logger.warning('Unknown arguments:%s', unknown)
     outdir = Path(args.output)
     REF_HEIGHT = 1000
     LABELS = ['TL', 'TR', 'BL', 'BR']

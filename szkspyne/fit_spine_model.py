@@ -29,15 +29,6 @@ LR = .1
 CONTR_RATE = .999
 SAVE_HISTORY = False
 
-device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-
-# The operator 'aten::index.Tensor' is not current implemented for the MPS device.
-# device = torch.device('mps' if torch.backends.mps.is_available() else 'cpu')
-
-logger.info('Device:%s', device)
-
-
-# %%
 class TorchPCA(nn.Module):
 
     def __init__(self, filename):
@@ -186,13 +177,23 @@ if __name__ == '__main__':
                         help='Optional argument. default: %(default)s',
                         metavar='<name>',
                         default=f'skipped_{image_type}.txt')
+    parser.add_argument('--device',
+                        help='Device for pytorch')
     parser.add_argument('--channel_first',
                         help='Heatmap is in channel-first format',
                         action='store_true')
 
     args, unknown = parser.parse_known_args()
-    logger.warning('Unknown arguments:%s', unknown)
+    if unknown:
+        logger.warning('Unknown arguments:%s', unknown)
 
+    # The operator 'aten::index.Tensor' is not current implemented for the MPS device.
+    # device = torch.device('mps' if torch.backends.mps.is_available() else 'cpu')
+    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+    if args.device:
+        device = args.device
+
+    logger.info('Device:%s', device)
     data_dir = Path(args.input)
     outdir = data_dir
     if args.output:
