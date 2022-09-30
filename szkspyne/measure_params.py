@@ -1,5 +1,6 @@
 from pathlib import Path
 import json
+from typing import Union
 
 import numpy as np
 from logzero import logger
@@ -19,7 +20,11 @@ HEIGHT, WIDTH = 1000, 1000
 
 def measure_ap(lm_data: dict) -> dict:
     measurements = {}
-    points = utils.get_point_dict(lm_data)
+    if 'shapes' in lm_data:
+        points = utils.get_point_dict(lm_data)
+    else:
+        points = lm_data['point']
+        points = {k:[e[0] for e in v] for k, v in points.items()}  # squeeze from (n,1,2) to (n,2)
     kps = utils.sort_kps(points)
     n_vertebrae = len(kps['BR'])
     sacrum_tltr, vert_corners = utils.get_vert_corners(kps)
@@ -212,7 +217,7 @@ def main():
 
     p_batch = subparsers.add_parser(
         'batch', help="Measure files in the given directory")
-    p_batch.add_argument('input', help='Input labelme directory', metavar='<input>')
+    p_batch.add_argument('input', help='Input labelme directory or ndjson file', metavar='<input>')
     p_batch.add_argument('output', help='Output directory or ndjson filename', metavar='<output>')
     p_batch.add_argument('--image_type',
                         help='Image type. default: %(default)s',
@@ -231,24 +236,37 @@ def main():
         indir = Path(args.input)
         output = Path(args.output)
         if output.suffix=='.ndjson':
-            def do(json_fn):
-                with open(json_fn, encoding='utf8') as f:
-                    lm_data = json.load(f)
+            def do(json_fn: Union[dict, Path]):
+                if isinstance(json_fn, Path):
+                    with open(json_fn, encoding='utf8') as f:
+                        lm_data = json.load(f)
+                    measurements = {'filename':json_fn.stem}
+                else:
+                    lm_data = json_fn
+                    measurements = {'filename':lm_data['filepath']}
 
-                measurements = {'filename':json_fn.stem}
                 if args.image_type == 'ap':
                     measurements.update(measure_ap(lm_data))
                 else:
                     measurements.update(measure_lateral(lm_data))
                 return measurements
-            data = Parallel(n_jobs=args.workers)(delayed(do)(fn)
-                        for fn in tqdm.tqdm(sorted(indir.glob('*.json'))))
+            if indir.suffix=='.ndjson':
+                with open(indir) as f:
+                    lines = f.readlines()
+                data = Parallel(n_jobs=args.workers)(delayed(do)(json.loads(line))
+                        for line in tqdm.tqdm(lines))
+            else:
+                data = Parallel(n_jobs=args.workers)(delayed(do)(fn)
+                            for fn in tqdm.tqdm(sorted(indir.glob('*.json'))))
             assert data is not None
             with open(output, 'w') as f:
                 for d in data:
                     f.write(json.dumps(d))
                     f.write('\n')
         else:
+            if indir.suffix=='.ndjson':
+                print('ndjson input is not supported for directory output')
+                return 1
             from collections import namedtuple
             A = namedtuple('A', ['input', 'output', 'image_type'])
             for json_fn in tqdm.tqdm(sorted(indir.glob('*.json'))):

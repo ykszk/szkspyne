@@ -43,7 +43,10 @@ def calc_cobb(sup_cnrs: np.ndarray, inf_cnrs: np.ndarray) -> float:
     '''
     up_line = Line(sup_cnrs[0], sup_cnrs[1])
     low_line = Line(inf_cnrs[0], inf_cnrs[1])
-    up_low_cross = tuple(intersection(up_line, low_line)[0].evalf())
+    int_p = intersection(up_line, low_line)
+    if len(int_p)==0:
+        return 0
+    up_low_cross = tuple(int_p[0].evalf())
     angle_rad = float(up_line.angle_between(low_line).evalf())
 
     if up_low_cross[0] < sup_cnrs[0, 0]:
