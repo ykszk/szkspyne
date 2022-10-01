@@ -205,11 +205,11 @@ if args.image_type=='ap':
     grp = dwg.add(dwg.g(id='T1Tilt', stroke=color, stroke_width=2.0, fill='none'))
     c7_centroid = vert_centroids[0]
     c7pl = np.array((c7_centroid, (c7_centroid[0], img.size[1])))
-    t1_corners = vert_corners[1]
-    t1_sup_vec = vert_sup_vecs[1]
+    t1_corners = vert_corners[0]
+    t1_sup_vec = vert_sup_vecs[0]
     aux_vec = np.array([1, 0])
     t1_width = np.linalg.norm(t1_corners[1] - t1_corners[0])
-    line_t1 = Line(vert_corners[1, 0], vert_corners[1, 1])
+    line_t1 = Line(vert_corners[0, 0], vert_corners[0, 1])
     aux_t1_tilt = np.array([
         float(e) for e in intersection(Line(c7pl[0], c7pl[1]), line_t1)[0].evalf()
     ])
@@ -245,21 +245,21 @@ if args.image_type=='ap':
                     solve(line_clavicle.equation(x, y).subs(x,
                                                             img.size[0]).evalf())[0])
             ])))
-
-        clavicle_intersection = [
-            float(e) for e in intersection(chrl, line_clavicle)[0].evalf()
-        ]
         grp.add(
             dwg.path((['M'] + [0, clavicle_kps[:, 1].min()] +
                     [img.size[0], clavicle_kps[:, 1].min()])))
-        # grp.add(dwg.circle(center=clavicle_intersection, r=POINT_RADIUS, stroke=color,
-        #                    fill=color))
+        if clavicle_kps[0,1]!=clavicle_kps[1,1]:
+            clavicle_intersection = [
+                float(e) for e in intersection(chrl, line_clavicle)[0].evalf()
+            ]
+            # grp.add(dwg.circle(center=clavicle_intersection, r=POINT_RADIUS, stroke=color,
+            #                    fill=color))
 
-        angle = chrl.angle_between(line_clavicle)
-        txt_angle = '{:.1f}°'.format(np.rad2deg(float(angle.evalf())))
-        grp.add(dwg.text(txt_angle, insert=clavicle_intersection, **text_attrs))
-        for pos in clavicle_kps:
-            grp.add(dwg.circle(center=pos.tolist(), r=POINT_RADIUS, stroke=color, fill=color))
+            angle = chrl.angle_between(line_clavicle)
+            txt_angle = '{:.1f}°'.format(np.rad2deg(float(angle.evalf())))
+            grp.add(dwg.text(txt_angle, insert=clavicle_intersection, **text_attrs))
+            for pos in clavicle_kps:
+                grp.add(dwg.circle(center=pos.tolist(), r=POINT_RADIUS, stroke=color, fill=color))
 
     # Shoulder Height
     if 'Shoulder' in kps and len(kps['Shoulder']) >= 2:
@@ -270,7 +270,6 @@ if args.image_type=='ap':
             dwg.g(id='ShoulderHeight', stroke=color, stroke_width=2.0, fill='none'))
         shoulder_kps = kps['Shoulder']
         shoulder_kps = np.array(sorted(shoulder_kps, key=lambda e: e[0]))  # sort by x
-        assert shoulder_kps.shape == (2, 2)
         grp.add(
             dwg.path(
                 (['M'] + [0, shoulder_kps[0, 1]] + [img.size[0], shoulder_kps[0, 1]])))
@@ -308,18 +307,20 @@ if args.image_type=='ap':
             ])))
         y_up = pelvic_kps[:, 1].min()
         grp.add(dwg.path((['M'] + [0, y_up] + [img.size[0], y_up])))
-        hline = Line((0, y_up), (img.size[0], y_up))
-        pelvic_cross = [
-            float(e) for e in intersection(pelvic_ref_line, hline)[0].evalf()
-        ]
-        angle = hline.angle_between(pelvic_ref_line)
-        if pelvic_kps[0, 1] > pelvic_kps[1, 1]:
-            angle *= -1
-        txt_angle = '{:.1f}°'.format(np.rad2deg(float(angle.evalf())))
-        grp.add(dwg.text(txt_angle, insert=pelvic_cross, **text_attrs))
         for pos in pelvic_kps:
             grp.add(dwg.circle(center=pos.tolist(), r=POINT_RADIUS, stroke=color, fill=color))
-        grp.add(dwg.rect(insert=(-LINE_WIDTH, y_up), size=PERP_BOX_SIZE))
+        hline = Line((0, y_up), (img.size[0], y_up))
+        if pelvic_kps[0,1]!=pelvic_kps[1,1]:
+            int_p = intersection(pelvic_ref_line, hline)
+            pelvic_cross = [
+                float(e) for e in int_p[0].evalf()
+            ]
+            angle = hline.angle_between(pelvic_ref_line)
+            if pelvic_kps[0, 1] > pelvic_kps[1, 1]:
+                angle *= -1
+            txt_angle = '{:.1f}°'.format(np.rad2deg(float(angle.evalf())))
+            grp.add(dwg.text(txt_angle, insert=pelvic_cross, **text_attrs))
+            grp.add(dwg.rect(insert=(-LINE_WIDTH, y_up), size=PERP_BOX_SIZE))
 
     # Leg Length Discrepancy
     femoral_kps = None
