@@ -60,11 +60,13 @@ for shape in lm_data['shapes']:
 
 LABEL_NAMES = ['TL', 'TR', 'BL', 'BR']
 import measure_utils as utils
-from measure_utils import calc_centroid, draw_cobb, perp, get_circle_dict
+from measure_utils import calc_centroid, draw_cobb, perp, get_circle_dict, calc_cobb
 
 points = utils.get_point_dict(lm_data)
 kps = utils.sort_kps(points)
 n_vertebrae = len(kps['BR'])
+for l in LABEL_NAMES: # remove C7
+    kps[l] = np.delete(kps[l], 0, axis=0)
 sacrum_tltr, vert_corners, disc_corners = utils.get_vert_and_disc_corners(kps)
 
 logger.info('Compute centroids')
@@ -107,17 +109,38 @@ if args.image_type=='ap':
     #%% coronal translation
     logger.info('Coronal translation')
     coronal_translation = vert_centroids[:, 0] - sacrum_center[0]
-    i_apex = np.abs(coronal_translation).argmax()
-    i_uiv = np.abs(vert_sup_vecs[:i_apex, 1]).argmax()
-    i_liv = np.abs(vert_inf_vecs[(i_apex + 1):, 1]).argmax() + i_apex + 1
+    # Find vertebraes and calculate Cobb angles
+    best_set = None
+    best_score = 0
+    for mt_sup in range(2, len(vert_sup_cnrs)-2):
+        for mt_inf in range(mt_sup+1, len(vert_sup_cnrs)-2):
+            mt_angle = calc_cobb(vert_sup_cnrs[mt_sup], vert_inf_cnrs[mt_inf])
+            # find pt            
+            pt_inf = mt_sup
+            pt_sups = np.arange(0, mt_sup)
+            pt_angles = np.abs([calc_cobb(vert_sup_cnrs[pt_sup], vert_inf_cnrs[pt_inf]) for pt_sup in pt_sups])
+            pt_sup = pt_sups[np.argmax(pt_angles)]
+            # find lt
+            lt_sup = mt_inf
+            lt_infs = np.arange(mt_inf, len(vert_inf_cnrs))
+            lt_angles = np.abs([calc_cobb(vert_sup_cnrs[lt_sup], vert_inf_cnrs[lt_inf]) for lt_inf in lt_infs])
+            lt_inf = lt_infs[np.argmax(lt_angles)]
+            score = np.abs(mt_angle) + pt_angles.max() + lt_angles.max()
+            print(mt_sup, mt_inf, pt_sup, lt_inf, score)
+            if score > best_score:
+                best_score = score
+                best_set = mt_sup, mt_inf, pt_sup, lt_inf
+    i_apex = np.abs(coronal_translation[2:-2]).argmax() + 2
+    assert best_set is not None
+    mt_sup, mt_inf, pt_sup, lt_inf = best_set
 
     # cobb angles
     logger.info('Cobb angles')
     drawings += [('PT', 'PT Cobb (p.49)'), ('MT', 'MT Cobb (p.49)'),
                 ('LT', 'LT Cobb (p.49)')]
-    draw_cobb(vert_sup_cnrs[1], vert_inf_cnrs[i_uiv], dwg, 'PT', 'red', text_attrs=text_attrs)
-    draw_cobb(vert_sup_cnrs[i_uiv], vert_inf_cnrs[i_liv], dwg, 'MT', 'green', text_attrs=text_attrs)
-    draw_cobb(vert_sup_cnrs[i_liv], vert_inf_cnrs[n_vertebrae - 2], dwg, 'LT',
+    draw_cobb(vert_sup_cnrs[pt_sup], vert_inf_cnrs[mt_sup], dwg, 'PT', 'red', text_attrs=text_attrs)
+    draw_cobb(vert_sup_cnrs[mt_sup], vert_inf_cnrs[mt_inf], dwg, 'MT', 'green', text_attrs=text_attrs)
+    draw_cobb(vert_sup_cnrs[mt_inf], vert_inf_cnrs[lt_inf], dwg, 'LT',
             'blue', text_attrs=text_attrs)
     # apical translation
     drawings.append(('APT', 'Apical Translation (p.53)'))

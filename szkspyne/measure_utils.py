@@ -37,8 +37,9 @@ def rotate_around(pts, angle_rad, origin):
     t = origin
     return r @ (pts - t) + t
 
-
-def calc_cobb(sup_cnrs: np.ndarray, inf_cnrs: np.ndarray) -> float:
+from functools import lru_cache
+@lru_cache(maxsize=1000)
+def _calc_cobb(sup_cnrs: list, inf_cnrs: list) -> float:
     '''Calculate Cobb angle in degrees
     '''
     up_line = Line(sup_cnrs[0], sup_cnrs[1])
@@ -49,11 +50,16 @@ def calc_cobb(sup_cnrs: np.ndarray, inf_cnrs: np.ndarray) -> float:
     up_low_cross = tuple(int_p[0].evalf())
     angle_rad = float(up_line.angle_between(low_line).evalf())
 
-    if up_low_cross[0] < sup_cnrs[0, 0]:
+    if up_low_cross[0] < sup_cnrs[0][0]:
         pass
     else:
         angle_rad *= -1
     return np.rad2deg(angle_rad)
+
+
+def calc_cobb(sup_cnrs: np.ndarray, inf_cnrs: np.ndarray) -> float:
+    args = [(tuple(a[0].tolist()), tuple(a[1].tolist())) for a in [sup_cnrs, inf_cnrs]]
+    return _calc_cobb(*args)
 
 
 def draw_cobb(sup_cnrs: np.ndarray,
