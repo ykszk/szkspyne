@@ -13,6 +13,8 @@ import yaml
 import svgwrite
 from jinja2 import Environment, FileSystemLoader
 import argparse
+from io import BytesIO
+
 LINE_WIDTH = 2.0
 POINT_RADIUS = 2.0
 PERP_BOX_SIZE = (20, 20) # perpendicular sign
@@ -26,10 +28,13 @@ parser.add_argument('-c', '--config',
 parser.add_argument('-t', '--template',
                     help='template directory', default='.')
 parser.add_argument('--title',
-                    help='title', default='Scoliosis Measuaraments')
-parser.add_argument('-s',
-                    '--switch',
-                    help='Switch argument',
+                    help='html title', default='Scoliosis Measuaraments')
+parser.add_argument('--image',
+                    help='Save image (svg or png)')
+parser.add_argument('--height',
+                    help='Output image height', type=int, default=768)
+parser.add_argument('--points',
+                    help='Draw points',
                     action='store_true')
 
 args = parser.parse_args()
@@ -41,9 +46,18 @@ with open(json_fn, encoding='utf8') as f:
 
 img_fn = json_fn.parent / lm_data['imagePath']
 img = Image.open(img_fn)
+original_image_shape = img.size
+
+HEIGHT = args.height
+img.thumbnail((HEIGHT,HEIGHT))
+scale = HEIGHT / original_image_shape[1]
+
 with open(args.config) as f:
     color_data = yaml.safe_load(f)
 label_colors = color_data['label_colors']
+
+for shape in lm_data['shapes']:
+    shape['points'] = [[scale*e for e in p] for p in shape['points']]
 
 LABEL_NAMES = ['TL', 'TR', 'BL', 'BR']
 import measure_utils as utils
@@ -81,17 +95,19 @@ text_attrs = dict(stroke='black',
 
 w, h = img.size
 pixel_size = 1
+image_size=(w * pixel_size, h * pixel_size)
 logger.info('drawing')
 dwg = svgwrite.Drawing('output.svg',
-                       size=(w * pixel_size, h * pixel_size),
+                       size=image_size,
                        viewBox=('0 0 {} {}'.format(w, h)))
 logger.info('image')
 dwg.add(dwg.image('data:image/jpg;base64,' + utils.img2b64(img), size=img.size))
 drawings = []
-# points
-if False:
+
+if args.points:
+    drawings.append(('Points', 'Points'))
+    grp = dwg.add(dwg.g(id='Points', stroke_width=2.0, fill='none'))
     for label, pts in points.items():
-        grp = dwg.add(dwg.g(id=label, stroke_width=2.0, fill='none'))
         color = '#' + ''.join(['{:02x}'.format(c) for c in label_colors[label]])
         for pt in pts:
             grp.add(dwg.circle(center=pt, r=POINT_RADIUS, stroke=color, fill=color))
@@ -344,6 +360,22 @@ grp = draw_cobb(np.array([[x_pos1, y_pos1], [x_pos2, y_pos2]]), femoral_kps,
 for pos in np.concatenate((femoral_kps, sacrum_tltr), axis=0):
     grp.add(dwg.circle(center=pos.tolist(), r=POINT_RADIUS, stroke=color, fill=color))
 
+if args.image:
+    filename = Path(args.image)
+    if filename.suffix=='.svg':
+        dwg.saveas(filename)
+    elif filename.suffix=='.png':
+        from svg import Parser, Rasterizer
+        svg = Parser.parse(dwg.tostring())
+        rast = Rasterizer()
+        buff = rast.rasterize(svg, svg.width, svg.height)
+        mes = Image.frombytes('RGBA', (svg.width, svg.height), buff)
+        img = img.convert('RGBA')
+        img.alpha_composite(mes)
+        img = img.convert('RGB')
+        img.save(filename)
+    else:
+        raise NotImplementedError
 
 env = Environment(loader=FileSystemLoader(args.template, encoding='utf8'))
 template = env.get_template('template.html')
