@@ -44,7 +44,7 @@ json_fn = Path(args.input)
 with open(json_fn, encoding='utf8') as f:
     lm_data = json.load(f)
 
-img_fn = json_fn.parent / lm_data['imagePath']
+img_fn = str(json_fn.parent / lm_data['imagePath']).replace('\\','/')
 img = Image.open(img_fn)
 original_image_shape = img.size
 
@@ -196,60 +196,63 @@ angle = line_t1.angle_between(
 txt_angle = '{:.2f}°'.format(np.rad2deg(float(angle.evalf())))
 grp.add(dwg.text(txt_angle, insert=c7_centroid, **text_attrs))
 # Clavicle Angle
-drawings.append(('ClavicleAngle', 'Clavicle Angle (p.56)'))
-logger.info(drawings[-1][1])
-color = 'green'
-grp = dwg.add(
-    dwg.g(id='ClavicleAngle', stroke=color, stroke_width=2.0, fill='none'))
-assert kps['Clavicle'].shape == (2, 2)
-clavicle_kps = kps['Clavicle']
-line_clavicle = Line(clavicle_kps[0], clavicle_kps[1])
-chrl = Line([0, clavicle_kps[:, 1].min()],
-            [img.size[0], clavicle_kps[:, 1].min()])
-t = sympy.Symbol('t', real=True)
-grp.add(
-    dwg.path((['M'] + [
-        0, float(solve(line_clavicle.equation(x, y).subs(x, 0).evalf())[0])
-    ] + [
-        img.size[0],
-        float(
-            solve(line_clavicle.equation(x, y).subs(x,
-                                                    img.size[0]).evalf())[0])
-    ])))
+if 'Clavicle' in kps and len(kps['Clavicle'])==2:
+    drawings.append(('ClavicleAngle', 'Clavicle Angle (p.56)'))
+    logger.info(drawings[-1][1])
+    color = 'green'
+    grp = dwg.add(
+        dwg.g(id='ClavicleAngle', stroke=color, stroke_width=2.0, fill='none'))
+    assert kps['Clavicle'].shape == (2, 2)
+    clavicle_kps = kps['Clavicle']
+    line_clavicle = Line(clavicle_kps[0], clavicle_kps[1])
+    chrl = Line([0, clavicle_kps[:, 1].min()],
+                [img.size[0], clavicle_kps[:, 1].min()])
+    t = sympy.Symbol('t', real=True)
+    grp.add(
+        dwg.path((['M'] + [
+            0, float(solve(line_clavicle.equation(x, y).subs(x, 0).evalf())[0])
+        ] + [
+            img.size[0],
+            float(
+                solve(line_clavicle.equation(x, y).subs(x,
+                                                        img.size[0]).evalf())[0])
+        ])))
 
-clavicle_intersection = [
-    float(e) for e in intersection(chrl, line_clavicle)[0].evalf()
-]
-grp.add(
-    dwg.path((['M'] + [0, clavicle_kps[:, 1].min()] +
-              [img.size[0], clavicle_kps[:, 1].min()])))
-# grp.add(dwg.circle(center=clavicle_intersection, r=POINT_RADIUS, stroke=color,
-#                    fill=color))
+    clavicle_intersection = [
+        float(e) for e in intersection(chrl, line_clavicle)[0].evalf()
+    ]
+    grp.add(
+        dwg.path((['M'] + [0, clavicle_kps[:, 1].min()] +
+                [img.size[0], clavicle_kps[:, 1].min()])))
+    # grp.add(dwg.circle(center=clavicle_intersection, r=POINT_RADIUS, stroke=color,
+    #                    fill=color))
 
-angle = chrl.angle_between(line_clavicle)
-txt_angle = '{:.1f}°'.format(np.rad2deg(float(angle.evalf())))
-grp.add(dwg.text(txt_angle, insert=clavicle_intersection, **text_attrs))
-for pos in clavicle_kps:
-    grp.add(dwg.circle(center=pos.tolist(), r=POINT_RADIUS, stroke=color, fill=color))
+    angle = chrl.angle_between(line_clavicle)
+    txt_angle = '{:.1f}°'.format(np.rad2deg(float(angle.evalf())))
+    grp.add(dwg.text(txt_angle, insert=clavicle_intersection, **text_attrs))
+    for pos in clavicle_kps:
+        grp.add(dwg.circle(center=pos.tolist(), r=POINT_RADIUS, stroke=color, fill=color))
+
 # Shoulder Height
-drawings.append(('ShoulderHeight', 'Shoulder Height (p.57)'))
-logger.info(drawings[-1][1])
-color = 'magenta'
-grp = dwg.add(
-    dwg.g(id='ShoulderHeight', stroke=color, stroke_width=2.0, fill='none'))
-shoulder_kps = kps['Shoulder']
-shoulder_kps = np.array(sorted(shoulder_kps, key=lambda e: e[0]))  # sort by x
-assert shoulder_kps.shape == (2, 2)
-grp.add(
-    dwg.path(
-        (['M'] + [0, shoulder_kps[0, 1]] + [img.size[0], shoulder_kps[0, 1]])))
-grp.add(
-    dwg.path(
-        (['M'] + [0, shoulder_kps[1, 1]] + [img.size[0], shoulder_kps[1, 1]])))
-height_text = '{:.1f} pixels'.format(shoulder_kps[0, 1] - shoulder_kps[1, 1])
-grp.add(dwg.text(height_text, insert=shoulder_kps[0], **text_attrs))
-for pos in shoulder_kps:
-    grp.add(dwg.circle(center=pos.tolist(), r=POINT_RADIUS, stroke=color, fill=color))
+if 'Shoulder' in kps and len(kps['Shoulder']) >= 2:
+    drawings.append(('ShoulderHeight', 'Shoulder Height (p.57)'))
+    logger.info(drawings[-1][1])
+    color = 'magenta'
+    grp = dwg.add(
+        dwg.g(id='ShoulderHeight', stroke=color, stroke_width=2.0, fill='none'))
+    shoulder_kps = kps['Shoulder']
+    shoulder_kps = np.array(sorted(shoulder_kps, key=lambda e: e[0]))  # sort by x
+    assert shoulder_kps.shape == (2, 2)
+    grp.add(
+        dwg.path(
+            (['M'] + [0, shoulder_kps[0, 1]] + [img.size[0], shoulder_kps[0, 1]])))
+    grp.add(
+        dwg.path(
+            (['M'] + [0, shoulder_kps[1, 1]] + [img.size[0], shoulder_kps[1, 1]])))
+    height_text = '{:.1f} pixels'.format(shoulder_kps[0, 1] - shoulder_kps[1, 1])
+    grp.add(dwg.text(height_text, insert=shoulder_kps[0], **text_attrs))
+    for pos in shoulder_kps:
+        grp.add(dwg.circle(center=pos.tolist(), r=POINT_RADIUS, stroke=color, fill=color))
 
 # Coronal Position of LIV
 if False:
@@ -288,77 +291,81 @@ if False:
               'CoronalDiscAngulation', 'cyan', text_attrs=text_attrs)
 
 # Pelvic Obliquity
-drawings.append(('PelvicObliquity', 'Pelvic Obliquity (p.93)'))
-logger.info(drawings[-1][1])
-color = 'cyan'
-grp = dwg.add(
-    dwg.g(id='PelvicObliquity',
-          stroke=color,
-          stroke_width=LINE_WIDTH,
-          fill='none'))
-pelvic_kps = kps['Pelvis']
-assert pelvic_kps.shape == (2, 2)
-pelvic_kps = np.array(sorted(pelvic_kps, key=lambda e: e[0]))  # sort by x
-pelvic_ref_line = Line(pelvic_kps[0], pelvic_kps[1])
-grp.add(
-    dwg.path((['M'] + [
-        0,
-        float(solve(pelvic_ref_line.equation(x, y).subs(x, 0).evalf())[0])
-    ] + [
-        img.size[0],
-        float(
-            solve(pelvic_ref_line.equation(x, y).subs(x,
-                                                      img.size[0]).evalf())[0])
-    ])))
-y_up = pelvic_kps[:, 1].min()
-grp.add(dwg.path((['M'] + [0, y_up] + [img.size[0], y_up])))
-hline = Line((0, y_up), (img.size[0], y_up))
-pelvic_cross = [
-    float(e) for e in intersection(pelvic_ref_line, hline)[0].evalf()
-]
-angle = hline.angle_between(pelvic_ref_line)
-if pelvic_kps[0, 1] > pelvic_kps[1, 1]:
-    angle *= -1
-txt_angle = '{:.1f}°'.format(np.rad2deg(float(angle.evalf())))
-grp.add(dwg.text(txt_angle, insert=pelvic_cross, **text_attrs))
-for pos in pelvic_kps:
-    grp.add(dwg.circle(center=pos.tolist(), r=POINT_RADIUS, stroke=color, fill=color))
-grp.add(dwg.rect(insert=(-LINE_WIDTH, y_up), size=PERP_BOX_SIZE))
+if 'Pelvis' in kps and len(kps['Pelvis']) >= 2:
+    drawings.append(('PelvicObliquity', 'Pelvic Obliquity (p.93)'))
+    logger.info(drawings[-1][1])
+    color = 'cyan'
+    grp = dwg.add(
+        dwg.g(id='PelvicObliquity',
+            stroke=color,
+            stroke_width=LINE_WIDTH,
+            fill='none'))
+    pelvic_kps = kps['Pelvis']
+    assert pelvic_kps.shape == (2, 2)
+    pelvic_kps = np.array(sorted(pelvic_kps, key=lambda e: e[0]))  # sort by x
+    pelvic_ref_line = Line(pelvic_kps[0], pelvic_kps[1])
+    grp.add(
+        dwg.path((['M'] + [
+            0,
+            float(solve(pelvic_ref_line.equation(x, y).subs(x, 0).evalf())[0])
+        ] + [
+            img.size[0],
+            float(
+                solve(pelvic_ref_line.equation(x, y).subs(x,
+                                                        img.size[0]).evalf())[0])
+        ])))
+    y_up = pelvic_kps[:, 1].min()
+    grp.add(dwg.path((['M'] + [0, y_up] + [img.size[0], y_up])))
+    hline = Line((0, y_up), (img.size[0], y_up))
+    pelvic_cross = [
+        float(e) for e in intersection(pelvic_ref_line, hline)[0].evalf()
+    ]
+    angle = hline.angle_between(pelvic_ref_line)
+    if pelvic_kps[0, 1] > pelvic_kps[1, 1]:
+        angle *= -1
+    txt_angle = '{:.1f}°'.format(np.rad2deg(float(angle.evalf())))
+    grp.add(dwg.text(txt_angle, insert=pelvic_cross, **text_attrs))
+    for pos in pelvic_kps:
+        grp.add(dwg.circle(center=pos.tolist(), r=POINT_RADIUS, stroke=color, fill=color))
+    grp.add(dwg.rect(insert=(-LINE_WIDTH, y_up), size=PERP_BOX_SIZE))
 
 # Leg Length Discrepancy
-drawings.append(('LegLength', 'Leg Length Discrepancy (p.93)'))
-logger.info(drawings[-1][1])
-color = 'lime'
-grp = dwg.add(
-    dwg.g(id='LegLength', stroke=color, stroke_width=2.0, fill='none'))
-femoral_kps = kps['FemoralHead']
-assert femoral_kps.shape == (2, 2)
-femoral_kps = np.array(sorted(femoral_kps, key=lambda e: e[0]))  # sort by x
-y_up = femoral_kps[:, 1].min()
-grp.add(dwg.path((['M'] + [0, y_up] + [img.size[0], y_up])))
-y_low = femoral_kps[:, 1].max()
-grp.add(dwg.path((['M'] + [0, y_low] + [img.size[0], y_low])))
-grp.add(
-    dwg.path((['M'] + femoral_kps[1].tolist() +
-              [femoral_kps[1, 0], femoral_kps[0, 1]])))
-height_text = '{:.1f} pixels'.format(femoral_kps[1, 1] - femoral_kps[0, 1])
-grp.add(dwg.text(height_text, insert=femoral_kps[1], **text_attrs))
-for pos in femoral_kps:
-    grp.add(dwg.circle(center=pos.tolist(), r=POINT_RADIUS, stroke=color, fill=color))
+femoral_kps = None
+if 'FemoralHead' in kps and len(kps['FemoralHead']) >= 2:
+    drawings.append(('LegLength', 'Leg Length Discrepancy (p.93)'))
+    logger.info(drawings[-1][1])
+    color = 'lime'
+    grp = dwg.add(
+        dwg.g(id='LegLength', stroke=color, stroke_width=2.0, fill='none'))
+    femoral_kps = kps['FemoralHead']
+    assert femoral_kps.shape == (2, 2)
+    femoral_kps = np.array(sorted(femoral_kps, key=lambda e: e[0]))  # sort by x
+    y_up = femoral_kps[:, 1].min()
+    grp.add(dwg.path((['M'] + [0, y_up] + [img.size[0], y_up])))
+    y_low = femoral_kps[:, 1].max()
+    grp.add(dwg.path((['M'] + [0, y_low] + [img.size[0], y_low])))
+    grp.add(
+        dwg.path((['M'] + femoral_kps[1].tolist() +
+                [femoral_kps[1, 0], femoral_kps[0, 1]])))
+    height_text = '{:.1f} pixels'.format(femoral_kps[1, 1] - femoral_kps[0, 1])
+    grp.add(dwg.text(height_text, insert=femoral_kps[1], **text_attrs))
+    for pos in femoral_kps:
+        grp.add(dwg.circle(center=pos.tolist(), r=POINT_RADIUS, stroke=color, fill=color))
 
 # Sacral Obliquity
-drawings.append(('SacralObliquity', 'Sacral Obliquity (p.94)'))
-logger.info(drawings[-1][1])
-color = 'hotpink'
-femoral_line = Line(femoral_kps[0], femoral_kps[1])
-sacrum_line = Line(sacrum_tltr[0], sacrum_tltr[1])
-x_pos1, x_pos2 = femoral_kps[:, 0]
-y_pos1 = float(solve(sacrum_line.equation(x, y).subs(x, x_pos1).evalf())[0])
-y_pos2 = float(solve(sacrum_line.equation(x, y).subs(x, x_pos2).evalf())[0])
-grp = draw_cobb(np.array([[x_pos1, y_pos1], [x_pos2, y_pos2]]), femoral_kps,
-                dwg, 'SacralObliquity', color, 1, text_attrs)
-for pos in np.concatenate((femoral_kps, sacrum_tltr), axis=0):
-    grp.add(dwg.circle(center=pos.tolist(), r=POINT_RADIUS, stroke=color, fill=color))
+if femoral_kps is not None:
+    drawings.append(('SacralObliquity', 'Sacral Obliquity (p.94)'))
+    logger.info(drawings[-1][1])
+    color = 'hotpink'
+    femoral_line = Line(femoral_kps[0], femoral_kps[1])
+    sacrum_line = Line(sacrum_tltr[0], sacrum_tltr[1])
+    x_pos1, x_pos2 = femoral_kps[:, 0]
+    y_pos1 = float(solve(sacrum_line.equation(x, y).subs(x, x_pos1).evalf())[0])
+    y_pos2 = float(solve(sacrum_line.equation(x, y).subs(x, x_pos2).evalf())[0])
+    grp = draw_cobb(np.array([[x_pos1, y_pos1], [x_pos2, y_pos2]]), femoral_kps,
+                    dwg, 'SacralObliquity', color, 1, text_attrs)
+    for pos in np.concatenate((femoral_kps, sacrum_tltr), axis=0):
+        grp.add(dwg.circle(center=pos.tolist(), r=POINT_RADIUS, stroke=color, fill=color))
 
 if args.image:
     filename = Path(args.image)
