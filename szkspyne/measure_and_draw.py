@@ -112,21 +112,27 @@ if args.image_type=='ap':
     # Find vertebraes and calculate Cobb angles
     best_set = None
     best_score = 0
+    def calc_angle(line1, line2):
+        v1 = line1[1] - line1[0]
+        v1 = v1 / np.linalg.norm(v1)
+        v2 = line2[1] - line2[0]
+        v2 = v2 / np.linalg.norm(v2)
+        cos = v1 @ v2
+        return np.arccos(cos)
     for mt_sup in range(2, len(vert_sup_cnrs)-2):
         for mt_inf in range(mt_sup+1, len(vert_sup_cnrs)-2):
-            mt_angle = calc_cobb(vert_sup_cnrs[mt_sup], vert_inf_cnrs[mt_inf])
+            mt_angle = calc_angle(vert_sup_cnrs[mt_sup], vert_inf_cnrs[mt_inf])
             # find pt            
             pt_inf = mt_sup
             pt_sups = np.arange(0, mt_sup)
-            pt_angles = np.abs([calc_cobb(vert_sup_cnrs[pt_sup], vert_inf_cnrs[pt_inf]) for pt_sup in pt_sups])
+            pt_angles = np.abs([calc_angle(vert_sup_cnrs[pt_sup], vert_inf_cnrs[pt_inf]) for pt_sup in pt_sups])
             pt_sup = pt_sups[np.argmax(pt_angles)]
             # find lt
             lt_sup = mt_inf
             lt_infs = np.arange(mt_inf, len(vert_inf_cnrs))
-            lt_angles = np.abs([calc_cobb(vert_sup_cnrs[lt_sup], vert_inf_cnrs[lt_inf]) for lt_inf in lt_infs])
+            lt_angles = np.abs([calc_angle(vert_sup_cnrs[lt_sup], vert_inf_cnrs[lt_inf]) for lt_inf in lt_infs])
             lt_inf = lt_infs[np.argmax(lt_angles)]
             score = np.abs(mt_angle) + pt_angles.max() + lt_angles.max()
-            print(mt_sup, mt_inf, pt_sup, lt_inf, score)
             if score > best_score:
                 best_score = score
                 best_set = mt_sup, mt_inf, pt_sup, lt_inf
