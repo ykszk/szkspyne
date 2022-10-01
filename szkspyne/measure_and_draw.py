@@ -122,17 +122,18 @@ if args.image_type=='ap':
     for mt_sup in range(2, len(vert_sup_cnrs)-2):
         for mt_inf in range(mt_sup+1, len(vert_sup_cnrs)-2):
             mt_angle = calc_angle(vert_sup_cnrs[mt_sup], vert_inf_cnrs[mt_inf])
-            # find pt            
+            # pt            
             pt_inf = mt_sup
             pt_sups = np.arange(0, mt_sup)
-            pt_angles = np.abs([calc_angle(vert_sup_cnrs[pt_sup], vert_inf_cnrs[pt_inf]) for pt_sup in pt_sups])
-            pt_sup = pt_sups[np.argmax(pt_angles)]
-            # find lt
+            pt_angles = np.array([calc_angle(vert_sup_cnrs[pt_sup], vert_inf_cnrs[pt_inf]) for pt_sup in pt_sups])
+            # lt
             lt_sup = mt_inf
             lt_infs = np.arange(mt_inf, len(vert_inf_cnrs))
-            lt_angles = np.abs([calc_angle(vert_sup_cnrs[lt_sup], vert_inf_cnrs[lt_inf]) for lt_inf in lt_infs])
-            lt_inf = lt_infs[np.argmax(lt_angles)]
-            score = np.abs(mt_angle) + pt_angles.max() + lt_angles.max()
+            lt_angles = np.array([calc_angle(vert_sup_cnrs[lt_sup], vert_inf_cnrs[lt_inf]) for lt_inf in lt_infs])
+            mat_scores = np.abs(pt_angles[:, np.newaxis] - mt_angle + lt_angles[np.newaxis])
+            idx = np.unravel_index(mat_scores.argmax(), mat_scores.shape)
+            pt_sup, lt_inf = pt_sups[idx[0]], lt_infs[idx[1]]
+            score = mat_scores.max()
             if score > best_score:
                 best_score = score
                 best_set = mt_sup, mt_inf, pt_sup, lt_inf
