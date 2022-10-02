@@ -1,4 +1,5 @@
 #%%
+from re import A
 import numpy as np
 from sympy.geometry import Line, intersection
 from sympy.geometry import Point, Line, Polygon, Segment, Circle, intersection
@@ -37,6 +38,19 @@ def rotate_around(pts, angle_rad, origin):
     t = origin
     return r @ (pts - t) + t
 
+
+def calc_angle(line1, line2):
+    v1 = line1[1] - line1[0]
+    v1 = v1 / np.linalg.norm(v1)
+    v2 = line2[1] - line2[0]
+    v2 = v2 / np.linalg.norm(v2)
+    cos = v1 @ v2
+    a = np.arccos(cos)
+    if v1[1]-v2[1] <= 0:
+        a = -a
+    return a
+
+
 from functools import lru_cache
 @lru_cache(maxsize=1000)
 def _calc_cobb(sup_cnrs: list, inf_cnrs: list) -> float:
@@ -71,7 +85,10 @@ def draw_cobb(sup_cnrs: np.ndarray,
               text_attrs: dict = {}) -> svgwrite.container.Group:
     up_line = Line(sup_cnrs[0], sup_cnrs[1])
     low_line = Line(inf_cnrs[0], inf_cnrs[1])
-    up_low_cross = tuple(intersection(up_line, low_line)[0].evalf())
+    int_p = intersection(up_line, low_line)
+    if len(int_p)==0:
+        return
+    up_low_cross = tuple(int_p[0].evalf())
     angle_rad = float(up_line.angle_between(low_line).evalf())
 
     if up_low_cross[0] < sup_cnrs[0, 0]:

@@ -4,6 +4,7 @@ import json
 
 from PIL import Image
 import numpy as np
+import logzero
 from logzero import logger
 import sympy
 from sympy.geometry import Point, Line, Polygon, Segment, Circle, intersection
@@ -13,6 +14,8 @@ import yaml
 import svgwrite
 from jinja2 import Environment, FileSystemLoader
 import argparse
+import measure_utils as utils
+from measure_utils import calc_centroid, draw_cobb, perp, get_circle_dict, calc_cobb, calc_angle
 
 LINE_WIDTH = 2.0
 POINT_RADIUS = 2.0
@@ -37,8 +40,14 @@ parser.add_argument('--height',
 parser.add_argument('--points',
                     help='Draw points',
                     action='store_true')
+parser.add_argument('--verbose',
+                    help='Print logs',
+                    action='store_true')
 
 args = parser.parse_args()
+logzero.loglevel(30)
+if args.verbose:
+    logzero.loglevel(20)
 json_fn = Path(args.input)
 with open(json_fn, encoding='utf8') as f:
     lm_data = json.load(f)
@@ -59,8 +68,6 @@ for shape in lm_data['shapes']:
     shape['points'] = [[scale*e for e in p] for p in shape['points']]
 
 LABEL_NAMES = ['TL', 'TR', 'BL', 'BR']
-import measure_utils as utils
-from measure_utils import calc_centroid, draw_cobb, perp, get_circle_dict, calc_cobb
 
 points = utils.get_point_dict(lm_data)
 kps = utils.sort_kps(points)
@@ -112,42 +119,50 @@ if args.image_type=='ap':
     # Find vertebraes and calculate Cobb angles
     best_set = None
     best_score = 0
-    def calc_angle(line1, line2):
-        v1 = line1[1] - line1[0]
-        v1 = v1 / np.linalg.norm(v1)
-        v2 = line2[1] - line2[0]
-        v2 = v2 / np.linalg.norm(v2)
-        cos = v1 @ v2
-        return np.arccos(cos)
-    for mt_sup in range(2, len(vert_sup_cnrs)-2):
-        for mt_inf in range(mt_sup+1, len(vert_sup_cnrs)-2):
+    MT_MARGIN = 3
+
+    for mt_sup in range(MT_MARGIN, 5):
+        for mt_inf in range(9, len(vert_sup_cnrs)-MT_MARGIN):
             mt_angle = calc_angle(vert_sup_cnrs[mt_sup], vert_inf_cnrs[mt_inf])
-            # pt            
-            pt_inf = mt_sup
-            pt_sups = np.arange(0, mt_sup)
-            pt_angles = np.array([calc_angle(vert_sup_cnrs[pt_sup], vert_inf_cnrs[pt_inf]) for pt_sup in pt_sups])
+            # pt
+            best_pt_score = 0
+            best_pt = None
+            for pt_sup in range(0, mt_sup-1):
+                for pt_inf in range(pt_sup+1, mt_sup+1):
+                    pt_angle = calc_angle(vert_sup_cnrs[pt_sup], vert_inf_cnrs[pt_inf])
+                    score = np.abs(pt_angle - mt_angle)
+                    if score > best_pt_score:
+                        best_pt = (pt_sup, pt_inf)
+                        best_pt_score = score
+
             # lt
             lt_sup = mt_inf
             lt_infs = np.arange(mt_inf, len(vert_inf_cnrs))
             lt_angles = np.array([calc_angle(vert_sup_cnrs[lt_sup], vert_inf_cnrs[lt_inf]) for lt_inf in lt_infs])
-            mat_scores = np.abs(pt_angles[:, np.newaxis] - mt_angle + lt_angles[np.newaxis])
-            idx = np.unravel_index(mat_scores.argmax(), mat_scores.shape)
-            pt_sup, lt_inf = pt_sups[idx[0]], lt_infs[idx[1]]
-            score = mat_scores.max()
+            best_lt_score = 0
+            best_lt = None
+            for lt_sup in range(mt_inf, len(vert_inf_cnrs)-2):
+                for lt_inf in range(lt_sup+1, len(vert_inf_cnrs)):
+                    lt_angle = calc_angle(vert_sup_cnrs[lt_sup], vert_inf_cnrs[lt_inf])
+                    score = np.abs(lt_angle - mt_angle)
+                    if score > best_lt_score:
+                        best_lt = (lt_sup, lt_inf)
+                        best_lt_score = score
+            score = best_pt_score + best_lt_score
             if score > best_score:
                 best_score = score
-                best_set = mt_sup, mt_inf, pt_sup, lt_inf
-    i_apex = np.abs(coronal_translation[2:-2]).argmax() + 2
+                best_set = (mt_sup, mt_inf), best_pt, best_lt
+    i_apex = np.abs(coronal_translation[MT_MARGIN:-MT_MARGIN]).argmax() + MT_MARGIN
     assert best_set is not None
-    mt_sup, mt_inf, pt_sup, lt_inf = best_set
+    (mt_sup, mt_inf), (pt_sup, pt_inf), (lt_sup, lt_inf) = best_set
 
     # cobb angles
     logger.info('Cobb angles')
     drawings += [('PT', 'PT Cobb (p.49)'), ('MT', 'MT Cobb (p.49)'),
                 ('LT', 'LT Cobb (p.49)')]
-    draw_cobb(vert_sup_cnrs[pt_sup], vert_inf_cnrs[mt_sup], dwg, 'PT', 'red', text_attrs=text_attrs)
+    draw_cobb(vert_sup_cnrs[pt_sup], vert_inf_cnrs[pt_inf], dwg, 'PT', 'red', text_attrs=text_attrs)
     draw_cobb(vert_sup_cnrs[mt_sup], vert_inf_cnrs[mt_inf], dwg, 'MT', 'green', text_attrs=text_attrs)
-    draw_cobb(vert_sup_cnrs[mt_inf], vert_inf_cnrs[lt_inf], dwg, 'LT',
+    draw_cobb(vert_sup_cnrs[lt_sup], vert_inf_cnrs[lt_inf], dwg, 'LT',
             'blue', text_attrs=text_attrs)
     # apical translation
     drawings.append(('APT', 'Apical Translation (p.53)'))
@@ -263,7 +278,7 @@ if args.image_type=='ap':
                 grp.add(dwg.circle(center=pos.tolist(), r=POINT_RADIUS, stroke=color, fill=color))
 
     # Shoulder Height
-    if 'Shoulder' in kps and len(kps['Shoulder']) >= 2:
+    if 'Shoulder' in kps and len(kps['Shoulder']) == 2:
         drawings.append(('ShoulderHeight', 'Shoulder Height (p.57)'))
         logger.info(drawings[-1][1])
         color = 'magenta'
@@ -283,7 +298,7 @@ if args.image_type=='ap':
             grp.add(dwg.circle(center=pos.tolist(), r=POINT_RADIUS, stroke=color, fill=color))
 
     # Pelvic Obliquity
-    if 'Pelvis' in kps and len(kps['Pelvis']) >= 2:
+    if 'Pelvis' in kps and len(kps['Pelvis']) == 2:
         drawings.append(('PelvicObliquity', 'Pelvic Obliquity (p.93)'))
         logger.info(drawings[-1][1])
         color = 'cyan'
@@ -325,7 +340,7 @@ if args.image_type=='ap':
 
     # Leg Length Discrepancy
     femoral_kps = None
-    if 'FemoralHead' in kps and len(kps['FemoralHead']) >= 2:
+    if 'FemoralHead' in kps and len(kps['FemoralHead']) == 2:
         drawings.append(('LegLength', 'Leg Length Discrepancy (p.93)'))
         logger.info(drawings[-1][1])
         color = 'lime'
@@ -403,7 +418,7 @@ else: # lateral
 
     # Pelvic Incidence
     circles = get_circle_dict(lm_data)
-    if 'FemoralHeads' in circles and len(circles['FemoralHeads'])>=2:
+    if 'FemoralHeads' in circles and len(circles['FemoralHeads'])==2:
         gid = 'PelvicIncidence'
         logger.info(gid)
         drawings.append((gid, 'Pelvic Incidence (p.97)'))
