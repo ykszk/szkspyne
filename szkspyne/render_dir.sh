@@ -10,7 +10,6 @@ for image_type in ap_whole lateral_whole; do
         filename=$(basename -- "$fn")
         echo -n $filename " " && date
         stem="${filename%.*}"
-        python3 ./measure_and_draw.py "$fn" ${out_dir}/$image_type/"${stem}".html --image ${out_dir}/$image_type/"${stem}".svg --config "data/config.yaml" --template template --points --title "$stem" --height 1200 --image_type ${image_type%_*}
+        python3 ./measure_and_draw.py "$fn" --html ${out_dir}/$image_type/"${stem}".html --image ${out_dir}/$image_type/"${stem}".svg --config "data/config.yaml" --template template --points --title "$stem" --height 1024 --image_type ${image_type%_*}
     done
-    break
 done
