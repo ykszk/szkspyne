@@ -115,10 +115,11 @@ def draw_cobb(sup_cnrs: np.ndarray,
     grp.add(dwg.path((['M'] + up_auxs.tolist())))
     grp.add(dwg.path((['M'] + low_end.tolist() + low_auxs[0].tolist())))
     grp.add(dwg.path((['M'] + low_auxs.tolist())))
-    text_angle = '{:.1f}°'.format(np.rad2deg(angle_rad))
+    angle_deg = np.rad2deg(angle_rad)
+    text_angle = '{:.1f}°'.format(angle_deg)
     grp.add(dwg.text(text_angle, insert=tuple(aux_cross.evalf()),
                      **text_attrs))
-    return grp
+    return grp, angle_deg
 
 
 def calc_intersection(A: np.ndarray, B: np.ndarray, C: np.ndarray,

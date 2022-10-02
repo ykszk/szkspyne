@@ -24,13 +24,16 @@ PERP_BOX_SIZE = (20, 20) # perpendicular sign
 parser = argparse.ArgumentParser(
     description='Measure and draw.')
 parser.add_argument('input', help='Input json filename', metavar='<input>')
-parser.add_argument('output', help='Output html filename', metavar='<output>')
 parser.add_argument('-c', '--config',
                     help='Config yaml filename',required=True)
 parser.add_argument('-t', '--template',
                     help='template directory', default='.')
 parser.add_argument('--title',
                     help='html title', default='Scoliosis Measuaraments')
+parser.add_argument('--measure',
+                    help='Save measurements json')
+parser.add_argument('--html',
+                    help='Save html')
 parser.add_argument('--image',
                     help='Save image (svg or png)')
 parser.add_argument('--image_type',
@@ -45,6 +48,10 @@ parser.add_argument('--verbose',
                     action='store_true')
 
 args = parser.parse_args()
+if not args.html and not args.image and not args.measure:
+    import sys
+    print('At least one output (html, image, or measure) argument is required.')
+    sys.exit(1)
 logzero.loglevel(30)
 if args.verbose:
     logzero.loglevel(20)
@@ -112,6 +119,7 @@ if args.points:
         for pt in pts:
             grp.add(dwg.circle(center=pt, r=POINT_RADIUS, stroke=color, fill=color))
 
+measures = {}
 if args.image_type=='ap':
     #%% coronal translation
     logger.info('Coronal translation')
@@ -160,10 +168,10 @@ if args.image_type=='ap':
     logger.info('Cobb angles')
     drawings += [('PT', 'PT Cobb (p.49)'), ('MT', 'MT Cobb (p.49)'),
                 ('LT', 'LT Cobb (p.49)')]
-    draw_cobb(vert_sup_cnrs[pt_sup], vert_inf_cnrs[pt_inf], dwg, 'PT', 'red', text_attrs=text_attrs)
-    draw_cobb(vert_sup_cnrs[mt_sup], vert_inf_cnrs[mt_inf], dwg, 'MT', 'green', text_attrs=text_attrs)
-    draw_cobb(vert_sup_cnrs[lt_sup], vert_inf_cnrs[lt_inf], dwg, 'LT',
-            'blue', text_attrs=text_attrs)
+    measures['PT'] = draw_cobb(vert_sup_cnrs[pt_sup], vert_inf_cnrs[pt_inf], dwg, 'PT', 'red', text_attrs=text_attrs)[1]
+    measures['MT'] = draw_cobb(vert_sup_cnrs[mt_sup], vert_inf_cnrs[mt_inf], dwg, 'MT', 'green', text_attrs=text_attrs)[1]
+    measures['LT'] = draw_cobb(vert_sup_cnrs[lt_sup], vert_inf_cnrs[lt_inf], dwg, 'LT',
+            'blue', text_attrs=text_attrs)[1]
     # apical translation
     drawings.append(('APT', 'Apical Translation (p.53)'))
     logger.info(drawings[-1][1])
@@ -214,6 +222,7 @@ if args.image_type=='ap':
         dwg.text('{:.1f} pixels'.format(c7_centroid[0] - sacrum_center[0]),
                 insert=[max(c7_centroid[0], sacrum_center[0]), y_cb],
                 **text_attrs))
+    measures['CoronalBalance'] = c7_centroid[0] - sacrum_center[0]
     # T1 tilt
     drawings.append(('T1Tilt', 'T1 Tilt Angle (p.55)'))
     logger.info(drawings[-1][1])
@@ -237,8 +246,10 @@ if args.image_type=='ap':
                 (aux_t1_tilt + 5 * t1_width * aux_vec).tolist())))
     angle = line_t1.angle_between(
         Line([0, aux_t1_tilt[1]], [img.size[0], aux_t1_tilt[1]]))
-    txt_angle = '{:.2f}°'.format(np.rad2deg(float(angle.evalf())))
+    angle_deg = np.rad2deg(float(angle.evalf()))
+    txt_angle = '{:.2f}°'.format(angle_deg)
     grp.add(dwg.text(txt_angle, insert=c7_centroid, **text_attrs))
+    measures['T1Tilt'] = angle_deg
     # Clavicle Angle
     if 'Clavicle' in kps and len(kps['Clavicle'])==2:
         drawings.append(('ClavicleAngle', 'Clavicle Angle (p.56)'))
@@ -272,10 +283,12 @@ if args.image_type=='ap':
             #                    fill=color))
 
             angle = chrl.angle_between(line_clavicle)
-            txt_angle = '{:.1f}°'.format(np.rad2deg(float(angle.evalf())))
+            angle_deg = np.rad2deg(float(angle.evalf()))
+            txt_angle = '{:.1f}°'.format(angle_deg)
             grp.add(dwg.text(txt_angle, insert=clavicle_intersection, **text_attrs))
             for pos in clavicle_kps:
                 grp.add(dwg.circle(center=pos.tolist(), r=POINT_RADIUS, stroke=color, fill=color))
+            measures['ClavicleAngle'] = angle_deg
 
     # Shoulder Height
     if 'Shoulder' in kps and len(kps['Shoulder']) == 2:
@@ -296,6 +309,7 @@ if args.image_type=='ap':
         grp.add(dwg.text(height_text, insert=shoulder_kps[0], **text_attrs))
         for pos in shoulder_kps:
             grp.add(dwg.circle(center=pos.tolist(), r=POINT_RADIUS, stroke=color, fill=color))
+        measures['Shoulder'] = shoulder_kps[0, 1] - shoulder_kps[1, 1]
 
     # Pelvic Obliquity
     if 'Pelvis' in kps and len(kps['Pelvis']) == 2:
@@ -334,9 +348,11 @@ if args.image_type=='ap':
             angle = hline.angle_between(pelvic_ref_line)
             if pelvic_kps[0, 1] > pelvic_kps[1, 1]:
                 angle *= -1
-            txt_angle = '{:.1f}°'.format(np.rad2deg(float(angle.evalf())))
+            angle_deg = np.rad2deg(float(angle.evalf()))
+            txt_angle = '{:.1f}°'.format(angle_deg)
             grp.add(dwg.text(txt_angle, insert=pelvic_cross, **text_attrs))
             grp.add(dwg.rect(insert=(-LINE_WIDTH, y_up), size=PERP_BOX_SIZE))
+            measures['PelvicObliquity'] = angle_deg
 
     # Leg Length Discrepancy
     femoral_kps = None
@@ -360,6 +376,7 @@ if args.image_type=='ap':
         grp.add(dwg.text(height_text, insert=femoral_kps[1], **text_attrs))
         for pos in femoral_kps:
             grp.add(dwg.circle(center=pos.tolist(), r=POINT_RADIUS, stroke=color, fill=color))
+        measures['LegLength'] = femoral_kps[1, 1] - femoral_kps[0, 1]
 
     # Sacral Obliquity
     if femoral_kps is not None:
@@ -371,10 +388,11 @@ if args.image_type=='ap':
         x_pos1, x_pos2 = femoral_kps[:, 0]
         y_pos1 = float(solve(sacrum_line.equation(x, y).subs(x, x_pos1).evalf())[0])
         y_pos2 = float(solve(sacrum_line.equation(x, y).subs(x, x_pos2).evalf())[0])
-        grp = draw_cobb(np.array([[x_pos1, y_pos1], [x_pos2, y_pos2]]), femoral_kps,
+        grp, angle_deg = draw_cobb(np.array([[x_pos1, y_pos1], [x_pos2, y_pos2]]), femoral_kps,
                         dwg, 'SacralObliquity', color, 1, text_attrs)
         for pos in np.concatenate((femoral_kps, sacrum_tltr), axis=0):
             grp.add(dwg.circle(center=pos.tolist(), r=POINT_RADIUS, stroke=color, fill=color))
+        measures['SacralObliquity'] = angle_deg
 else: # lateral
     # Thoracic kyphosis
     gid = 'Thoracickyphosis'
@@ -382,7 +400,8 @@ else: # lateral
     color = 'red'
     sup = vert_sup_cnrs[2]
     inf = vert_inf_cnrs[12]
-    grp = draw_cobb(sup, inf, dwg, gid, color, text_attrs=text_attrs)
+    grp, angle_deg = draw_cobb(sup, inf, dwg, gid, color, text_attrs=text_attrs)
+    measures['Thoracickyphosis'] = angle_deg
 
     # Mid/Lower thoracic kyphosis
     gid = 'Mid/Lowerthoracickyphosis'
@@ -390,7 +409,8 @@ else: # lateral
     color = 'green'
     sup = vert_sup_cnrs[5]
     inf = vert_inf_cnrs[12]
-    grp = draw_cobb(sup, inf, dwg, gid, color, text_attrs=text_attrs)
+    grp, angle_deg = draw_cobb(sup, inf, dwg, gid, color, text_attrs=text_attrs)
+    measures['Mid/Lowerthoracickyphosis'] = angle_deg
 
     # Proximal thoracic kyphosis
     gid = 'Proximalthoracickyphosis'
@@ -398,7 +418,8 @@ else: # lateral
     color = 'blue'
     sup = vert_sup_cnrs[2]
     inf = vert_inf_cnrs[5]
-    grp = draw_cobb(sup, inf, dwg, gid, color, text_attrs=text_attrs)
+    grp, angle_deg = draw_cobb(sup, inf, dwg, gid, color, text_attrs=text_attrs)
+    measures['Proximalthoracickyphosis'] = angle_deg
 
     # Sacral Slope
     gid = 'SacralSlope'
@@ -412,8 +433,10 @@ else: # lateral
         (np.sign(sacrum_tltr[1, 0] - sacrum_tltr[0, 0]), 0))
     grp.add(dwg.path((['M'] + sacrum_tltr[0].tolist() + sacrum_hl.tolist())))
     angle = Line(*sacrum_tltr).angle_between(Line(sacrum_tltr[0], sacrum_hl))
-    txt_angle = '{:.2f}°'.format(90 - np.rad2deg(float(angle.evalf())))
+    angle_deg = 90 - np.rad2deg(float(angle.evalf()))
+    txt_angle = '{:.2f}°'.format(angle_deg)
     grp.add(dwg.text(txt_angle, insert=sacrum_center, **text_attrs))
+    measures['SacralSlope'] = angle_deg
 
 
     # Pelvic Incidence
@@ -449,8 +472,10 @@ else: # lateral
             dwg.path((['M'] + sacrum_center.tolist() +
                     (sacrum_center + sacrum_width * sacrum_perp).tolist())))
         angle = Line(*sacrum_tltr).angle_between(Line(femoral_center, sacrum_center))
-        txt_angle = '{:.2f}°'.format(90 - np.rad2deg(float(angle.evalf())))
+        angle_deg = 90 - np.rad2deg(float(angle.evalf()))
+        txt_angle = '{:.2f}°'.format(angle_deg)
         grp.add(dwg.text(txt_angle, insert=sacrum_center, **text_attrs))
+        measures['PelvicIncidence'] = angle_deg
 
         # Pelvic Radius Angle
         gid = 'PelvicRadiusAngle'
@@ -461,8 +486,10 @@ else: # lateral
         grp.add(dwg.path((['M'] + sacrum_tltr.ravel().tolist())))
         grp.add(dwg.path((['M'] + femoral_center.tolist() + sacrum_tltr[1].tolist())))
         angle = Line(*sacrum_tltr).angle_between(Line(femoral_center, sacrum_tltr[1]))
-        txt_angle = '{:.2f}°'.format(np.rad2deg(float(angle.evalf())))
+        angle_deg = np.rad2deg(float(angle.evalf()))
+        txt_angle = '{:.2f}°'.format(angle_deg)
         grp.add(dwg.text(txt_angle, insert=sacrum_tltr[1], **text_attrs))
+        measures['PelvicRadiusAngle'] = angle_deg
         # L5 Incidence Angle
         gid = 'L5IncidenceAngle'
         logger.info(gid)
@@ -479,20 +506,23 @@ else: # lateral
         grp.add(dwg.path((['M'] + vert_sup_cnrs[-1].ravel().tolist())))
         grp.add(dwg.path((['M'] + femoral_center.tolist() + l5_sup_center.tolist())))
         angle = Line(*l5_sup).angle_between(Line(femoral_center, l5_sup_center))
-        txt_angle = '{:.2f}°'.format(90 - np.rad2deg(float(angle.evalf())))
+        angle_deg = 90 - np.rad2deg(float(angle.evalf()))
+        txt_angle = '{:.2f}°'.format(angle_deg)
         grp.add(dwg.text(txt_angle, insert=l5_sup_center, **text_attrs))
+        measures['L5IncidenceAngle'] = angle_deg
         # Lumbosacral Angle
         gid = 'LumbosacralAngle'
         logger.info(gid)
         drawings.append((gid, 'Lumbosacral Angle (p.105)'))
         color = 'green'
         # grp = dwg.add(dwg.g(id=gid, stroke=color))
-        grp = draw_cobb(vert_inf_cnrs[-1],
+        grp, angle_deg = draw_cobb(vert_inf_cnrs[-1],
                         sacrum_tltr,
                         dwg,
                         gid,
                         color,
                         text_attrs=text_attrs)
+        measures['LumbosacralAngle'] = angle_deg
 
 if args.image:
     filename = Path(args.image)
@@ -511,12 +541,13 @@ if args.image:
     else:
         raise NotImplementedError
 
-env = Environment(loader=FileSystemLoader(args.template, encoding='utf8'))
-template = env.get_template('template.html')
-t_cb = env.get_template('t_checkbox.html')
+if args.html:
+    env = Environment(loader=FileSystemLoader(args.template, encoding='utf8'))
+    template = env.get_template('template.html')
+    t_cb = env.get_template('t_checkbox.html')
 
-cbs = []
-for name, label in drawings:
-    cbs.append(t_cb.render(name=name, label=label))
-with open(args.output, 'w', encoding='utf8') as f:
-    f.write(template.render(svg=dwg.tostring(), checkboxes='\n'.join(cbs), title=args.title))
+    cbs = []
+    for name, label in drawings:
+        cbs.append(t_cb.render(name=name, label=label))
+    with open(args.html, 'w', encoding='utf8') as f:
+        f.write(template.render(svg=dwg.tostring(), checkboxes='\n'.join(cbs), title=args.title))
