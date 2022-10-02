@@ -546,6 +546,10 @@ if args.image:
     else:
         raise NotImplementedError
 
+if args.measure:
+    with open(args.measure, 'w') as f:
+        json.dump(measures, f)
+
 if args.html:
     env = Environment(loader=FileSystemLoader(args.template, encoding='utf8'))
     template = env.get_template('template.html')
