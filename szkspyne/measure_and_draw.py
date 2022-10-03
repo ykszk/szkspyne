@@ -15,7 +15,7 @@ import svgwrite
 from jinja2 import Environment, FileSystemLoader
 import argparse
 import measure_utils as utils
-from measure_utils import calc_centroid, draw_cobb, perp, get_circle_dict, calc_cobb, calc_angle
+from measure_utils import calc_centroid, draw_cobb, perp, get_circle_dict, calc_angle
 
 LINE_WIDTH = 2.0
 POINT_RADIUS = 2.0
@@ -427,6 +427,7 @@ else:
         measures['Proximalthoracickyphosis'] = angle_deg
 
         # Sacral Slope
+        # from skspatial.objects import Line, Point
         gid = 'SacralSlope'
         logger.info(gid)
         drawings.append((gid, 'Sacral Slope (p.99)'))
@@ -437,8 +438,8 @@ else:
         sacrum_hl = sacrum_tltr[0] + sacrum_width * np.array(
             (np.sign(sacrum_tltr[1, 0] - sacrum_tltr[0, 0]), 0))
         grp.add(dwg.path((['M'] + sacrum_tltr[0].tolist() + sacrum_hl.tolist())))
-        angle = Line(*sacrum_tltr).angle_between(Line(sacrum_tltr[0], sacrum_hl))
-        angle_deg = np.rad2deg(float(angle.evalf()))
+        angle = np.abs(calc_angle(sacrum_tltr, (sacrum_tltr[0], sacrum_hl)))
+        angle_deg = np.rad2deg(angle)
         txt_angle = '{:.2f}°'.format(angle_deg)
         grp.add(dwg.text(txt_angle, insert=sacrum_center, **text_attrs))
         measures['SacralSlope'] = angle_deg
@@ -476,8 +477,8 @@ else:
             grp.add(
                 dwg.path((['M'] + sacrum_center.tolist() +
                         (sacrum_center + sacrum_width * sacrum_perp).tolist())))
-            angle = Line(*sacrum_tltr).angle_between(Line(femoral_center, sacrum_center))
-            angle_deg = 90 - np.rad2deg(float(angle.evalf()))
+            angle = np.abs(calc_angle(sacrum_tltr, (femoral_center, sacrum_center)))
+            angle_deg = 90 - np.rad2deg(angle)
             txt_angle = '{:.2f}°'.format(angle_deg)
             grp.add(dwg.text(txt_angle, insert=sacrum_center, **text_attrs))
             measures['PelvicIncidence'] = angle_deg
@@ -490,8 +491,8 @@ else:
             grp = dwg.add(dwg.g(id=gid, stroke=color))
             grp.add(dwg.path((['M'] + sacrum_tltr.ravel().tolist())))
             grp.add(dwg.path((['M'] + femoral_center.tolist() + sacrum_tltr[1].tolist())))
-            angle = Line(*sacrum_tltr).angle_between(Line(femoral_center, sacrum_tltr[1]))
-            angle_deg = np.rad2deg(float(angle.evalf()))
+            angle = np.abs(calc_angle(sacrum_tltr, (femoral_center, sacrum_tltr[1])))
+            angle_deg = np.rad2deg(angle)
             txt_angle = '{:.2f}°'.format(angle_deg)
             grp.add(dwg.text(txt_angle, insert=sacrum_tltr[1], **text_attrs))
             measures['PelvicRadiusAngle'] = angle_deg
@@ -510,8 +511,8 @@ else:
                         (l5_sup_center + l5_width * l5_perp).tolist())))
             grp.add(dwg.path((['M'] + vert_sup_cnrs[-1].ravel().tolist())))
             grp.add(dwg.path((['M'] + femoral_center.tolist() + l5_sup_center.tolist())))
-            angle = Line(*l5_sup).angle_between(Line(femoral_center, l5_sup_center))
-            angle_deg = 90 - np.rad2deg(float(angle.evalf()))
+            angle = np.abs(calc_angle(l5_sup, (femoral_center, l5_sup_center)))
+            angle_deg = 90 - np.rad2deg(angle)
             txt_angle = '{:.2f}°'.format(angle_deg)
             grp.add(dwg.text(txt_angle, insert=l5_sup_center, **text_attrs))
             measures['L5IncidenceAngle'] = angle_deg

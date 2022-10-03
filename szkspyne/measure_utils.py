@@ -1,7 +1,6 @@
 #%%
 from re import A
 import numpy as np
-from sympy.geometry import Line, intersection
 from sympy.geometry import Point, Line, Polygon, Segment, Circle, intersection
 import io
 from base64 import b64encode
@@ -51,31 +50,6 @@ def calc_angle(line1, line2):
     return a
 
 
-from functools import lru_cache
-@lru_cache(maxsize=1000)
-def _calc_cobb(sup_cnrs: list, inf_cnrs: list) -> float:
-    '''Calculate Cobb angle in degrees
-    '''
-    up_line = Line(sup_cnrs[0], sup_cnrs[1])
-    low_line = Line(inf_cnrs[0], inf_cnrs[1])
-    int_p = intersection(up_line, low_line)
-    if len(int_p)==0:
-        return 0
-    up_low_cross = tuple(int_p[0].evalf())
-    angle_rad = float(up_line.angle_between(low_line).evalf())
-
-    if up_low_cross[0] < sup_cnrs[0][0]:
-        pass
-    else:
-        angle_rad *= -1
-    return np.rad2deg(angle_rad)
-
-
-def calc_cobb(sup_cnrs: np.ndarray, inf_cnrs: np.ndarray) -> float:
-    args = [(tuple(a[0].tolist()), tuple(a[1].tolist())) for a in [sup_cnrs, inf_cnrs]]
-    return _calc_cobb(*args)
-
-
 def draw_cobb(sup_cnrs: np.ndarray,
               inf_cnrs: np.ndarray,
               dwg: svgwrite.Drawing,
@@ -83,13 +57,16 @@ def draw_cobb(sup_cnrs: np.ndarray,
               color: str,
               aux_dist: float = 3,
               text_attrs: dict = {}) -> svgwrite.container.Group:
-    up_line = Line(sup_cnrs[0], sup_cnrs[1])
-    low_line = Line(inf_cnrs[0], inf_cnrs[1])
-    int_p = intersection(up_line, low_line)
-    if len(int_p)==0:
+    from skspatial.objects import Line, Point
+    up_line = Line.from_points(sup_cnrs[0], sup_cnrs[1])
+    low_line = Line.from_points(inf_cnrs[0], inf_cnrs[1])
+    try:
+        up_low_cross = up_line.intersect_line(low_line)
+    except ValueError:
         return
-    up_low_cross = tuple(int_p[0].evalf())
-    angle_rad = float(up_line.angle_between(low_line).evalf())
+
+    angle_rad = calc_angle((sup_cnrs[0], sup_cnrs[1]), (inf_cnrs[0], inf_cnrs[1])) #float(up_line.angle_between(low_line).evalf())
+    angle_rad = np.abs(angle_rad)
 
     if up_low_cross[0] < sup_cnrs[0, 0]:
         up_end = sup_cnrs[1]
@@ -102,12 +79,12 @@ def draw_cobb(sup_cnrs: np.ndarray,
         angle_rad *= -1
 
     aux_cross = Point(rotate_around(pts, angle_rad / 2, up_low_cross))
-    up_aux1 = up_line.projection(aux_cross)
+    up_aux1 = up_line.project_point(aux_cross)
     up_aux2 = up_aux1 + 1.5 * (aux_cross - up_aux1)
-    up_auxs = np.array((up_aux1.evalf(), up_aux2.evalf()))
-    low_aux1 = low_line.projection(aux_cross)
+    up_auxs = np.array((up_aux1, up_aux2))
+    low_aux1 = low_line.project_point(aux_cross)
     low_aux2 = low_aux1 + 1.5 * (aux_cross - low_aux1)
-    low_auxs = np.array((low_aux1.evalf(), low_aux2.evalf()))
+    low_auxs = np.array((low_aux1, low_aux2))
 
     grp = dwg.add(
         dwg.g(id=group_id, stroke=color, stroke_width=2.0, fill='none'))
@@ -117,7 +94,7 @@ def draw_cobb(sup_cnrs: np.ndarray,
     grp.add(dwg.path((['M'] + low_auxs.tolist())))
     angle_deg = np.rad2deg(angle_rad)
     text_angle = '{:.1f}°'.format(angle_deg)
-    grp.add(dwg.text(text_angle, insert=tuple(aux_cross.evalf()),
+    grp.add(dwg.text(text_angle, insert=tuple(aux_cross),
                      **text_attrs))
     return grp, angle_deg
 
