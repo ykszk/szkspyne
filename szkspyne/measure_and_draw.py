@@ -22,7 +22,7 @@ POINT_RADIUS = 2.0
 PERP_BOX_SIZE = (20, 20)  # perpendicular sign
 
 
-def measure_json(json_fn: Path, height: int, config_filename: str, points: bool,
+def measure_json(json_fn: Path, height: int, config_filename: str, draw_points: bool,
             image_type: str, image_filename: str, html_filename,
             measure_filename: str, template_directory: str, html_title: str):
     with open(json_fn, encoding='utf8') as f:
@@ -66,7 +66,7 @@ def measure_json(json_fn: Path, height: int, config_filename: str, points: bool,
     points = utils.get_point_dict(lm_data)
     kps = utils.sort_kps(points)
 
-    if points:
+    if draw_points:
         drawings.append(('Points', 'Points'))
         grp = dwg.add(dwg.g(id='Points', stroke_width=2.0, fill='none'))
         for label, pts in points.items():

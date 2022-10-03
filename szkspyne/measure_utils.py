@@ -1,7 +1,5 @@
 #%%
-from re import A
 import numpy as np
-from sympy.geometry import Point, Line, Polygon, Segment, Circle, intersection
 import io
 from base64 import b64encode
 import svgwrite
