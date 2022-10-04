@@ -6,10 +6,8 @@ from PIL import Image
 import numpy as np
 import logzero
 from logzero import logger
-import sympy
-from sympy.geometry import Line, intersection
-from sympy import solve
-from sympy.abc import x, y
+from skspatial.objects import Line
+
 import yaml
 import svgwrite
 from jinja2 import Environment, FileSystemLoader
@@ -83,7 +81,6 @@ def measure_json(json_fn: Path, height: int, config_filename: str, draw_points: 
     if len(kps['TL']) != len(kps['TR']) or len(kps['BL']) != len(kps['BR']):
         pass
     else:
-        n_vertebrae = len(kps['BR'])
         for l in LABEL_NAMES:  # remove C7
             kps[l] = np.delete(kps[l], 0, axis=0)
         sacrum_tltr, vert_corners, disc_corners = utils.get_vert_and_disc_corners(
@@ -260,11 +257,9 @@ def measure_json(json_fn: Path, height: int, config_filename: str, draw_points: 
             t1_sup_vec = vert_sup_vecs[0]
             aux_vec = np.array([1, 0])
             t1_width = np.linalg.norm(t1_corners[1] - t1_corners[0])
-            line_t1 = Line(vert_corners[0, 0], vert_corners[0, 1])
-            aux_t1_tilt = np.array([
-                float(e) for e in intersection(Line(c7pl[0], c7pl[1]), line_t1)
-                [0].evalf()
-            ])
+            line_t1 = Line.from_points(vert_corners[0, 0], vert_corners[0, 1])
+
+            aux_t1_tilt = Line.from_points(c7pl[0], c7pl[1]).intersect_line(line_t1)
             grp.add(
                 dwg.path((['M'] +
                           (aux_t1_tilt - 2 * t1_width * t1_sup_vec).tolist() +
@@ -273,12 +268,30 @@ def measure_json(json_fn: Path, height: int, config_filename: str, draw_points: 
                 dwg.path(
                     (['M'] + (aux_t1_tilt - 2 * t1_width * aux_vec).tolist() +
                      (aux_t1_tilt + 5 * t1_width * aux_vec).tolist())))
-            angle = line_t1.angle_between(
-                Line([0, aux_t1_tilt[1]], [img.size[0], aux_t1_tilt[1]]))
-            angle_deg = np.rad2deg(float(angle.evalf()))
+            # angle = line_t1.angle_between(
+            #     Line([0, aux_t1_tilt[1]], [img.size[0], aux_t1_tilt[1]]))
+            angle = calc_angle(vert_corners[0], ([0, aux_t1_tilt[1]], [img.size[0], aux_t1_tilt[1]]))
+            angle_deg = np.rad2deg(angle)
             txt_angle = '{:.2f}°'.format(angle_deg)
             grp.add(dwg.text(txt_angle, insert=c7_centroid, **text_attrs))
             measures['T1Tilt'] = angle_deg
+            def draw_line(a, b, x0, x1, grp, dwg):
+                '''
+                draw horizontal line
+                '''
+                d = b - a
+                slope = d[1] / d[0]
+                t0 = -a[0]/d[0]
+                y0 = a[1] + t0 * d[1]
+                f0 = slope*x0+y0
+                f1 = slope*x1+y0
+                grp.add(
+                    dwg.path((['M'] + [
+                        x0,f0
+                    ] + [
+                        x1,f1
+                    ])))
+                return f0, f1
             # Clavicle Angle
             if 'Clavicle' in kps and len(kps['Clavicle']) == 2:
                 drawings.append(('ClavicleAngle', 'Clavicle Angle (p.56)'))
@@ -291,37 +304,19 @@ def measure_json(json_fn: Path, height: int, config_filename: str, draw_points: 
                           fill='none'))
                 assert kps['Clavicle'].shape == (2, 2)
                 clavicle_kps = kps['Clavicle']
-                line_clavicle = Line(clavicle_kps[0], clavicle_kps[1])
-                chrl = Line([0, clavicle_kps[:, 1].min()],
+                line_clavicle = Line.from_points(clavicle_kps[0], clavicle_kps[1])
+                chrl = Line.from_points([0, clavicle_kps[:, 1].min()],
                             [img.size[0], clavicle_kps[:, 1].min()])
-                t = sympy.Symbol('t', real=True)
-                grp.add(
-                    dwg.path((['M'] + [
-                        0,
-                        float(
-                            solve(
-                                line_clavicle.equation(x, y).subs(
-                                    x, 0).evalf())[0])
-                    ] + [
-                        img.size[0],
-                        float(
-                            solve(
-                                line_clavicle.equation(x, y).subs(
-                                    x, img.size[0]).evalf())[0])
-                    ])))
+                draw_line(clavicle_kps[0], clavicle_kps[1], 0, img.size[0], grp, dwg)
                 grp.add(
                     dwg.path((['M'] + [0, clavicle_kps[:, 1].min()] +
                               [img.size[0], clavicle_kps[:, 1].min()])))
                 if clavicle_kps[0, 1] != clavicle_kps[1, 1]:
-                    clavicle_intersection = [
-                        float(e)
-                        for e in intersection(chrl, line_clavicle)[0].evalf()
-                    ]
-                    # grp.add(dwg.circle(center=clavicle_intersection, r=POINT_RADIUS, stroke=color,
-                    #                    fill=color))
+                    clavicle_intersection = chrl.intersect_line(line_clavicle)
 
-                    angle = chrl.angle_between(line_clavicle)
-                    angle_deg = np.rad2deg(float(angle.evalf()))
+                    angle = calc_angle(([0, clavicle_kps[:, 1].min()],
+                            [img.size[0], clavicle_kps[:, 1].min()]), clavicle_kps)
+                    angle_deg = np.rad2deg(angle)
                     angle_deg = min(180-angle_deg, angle_deg)
                     txt_angle = '{:.1f}°'.format(angle_deg)
                     grp.add(
@@ -382,21 +377,8 @@ def measure_json(json_fn: Path, height: int, config_filename: str, draw_points: 
                 assert pelvic_kps.shape == (2, 2)
                 pelvic_kps = np.array(sorted(pelvic_kps,
                                              key=lambda e: e[0]))  # sort by x
-                pelvic_ref_line = Line(pelvic_kps[0], pelvic_kps[1])
-                grp.add(
-                    dwg.path((['M'] + [
-                        0,
-                        float(
-                            solve(
-                                pelvic_ref_line.equation(x, y).subs(
-                                    x, 0).evalf())[0])
-                    ] + [
-                        img.size[0],
-                        float(
-                            solve(
-                                pelvic_ref_line.equation(x, y).subs(
-                                    x, img.size[0]).evalf())[0])
-                    ])))
+                pelvic_ref_line = Line.from_points(pelvic_kps[0], pelvic_kps[1])
+                draw_line(pelvic_kps[0], pelvic_kps[1], 0, img.size[0], grp, dwg)
                 y_up = pelvic_kps[:, 1].min()
                 grp.add(dwg.path((['M'] + [0, y_up] + [img.size[0], y_up])))
                 for pos in pelvic_kps:
@@ -405,14 +387,14 @@ def measure_json(json_fn: Path, height: int, config_filename: str, draw_points: 
                                    r=POINT_RADIUS,
                                    stroke=color,
                                    fill=color))
-                hline = Line((0, y_up), (img.size[0], y_up))
+                hline = Line.from_points((0, y_up), (img.size[0], y_up))
                 if pelvic_kps[0, 1] != pelvic_kps[1, 1]:
-                    int_p = intersection(pelvic_ref_line, hline)
-                    pelvic_cross = [float(e) for e in int_p[0].evalf()]
-                    angle = hline.angle_between(pelvic_ref_line)
+                    pelvic_cross = pelvic_ref_line.intersect_line(hline)
+                    angle = calc_angle(((0, y_up), (img.size[0], y_up)), pelvic_kps)
+                    angle = np.abs(angle)
                     if pelvic_kps[0, 1] > pelvic_kps[1, 1]:
                         angle *= -1
-                    angle_deg = np.rad2deg(float(angle.evalf()))
+                    angle_deg = np.rad2deg(angle)
                     txt_angle = '{:.1f}°'.format(angle_deg)
                     grp.add(
                         dwg.text(txt_angle, insert=pelvic_cross, **text_attrs))
@@ -460,15 +442,10 @@ def measure_json(json_fn: Path, height: int, config_filename: str, draw_points: 
                 drawings.append(('SacralObliquity', 'Sacral Obliquity (p.94)'))
                 logger.debug(drawings[-1][1])
                 color = 'hotpink'
-                femoral_line = Line(femoral_kps[0], femoral_kps[1])
-                sacrum_line = Line(sacrum_tltr[0], sacrum_tltr[1])
+                sacrum_line = Line.from_points(sacrum_tltr[0], sacrum_tltr[1])
                 x_pos1, x_pos2 = femoral_kps[:, 0]
-                y_pos1 = float(
-                    solve(sacrum_line.equation(x, y).subs(x,
-                                                          x_pos1).evalf())[0])
-                y_pos2 = float(
-                    solve(sacrum_line.equation(x, y).subs(x,
-                                                          x_pos2).evalf())[0])
+                y_pos1, y_pos2 = draw_line(sacrum_tltr[0], sacrum_tltr[1], x_pos1, x_pos2, grp, dwg)
+
                 grp, angle_deg = draw_cobb(
                     np.array([[x_pos1, y_pos1], [x_pos2, y_pos2]]),
                     femoral_kps, dwg, 'SacralObliquity', color, 1, text_attrs)
@@ -534,7 +511,6 @@ def measure_json(json_fn: Path, height: int, config_filename: str, draw_points: 
 
 
             # Sacral Slope
-            # from skspatial.objects import Line, Point
             gid = 'SacralSlope'
             logger.debug(gid)
             drawings.append((gid, 'Sacral Slope (p.99)'))

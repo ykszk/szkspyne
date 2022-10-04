@@ -37,6 +37,7 @@ def rotate_around(pts, angle_rad, origin):
 
 
 def calc_angle(line1, line2):
+    line1, line2 = np.array(line1), np.array(line2)
     v1 = line1[1] - line1[0]
     v1 = v1 / np.linalg.norm(v1)
     v2 = line2[1] - line2[0]
