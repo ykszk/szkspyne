@@ -23,11 +23,6 @@ ANCHOR_LABELS = ['C7-TL', 'S-TL']
 ANCHOR_INDICES = [settings.LABEL_NAMES.index(l) for l in ANCHOR_LABELS]
 IMG_HEIGHT = 768
 EPSILON = np.finfo(float).eps
-MAX_ITER = 200
-PATIENCE = 20
-LR = .1
-CONTR_RATE = .999
-SAVE_HISTORY = False
 
 class TorchPCA(nn.Module):
 
@@ -173,6 +168,26 @@ if __name__ == '__main__':
         nargs='+',
         type=int,
         default=[10, 1])
+    parser.add_argument('--lr',
+                        help='Initial learning rate. default: %(default)s',
+                        type=float,
+                        default=0.1)
+    parser.add_argument('--max_iter',
+                        help='The maximum number of iteration for fitting. default: %(default)s',
+                        type=int,
+                        default=200)
+    parser.add_argument('--patience',
+                        help='Patience for early stopping. default: %(default)s',
+                        type=int,
+                        default=20)
+    parser.add_argument('--contr_rate',
+                        help='Contribution rate for PCA. default: %(default)s',
+                        type=float,
+                        default=0.999)
+    parser.add_argument('--l2_reg',
+                        help='Coefficient for the L2 regularization term (weight decay). default: %(default)s',
+                        type=float,
+                        default=0.01)
     parser.add_argument('--skipped',
                         help='Optional argument. default: %(default)s',
                         metavar='<name>',
@@ -181,6 +196,9 @@ if __name__ == '__main__':
                         help='Device for pytorch')
     parser.add_argument('--channel_first',
                         help='Heatmap is in channel-first format',
+                        action='store_true')
+    parser.add_argument('--history',
+                        help='Save optimization history',
                         action='store_true')
 
     args, unknown = parser.parse_known_args()
@@ -199,12 +217,10 @@ if __name__ == '__main__':
     if args.output:
         outidr = Path(args.output)
     skipped = []
-    l2_reg = .01
     channel_first = args.channel_first
     pca_models = [TorchPCA(fn) for fn in args.model]
     for fn in tqdm(sorted((data_dir).glob('*.json'))):
         file_id = fn.stem
-
         heatmaps, h = mhd.read(str(data_dir / f'{file_id}.mha'))
         if not channel_first:
             heatmaps = heatmaps.transpose(2, 0, 1)
@@ -217,11 +233,10 @@ if __name__ == '__main__':
         histories = []
         for pca in pca_models:
             name = pca.model_name
-            n_comps = pca.calc_n_comps(CONTR_RATE)
+            n_comps = pca.calc_n_comps(args.contr_rate)
             pt_pca = PointAlignModel(pca, n_comps, top_anchor, bottom_anchor)
             pt_pca.to(device)
-            optimizer = Adam([pt_pca.coefs], lr=LR)
-
+            optimizer = Adam([pt_pca.coefs], lr=args.lr, weight_decay=args.l2_reg)
             try:
                 for blur_sigma in args.sigma:
                     if blur_sigma == 0:
@@ -237,14 +252,14 @@ if __name__ == '__main__':
                     t_heatmaps.requires_grad = True
 
                     history = []
-                    best_loss = 1e100
+                    best_loss = np.finfo(np.float64).max
                     best_coefs = 0
                     best_pca = None
                     patience = 0
-                    for i in range(MAX_ITER):
+                    for i in range(args.max_iter):
                         probas = pt_pca(t_heatmaps)
                         loss = -torch.log(torch.concat(probas)).mean(
-                        ) + l2_reg * torch.linalg.norm(pt_pca.coefs)
+                        )
                         history.append(loss.detach().item())
                         if history[-1] <= best_loss:
                             best_loss = history[-1]
@@ -253,12 +268,12 @@ if __name__ == '__main__':
                             patience = 0
                         else:
                             patience += 1
-                        if patience >= PATIENCE:
+                        if patience >= args.patience:
                             break
                         optimizer.zero_grad()
                         loss.backward()
                         optimizer.step()
-                    if SAVE_HISTORY:
+                    if args.history:
                         history = pd.DataFrame(history, columns=['loss'])
                         history['x'] = np.arange(len(history))
                         history['name'] = name
@@ -268,12 +283,15 @@ if __name__ == '__main__':
             except IndexError:  # updated coefs become really big when warped points completely miss the heatmaps
                 continue
             results.append((name, best_loss, best_coefs, best_pca))
-        if SAVE_HISTORY:
+        if args.history:
             import seaborn as sns
             df_history = pd.concat(histories, ignore_index=True)
             sns.set(context='notebook', style='whitegrid', font='serif')
             sns.lineplot(data=df_history, x='x', y='loss', hue='model')
-            plt.show()
+            plt.gcf().savefig(str(outdir/f'{file_id}.png'),
+                  transparent=False,
+                  bbox_inches='tight')
+            plt.clf()
 
         if len(results) == 0:
             skipped.append(file_id)
@@ -284,7 +302,7 @@ if __name__ == '__main__':
         results.sort(key=lambda e: e[1])  # sort results by loss
         best_name, best_loss, best_coefs, best_pca = results[0]
         pca = best_pca #TorchPCA(f'pca_{image_type}_{best_name}.npz')
-        pt_pca = PointAlignModel(pca, pca.calc_n_comps(CONTR_RATE), top_anchor,
+        pt_pca = PointAlignModel(pca, pca.calc_n_comps(args.contr_rate), top_anchor,
                                  bottom_anchor).to(device)
         warped = pca.unravel(pt_pca.ref2pt(pca.warp(best_coefs.to(device))))
         s = original_json['imageHeight'] / IMG_HEIGHT
