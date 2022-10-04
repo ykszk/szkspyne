@@ -3,6 +3,9 @@ import numpy as np
 import io
 from base64 import b64encode
 import svgwrite
+from collections import defaultdict
+from skspatial.objects import Line, Point
+
 
 def img2b64(img):
     with io.BytesIO() as bio:
@@ -35,8 +38,13 @@ def rotate_around(pts, angle_rad, origin):
     t = origin
     return r @ (pts - t) + t
 
-
 def calc_angle(line1, line2):
+    '''
+    >>> np.round(np.rad2deg(calc_angle(((0, 0), (1, 1)), ((0, 0), (0, 1)))), 3)
+    -45.0
+    >>> np.round(np.rad2deg(calc_angle(((0, 0), (-1, -1)), ((0, 0), (0, -1)))), 3)
+    45.0
+    '''
     line1, line2 = np.array(line1), np.array(line2)
     v1 = line1[1] - line1[0]
     v1 = v1 / np.linalg.norm(v1)
@@ -56,7 +64,6 @@ def draw_cobb(sup_cnrs: np.ndarray,
               color: str,
               aux_dist: float = 3,
               text_attrs: dict = {}) -> svgwrite.container.Group:
-    from skspatial.objects import Line, Point
     up_line = Line.from_points(sup_cnrs[0], sup_cnrs[1])
     low_line = Line.from_points(inf_cnrs[0], inf_cnrs[1])
     try:
@@ -132,16 +139,7 @@ def calc_centroid(corners: np.ndarray) -> np.ndarray:
     return calc_intersection(*midpoints)
 
 
-from collections import defaultdict
-
-
 def _get_shape_dict(json_data, shape_type):
-    # points = defaultdict(list)
-    # for shape in json_data['shapes']:
-    #     label = shape['label']
-    #     if shape['shape_type'] == shape:
-    #         points[label].append(shape['points'])
-    # return points
     points = defaultdict(list)
     for shape in json_data['shapes']:
         label = shape['label']
@@ -161,12 +159,6 @@ def get_point_dict(json_data):
 
 def get_circle_dict(json_data):
     return _get_shape_dict(json_data, 'circle')
-
-
-def check_counts(kps):
-    assert len(kps['TL']) == len(kps['TR'])
-    assert len(kps['BL']) == len(kps['BR'])
-    assert len(kps['TL']) == (len(kps['BL']) + 1)
 
 
 def sort_kps(points):

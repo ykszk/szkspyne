@@ -89,7 +89,6 @@ def measure_json(json_fn: Path, height: int, config_filename: str, draw_points: 
         logger.debug('Compute centroids')
         sacrum_center = sacrum_tltr.mean(axis=0)
         vert_centroids = np.array([calc_centroid(c) for c in vert_corners])
-        disc_centroids = np.array([calc_centroid(c) for c in disc_corners])
         logger.debug('Compute vecs')
         vert_sup_cnrs = vert_corners[:, :2]
         vert_sup_vecs = vert_sup_cnrs[:, 1] - vert_sup_cnrs[:, 0]
