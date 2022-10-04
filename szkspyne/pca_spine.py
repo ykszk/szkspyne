@@ -1,12 +1,10 @@
 #%%
 import json
-from re import match
 import numpy as np
 from sklearn.decomposition import PCA
 from logzero import logger
 from pathlib import Path
 from typing import NamedTuple, List, Union
-import itertools
 
 
 class PointConfig(NamedTuple):
@@ -47,7 +45,8 @@ class PointsPCA(PCA):
         padded = np.pad(points, ((0, 0), (0, 1)), constant_values=1)
         return (mat @ padded.T).T[:, :2]
 
-    def save(self, filename: Union[str, Path], model_name: str, labels: List[str], point_counts: List[int]):
+    def save(self, filename: Union[str, Path], model_name: str,
+             labels: List[str], point_counts: List[int]):
         assert 2 * sum(point_counts) == self.mean_.shape[0]  # type: ignore
         np.savez(
             filename,
@@ -83,36 +82,59 @@ if __name__ == '__main__':
         logger.warning('Unknown arguments:%s', unknown)
     outdir = Path(args.output)
     REF_HEIGHT = 1000
-    LABELS = ['TL', 'TR', 'BL', 'BR']
+    VERT_LABELS = ['TL', 'TR', 'BL', 'BR']
     L5_POINT_COUNTS = [19, 19, 18, 18]
     L4_POINT_COUNTS = (np.array(L5_POINT_COUNTS) - 1).tolist()
     L6_POINT_COUNTS = (np.array(L5_POINT_COUNTS) + 1).tolist()
-    LABELS_EXT = LABELS + ['Shoulder', 'Clavicle', 'Pelvis', 'Iliac',
-    'FemoralHead']
+    LABELS_EXT = VERT_LABELS + [
+        'Shoulder', 'Clavicle', 'Pelvis', 'Iliac', 'FemoralHead'
+    ]
     CONFIGS = [
-        PointConfig('L4', 'ap_whole', LABELS, L4_POINT_COUNTS),
-        PointConfig('L5', 'ap_whole', LABELS, L5_POINT_COUNTS),
-        PointConfig('L4', 'lateral_whole', LABELS, L4_POINT_COUNTS),
-        PointConfig('L5', 'lateral_whole', LABELS, L5_POINT_COUNTS),
-        PointConfig('L4-EXT', 'ap_whole', LABELS_EXT, L4_POINT_COUNTS + [2]*5),
-        PointConfig('L5-EXT', 'ap_whole', LABELS_EXT, L5_POINT_COUNTS + [2]*5),
+        PointConfig('L4', 'ap_whole', VERT_LABELS, L4_POINT_COUNTS),
+        PointConfig('L5', 'ap_whole', VERT_LABELS, L5_POINT_COUNTS),
+        PointConfig('L4', 'lateral_whole', VERT_LABELS, L4_POINT_COUNTS),
+        PointConfig('L5', 'lateral_whole', VERT_LABELS, L5_POINT_COUNTS),
+        PointConfig('L4-EXT', 'ap_whole', LABELS_EXT,
+                    L4_POINT_COUNTS + [2] * 5),
+        PointConfig('L5-EXT', 'ap_whole', LABELS_EXT,
+                    L5_POINT_COUNTS + [2] * 5),
         # PointConfig('L6', LABELS, L6_POINT_COUNTS, 'lateral_whole'),
     ]
+    with open(args.input) as f:
+        all_data = [json.loads(line) for line in f]
+    logger.info('Original data: %d', len(all_data))
+    # preprocess
+    for d in all_data:
+        ns = {k: len(v) for k, v in d['point'].items()}
+        np_pts = {}
+        for label, pts in d['point'].items():
+            if label in VERT_LABELS:
+                pts.sort(key=lambda v: v[0][1])  # sort by y
+            else:
+                pts.sort(key=lambda v: v[0][0])  # sort by x
+            np_pts[label] = np.array(pts)[:, 0]  # squeeze (N, 1, 2) -> (N, 2)
+        d['point'] = np_pts
+    # add potential pseudo L4
+    import copy
+    l4_data = copy.deepcopy(all_data)
+    for d in l4_data:
+        np_pts = {}
+        for label, pts in d['point'].items():
+            if label in VERT_LABELS:
+                np_pts[label] = pts[1:].copy()
+            else:
+                np_pts[label] = pts.copy()
+        d['point'] = np_pts
+    all_data += l4_data
+
     for config in CONFIGS:
         image_type = config.image_type
         logger.info('%s %s', config.name, image_type)
-        with open(args.input) as f:
-            data = [json.loads(line) for line in f]
         valid_data = []
-        for d in data:
+        for d in all_data:
             if d['image_type'] != image_type:
                 continue
             ns = {k: len(v) for k, v in d['point'].items()}
-            np_pts = {}
-            for label, pts in d['point'].items():
-                pts.sort(key=lambda v: v[0][1])  # sort by y
-                np_pts[label] = np.array(pts)[:, 0]
-            d['point'] = np_pts
             valid = True
             for l, n in zip(config.labels, config.point_counts):
                 if l not in ns or ns[l] != n:
@@ -120,38 +142,17 @@ if __name__ == '__main__':
                     break
             if valid:
                 valid_data.append(d)
-            elif config.name=='L4': #  try to use L5 data for L4
-                # remove top points
-                np_pts = {}
-                for label, pts in d['point'].items():
-                    if label in config.labels:
-                        np_pts[label] = pts[1:]
-                    else:
-                        np_pts[label] = pts
-                d['point'] = np_pts
-                ns = {k: len(v) for k, v in d['point'].items()}
-                valid = True
-                for l, n in zip(config.labels, config.point_counts):
-                    if l not in ns or ns[l] != n:
-                        valid = False
-                        break
-                if valid:
-                    valid_data.append(d)
-
-        logger.info('%d %d', len(data), len(valid_data))
+        logger.info('%d %d', len(all_data), len(valid_data))
 
         pca = PointsPCA(REF_HEIGHT)
-        for vd in valid_data:
-            tl = vd['point']['TL'][0]
-            bl = vd['point']['TL'][-1]
-            for l in config.labels:
-                vd['point'][l] = pca.to_ref_space(tl, bl, vd['point'][l])
 
         vecs = []
         for vd in valid_data:
+            c7_tl = vd['point']['TL'][0]
+            s_tl = vd['point']['TL'][-1]
             pts = []
             for l in config.labels:
-                pts.append(vd['point'][l])
+                pts.append(pca.to_ref_space(c7_tl, s_tl, vd['point'][l]))
             pts = np.concatenate(pts).ravel()
             vecs.append(pts)
         vecs = np.stack(vecs)
