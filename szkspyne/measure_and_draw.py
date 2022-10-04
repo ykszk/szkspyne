@@ -737,7 +737,7 @@ def main():
                            help='Output directory')
     sub_batch.add_argument('--measure', help='Save measurements json', action='store_true')
     sub_batch.add_argument('--html', help='Save html', action='store_true')
-    sub_batch.add_argument('--image', help='Save image (svg or png)', action='store_true')
+    sub_batch.add_argument('--image', help='Save image', metavar='ext', choices=['.svg', '.png'])
     sub_batch.add_argument('--workers', help='The number of concurrent workers. default:%(default)s', type=int, default=4)
 
     def command_batch(args):
@@ -753,7 +753,7 @@ def main():
         def do(fn):
             logger.info(str(fn))
             measure = (outdir / fn.name).with_suffix('.json') if args.measure else None
-            image = (outdir / fn.name).with_suffix('.png') if args.image else None
+            image = (outdir / fn.name).with_suffix(args.image) if args.image else None
             html = (outdir / fn.name).with_suffix('.html') if args.html else None
             measure_json(fn, args.height, args.config, args.points, args.image_type, image, html, measure, args.template, args.title)
         Parallel(n_jobs=args.workers)(delayed(do)(fn)
