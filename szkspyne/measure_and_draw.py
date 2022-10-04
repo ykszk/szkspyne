@@ -106,7 +106,7 @@ def measure_json(json_fn: Path, height: int, config_filename: str, draw_points: 
             best_score = 0
             MT_MARGIN = 3
 
-            for mt_sup in range(MT_MARGIN, 5):
+            for mt_sup in range(MT_MARGIN, 7):
                 for mt_inf in range(9, len(vert_sup_cnrs) - MT_MARGIN):
                     mt_angle = calc_angle(vert_sup_cnrs[mt_sup],
                                           vert_inf_cnrs[mt_inf])
