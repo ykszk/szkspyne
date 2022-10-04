@@ -322,6 +322,7 @@ def measure_json(json_fn: Path, height: int, config_filename: str, draw_points: 
 
                     angle = chrl.angle_between(line_clavicle)
                     angle_deg = np.rad2deg(float(angle.evalf()))
+                    angle_deg = min(180-angle_deg, angle_deg)
                     txt_angle = '{:.1f}°'.format(angle_deg)
                     grp.add(
                         dwg.text(txt_angle,
@@ -483,8 +484,8 @@ def measure_json(json_fn: Path, height: int, config_filename: str, draw_points: 
             gid = 'Thoracickyphosis'
             drawings.append((gid, 'Thoracic kyphosis (p.87)'))
             color = 'red'
-            sup = vert_sup_cnrs[2]
-            inf = vert_inf_cnrs[12]
+            sup = vert_sup_cnrs[1]
+            inf = vert_inf_cnrs[11]
             grp, angle_deg = draw_cobb(sup,
                                        inf,
                                        dwg,
@@ -497,8 +498,8 @@ def measure_json(json_fn: Path, height: int, config_filename: str, draw_points: 
             gid = 'Mid/Lowerthoracickyphosis'
             drawings.append((gid, 'Mid/Lower thoracic kyphosis (p.87)'))
             color = 'green'
-            sup = vert_sup_cnrs[5]
-            inf = vert_inf_cnrs[12]
+            sup = vert_sup_cnrs[4]
+            inf = vert_inf_cnrs[11]
             grp, angle_deg = draw_cobb(sup,
                                        inf,
                                        dwg,
@@ -511,8 +512,8 @@ def measure_json(json_fn: Path, height: int, config_filename: str, draw_points: 
             gid = 'Proximalthoracickyphosis'
             drawings.append((gid, 'Proximal thoracic kyphosis (p.87)'))
             color = 'blue'
-            sup = vert_sup_cnrs[2]
-            inf = vert_inf_cnrs[5]
+            sup = vert_sup_cnrs[1]
+            inf = vert_inf_cnrs[4]
             grp, angle_deg = draw_cobb(sup,
                                        inf,
                                        dwg,
@@ -520,6 +521,17 @@ def measure_json(json_fn: Path, height: int, config_filename: str, draw_points: 
                                        color,
                                        text_attrs=text_attrs)
             measures['Proximalthoracickyphosis'] = angle_deg
+
+
+            # Lumbar lordosis (T12/S)
+            gid = 'LumbarLordosis'
+            drawings.append((gid, 'Lumbar lordosis (T12/S) '))
+            color = 'blue'
+            sup = vert_sup_cnrs[11]
+            inf = sacrum_tltr
+            grp, angle_deg = draw_cobb(sup, inf, dwg, gid, color, text_attrs=text_attrs)
+            measures['LumbarLordosis'] = angle_deg
+
 
             # Sacral Slope
             # from skspatial.objects import Line, Point
