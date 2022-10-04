@@ -120,6 +120,24 @@ if __name__ == '__main__':
                     break
             if valid:
                 valid_data.append(d)
+            elif config.name=='L4': #  try to use L5 data for L4
+                # remove top points
+                np_pts = {}
+                for label, pts in d['point'].items():
+                    if label in config.labels:
+                        np_pts[label] = pts[1:]
+                    else:
+                        np_pts[label] = pts
+                d['point'] = np_pts
+                ns = {k: len(v) for k, v in d['point'].items()}
+                valid = True
+                for l, n in zip(config.labels, config.point_counts):
+                    if l not in ns or ns[l] != n:
+                        valid = False
+                        break
+                if valid:
+                    valid_data.append(d)
+
         logger.info('%d %d', len(data), len(valid_data))
 
         pca = PointsPCA(REF_HEIGHT)
