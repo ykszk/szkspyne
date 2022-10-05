@@ -2,6 +2,7 @@
 from pathlib import Path
 import json
 import sys
+from typing import List
 from PIL import Image
 import numpy as np
 import logzero
@@ -20,9 +21,10 @@ POINT_RADIUS = 2.0
 PERP_BOX_SIZE = (20, 20)  # perpendicular sign
 
 
-def measure_json(json_fn: Path, height: int, config_filename: str, draw_points: bool,
-            image_type: str, image_filename: str, html_filename,
-            measure_filename: str, template_directory: str, html_title: str):
+def measure_json(json_fn: Path, height: int, config_filename: str,
+                 draw_points: bool, image_type: str, image_filename: str,
+                 html_filename, measure_filename: str, template_directory: str,
+                 html_title: str, hide: List[str]):
     with open(json_fn, encoding='utf8') as f:
         lm_data = json.load(f)
 
@@ -152,31 +154,43 @@ def measure_json(json_fn: Path, height: int, config_filename: str, draw_points: 
             logger.debug('Cobb angles')
             drawings += [('PT', 'PT Cobb (p.49)'), ('MT', 'MT Cobb (p.49)'),
                          ('LT', 'LT Cobb (p.49)')]
-            measures['PT'] = draw_cobb(vert_sup_cnrs[pt_sup],
-                                       vert_inf_cnrs[pt_inf],
-                                       dwg,
-                                       'PT',
-                                       'red',
-                                       text_attrs=text_attrs)[1]
-            measures['MT'] = draw_cobb(vert_sup_cnrs[mt_sup],
-                                       vert_inf_cnrs[mt_inf],
-                                       dwg,
-                                       'MT',
-                                       'green',
-                                       text_attrs=text_attrs)[1]
-            measures['LT'] = draw_cobb(vert_sup_cnrs[lt_sup],
-                                       vert_inf_cnrs[lt_inf],
-                                       dwg,
-                                       'LT',
-                                       'blue',
-                                       text_attrs=text_attrs)[1]
+            gid = 'PT'
+            measures[gid] = draw_cobb(vert_sup_cnrs[pt_sup],
+                                      vert_inf_cnrs[pt_inf],
+                                      dwg,
+                                      gid,
+                                      'red',
+                                      text_attrs=text_attrs,
+                                      hide=gid in hide)[1]
+            gid = 'MT'
+            measures[gid] = draw_cobb(vert_sup_cnrs[mt_sup],
+                                      vert_inf_cnrs[mt_inf],
+                                      dwg,
+                                      gid,
+                                      'green',
+                                      text_attrs=text_attrs,
+                                      hide=gid in hide)[1]
+            gid = 'LT'
+            measures[gid] = draw_cobb(vert_sup_cnrs[lt_sup],
+                                      vert_inf_cnrs[lt_inf],
+                                      dwg,
+                                      gid,
+                                      'blue',
+                                      text_attrs=text_attrs,
+                                      hide=gid in hide)[1]
             # apical translation
-            drawings.append(('APT', 'Apical Translation (p.53)'))
+            gid = 'APT'
+            visibility = 'hidden' if gid in hide else 'visible'
+            drawings.append((gid, 'Apical Translation (p.53)'))
             logger.debug(drawings[-1][1])
             vert_apex = vert_centroids[i_apex]
             color = 'green'
             grp = dwg.add(
-                dwg.g(id='APT', stroke=color, stroke_width=2.0, fill='none'))
+                dwg.g(id=gid,
+                      stroke=color,
+                      stroke_width=2.0,
+                      fill='none',
+                      visibility=visibility))
             grp.add(
                 dwg.path((['M'] + sacrum_center.tolist() + [sacrum_center[0]] +
                           [vert_corners[:, :, 1].min()])))
@@ -203,14 +217,17 @@ def measure_json(json_fn: Path, height: int, config_filename: str, draw_points: 
                                fill=color))
 
             # coronal balance
-            drawings.append(('CoronalBalance', 'Coronal Balance (p.54)'))
+            gid = 'CoronalBalance'
+            visibility = 'hidden' if gid in hide else 'visible'
+            drawings.append((gid, 'Coronal Balance (p.54)'))
             logger.debug(drawings[-1][1])
             color = 'blue'
             grp = dwg.add(
-                dwg.g(id='CoronalBalance',
+                dwg.g(id=gid,
                       stroke=color,
                       stroke_width=2.0,
-                      fill='none'))
+                      fill='none',
+                      visibility=visibility))
             c7_centroid = vert_centroids[0]
 
             def lerp(a, b, t):
@@ -244,12 +261,17 @@ def measure_json(json_fn: Path, height: int, config_filename: str, draw_points: 
                          **text_attrs))
             measures['CoronalBalance'] = c7_centroid[0] - sacrum_center[0]
             # T1 tilt
-            drawings.append(('T1Tilt', 'T1 Tilt Angle (p.55)'))
+            gid = 'T1Tilt'
+            visibility = 'hidden' if gid in hide else 'visible'
+            drawings.append((gid, 'T1 Tilt Angle (p.55)'))
             logger.debug(drawings[-1][1])
             color = 'blue'
             grp = dwg.add(
-                dwg.g(id='T1Tilt', stroke=color, stroke_width=2.0,
-                      fill='none'))
+                dwg.g(id=gid,
+                      stroke=color,
+                      stroke_width=2.0,
+                      fill='none',
+                      visibility=visibility))
             c7_centroid = vert_centroids[0]
             c7pl = np.array((c7_centroid, (c7_centroid[0], img.size[1])))
             t1_corners = vert_corners[0]
@@ -258,7 +280,8 @@ def measure_json(json_fn: Path, height: int, config_filename: str, draw_points: 
             t1_width = np.linalg.norm(t1_corners[1] - t1_corners[0])
             line_t1 = Line.from_points(vert_corners[0, 0], vert_corners[0, 1])
 
-            aux_t1_tilt = Line.from_points(c7pl[0], c7pl[1]).intersect_line(line_t1)
+            aux_t1_tilt = Line.from_points(c7pl[0],
+                                           c7pl[1]).intersect_line(line_t1)
             grp.add(
                 dwg.path((['M'] +
                           (aux_t1_tilt - 2 * t1_width * t1_sup_vec).tolist() +
@@ -269,54 +292,62 @@ def measure_json(json_fn: Path, height: int, config_filename: str, draw_points: 
                      (aux_t1_tilt + 5 * t1_width * aux_vec).tolist())))
             # angle = line_t1.angle_between(
             #     Line([0, aux_t1_tilt[1]], [img.size[0], aux_t1_tilt[1]]))
-            angle = calc_angle(vert_corners[0], ([0, aux_t1_tilt[1]], [img.size[0], aux_t1_tilt[1]]))
+            angle = calc_angle(
+                vert_corners[0],
+                ([0, aux_t1_tilt[1]], [img.size[0], aux_t1_tilt[1]]))
+            angle = np.abs(angle)
             angle_deg = np.rad2deg(angle)
             txt_angle = '{:.2f}°'.format(angle_deg)
             grp.add(dwg.text(txt_angle, insert=c7_centroid, **text_attrs))
             measures['T1Tilt'] = angle_deg
+
             def draw_line(a, b, x0, x1, grp, dwg):
                 '''
                 draw horizontal line
                 '''
                 d = b - a
                 slope = d[1] / d[0]
-                t0 = -a[0]/d[0]
+                t0 = -a[0] / d[0]
                 y0 = a[1] + t0 * d[1]
-                f0 = slope*x0+y0
-                f1 = slope*x1+y0
-                grp.add(
-                    dwg.path((['M'] + [
-                        x0,f0
-                    ] + [
-                        x1,f1
-                    ])))
+                f0 = slope * x0 + y0
+                f1 = slope * x1 + y0
+                grp.add(dwg.path((['M'] + [x0, f0] + [x1, f1])))
                 return f0, f1
+
             # Clavicle Angle
             if 'Clavicle' in kps and len(kps['Clavicle']) == 2:
-                drawings.append(('ClavicleAngle', 'Clavicle Angle (p.56)'))
+                gid = 'ClavicleAngle'
+                drawings.append((gid, 'Clavicle Angle (p.56)'))
                 logger.debug(drawings[-1][1])
                 color = 'green'
                 grp = dwg.add(
-                    dwg.g(id='ClavicleAngle',
+                    dwg.g(id=gid,
                           stroke=color,
                           stroke_width=2.0,
-                          fill='none'))
+                          fill='none',
+                          visibility='hidden' if gid in hide else 'visible'))
                 assert kps['Clavicle'].shape == (2, 2)
                 clavicle_kps = kps['Clavicle']
-                line_clavicle = Line.from_points(clavicle_kps[0], clavicle_kps[1])
-                chrl = Line.from_points([0, clavicle_kps[:, 1].min()],
-                            [img.size[0], clavicle_kps[:, 1].min()])
-                draw_line(clavicle_kps[0], clavicle_kps[1], 0, img.size[0], grp, dwg)
+                line_clavicle = Line.from_points(clavicle_kps[0],
+                                                 clavicle_kps[1])
+                chrl = Line.from_points(
+                    [0, clavicle_kps[:, 1].min()],
+                    [img.size[0], clavicle_kps[:, 1].min()])
+                draw_line(clavicle_kps[0], clavicle_kps[1], 0, img.size[0],
+                          grp, dwg)
                 grp.add(
                     dwg.path((['M'] + [0, clavicle_kps[:, 1].min()] +
                               [img.size[0], clavicle_kps[:, 1].min()])))
                 if clavicle_kps[0, 1] != clavicle_kps[1, 1]:
                     clavicle_intersection = chrl.intersect_line(line_clavicle)
 
-                    angle = calc_angle(([0, clavicle_kps[:, 1].min()],
-                            [img.size[0], clavicle_kps[:, 1].min()]), clavicle_kps)
+                    angle = calc_angle(
+                        ([0, clavicle_kps[:, 1].min()
+                          ], [img.size[0], clavicle_kps[:, 1].min()]),
+                        clavicle_kps)
+                    angle = np.abs(angle)
                     angle_deg = np.rad2deg(angle)
-                    angle_deg = min(180-angle_deg, angle_deg)
+                    angle_deg = min(180 - angle_deg, angle_deg)
                     txt_angle = '{:.1f}°'.format(angle_deg)
                     grp.add(
                         dwg.text(txt_angle,
@@ -332,14 +363,16 @@ def measure_json(json_fn: Path, height: int, config_filename: str, draw_points: 
 
             # Shoulder Height
             if 'Shoulder' in kps and len(kps['Shoulder']) == 2:
-                drawings.append(('ShoulderHeight', 'Shoulder Height (p.57)'))
+                gid = 'ShoulderHeight'
+                drawings.append((gid, 'Shoulder Height (p.57)'))
                 logger.debug(drawings[-1][1])
                 color = 'magenta'
                 grp = dwg.add(
-                    dwg.g(id='ShoulderHeight',
+                    dwg.g(id=gid,
                           stroke=color,
                           stroke_width=2.0,
-                          fill='none'))
+                          fill='none',
+                          visibility='hidden' if gid in hide else 'visible'))
                 shoulder_kps = kps['Shoulder']
                 shoulder_kps = np.array(
                     sorted(shoulder_kps, key=lambda e: e[0]))  # sort by x
@@ -360,24 +393,28 @@ def measure_json(json_fn: Path, height: int, config_filename: str, draw_points: 
                                    r=POINT_RADIUS,
                                    stroke=color,
                                    fill=color))
-                measures['Shoulder'] = shoulder_kps[0, 1] - shoulder_kps[1, 1]
+                measures[gid] = shoulder_kps[0, 1] - shoulder_kps[1, 1]
 
             # Pelvic Obliquity
             if 'Pelvis' in kps and len(kps['Pelvis']) == 2:
-                drawings.append(('PelvicObliquity', 'Pelvic Obliquity (p.93)'))
+                gid = 'PelvicObliquity'
+                drawings.append((gid, 'Pelvic Obliquity (p.93)'))
                 logger.debug(drawings[-1][1])
                 color = 'cyan'
                 grp = dwg.add(
-                    dwg.g(id='PelvicObliquity',
+                    dwg.g(id=gid,
                           stroke=color,
                           stroke_width=LINE_WIDTH,
-                          fill='none'))
+                          fill='none',
+                          visibility='hidden' if gid in hide else 'visible'))
                 pelvic_kps = kps['Pelvis']
                 assert pelvic_kps.shape == (2, 2)
                 pelvic_kps = np.array(sorted(pelvic_kps,
                                              key=lambda e: e[0]))  # sort by x
-                pelvic_ref_line = Line.from_points(pelvic_kps[0], pelvic_kps[1])
-                draw_line(pelvic_kps[0], pelvic_kps[1], 0, img.size[0], grp, dwg)
+                pelvic_ref_line = Line.from_points(pelvic_kps[0],
+                                                   pelvic_kps[1])
+                draw_line(pelvic_kps[0], pelvic_kps[1], 0, img.size[0], grp,
+                          dwg)
                 y_up = pelvic_kps[:, 1].min()
                 grp.add(dwg.path((['M'] + [0, y_up] + [img.size[0], y_up])))
                 for pos in pelvic_kps:
@@ -389,7 +426,8 @@ def measure_json(json_fn: Path, height: int, config_filename: str, draw_points: 
                 hline = Line.from_points((0, y_up), (img.size[0], y_up))
                 if pelvic_kps[0, 1] != pelvic_kps[1, 1]:
                     pelvic_cross = pelvic_ref_line.intersect_line(hline)
-                    angle = calc_angle(((0, y_up), (img.size[0], y_up)), pelvic_kps)
+                    angle = calc_angle(((0, y_up), (img.size[0], y_up)),
+                                       pelvic_kps)
                     angle = np.abs(angle)
                     if pelvic_kps[0, 1] > pelvic_kps[1, 1]:
                         angle *= -1
@@ -400,19 +438,21 @@ def measure_json(json_fn: Path, height: int, config_filename: str, draw_points: 
                     grp.add(
                         dwg.rect(insert=(-LINE_WIDTH, y_up),
                                  size=PERP_BOX_SIZE))
-                    measures['PelvicObliquity'] = angle_deg
+                    measures[gid] = angle_deg
 
             # Leg Length Discrepancy
             femoral_kps = None
             if 'FemoralHead' in kps and len(kps['FemoralHead']) == 2:
-                drawings.append(('LegLength', 'Leg Length Discrepancy (p.93)'))
+                gid = 'LegLength'
+                drawings.append((gid, 'Leg Length Discrepancy (p.93)'))
                 logger.debug(drawings[-1][1])
                 color = 'lime'
                 grp = dwg.add(
-                    dwg.g(id='LegLength',
+                    dwg.g(id=gid,
                           stroke=color,
                           stroke_width=2.0,
-                          fill='none'))
+                          fill='none',
+                          visibility='hidden' if gid in hide else 'visible'))
                 femoral_kps = kps['FemoralHead']
                 assert femoral_kps.shape == (2, 2)
                 femoral_kps = np.array(sorted(femoral_kps,
@@ -434,30 +474,32 @@ def measure_json(json_fn: Path, height: int, config_filename: str, draw_points: 
                                    r=POINT_RADIUS,
                                    stroke=color,
                                    fill=color))
-                measures['LegLength'] = femoral_kps[1, 1] - femoral_kps[0, 1]
+                measures[gid] = femoral_kps[1, 1] - femoral_kps[0, 1]
 
             # Sacral Obliquity
             if femoral_kps is not None:
-                drawings.append(('SacralObliquity', 'Sacral Obliquity (p.94)'))
+                gid = 'SacralObliquity'
+                drawings.append((gid, 'Sacral Obliquity (p.94)'))
                 logger.debug(drawings[-1][1])
                 color = 'hotpink'
                 sacrum_line = Line.from_points(sacrum_tltr[0], sacrum_tltr[1])
                 x_pos1, x_pos2 = femoral_kps[:, 0]
-                y_pos1, y_pos2 = draw_line(sacrum_tltr[0], sacrum_tltr[1], x_pos1, x_pos2, grp, dwg)
+                y_pos1, y_pos2 = draw_line(sacrum_tltr[0], sacrum_tltr[1],
+                                           x_pos1, x_pos2, grp, dwg)
 
                 grp, angle_deg = draw_cobb(
                     np.array([[x_pos1, y_pos1], [x_pos2, y_pos2]]),
-                    femoral_kps, dwg, 'SacralObliquity', color, 1, text_attrs)
+                    femoral_kps, dwg, gid, color, 1, text_attrs, gid in hide)
                 for pos in np.concatenate((femoral_kps, sacrum_tltr), axis=0):
                     grp.add(
                         dwg.circle(center=pos.tolist(),
                                    r=POINT_RADIUS,
                                    stroke=color,
                                    fill=color))
-                measures['SacralObliquity'] = angle_deg
+                measures[gid] = angle_deg
         else:  # lateral
             # Thoracic kyphosis
-            gid = 'Thoracickyphosis'
+            gid = 'ThoracicKyphosis'
             drawings.append((gid, 'Thoracic kyphosis (p.87)'))
             color = 'red'
             sup = vert_sup_cnrs[1]
@@ -467,11 +509,12 @@ def measure_json(json_fn: Path, height: int, config_filename: str, draw_points: 
                                        dwg,
                                        gid,
                                        color,
-                                       text_attrs=text_attrs)
-            measures['Thoracickyphosis'] = angle_deg
+                                       text_attrs=text_attrs,
+                                       hide=gid in hide)
+            measures[gid] = angle_deg
 
             # Mid/Lower thoracic kyphosis
-            gid = 'Mid/Lowerthoracickyphosis'
+            gid = 'Mid/LowerThoracicKyphosis'
             drawings.append((gid, 'Mid/Lower thoracic kyphosis (p.87)'))
             color = 'green'
             sup = vert_sup_cnrs[4]
@@ -481,11 +524,12 @@ def measure_json(json_fn: Path, height: int, config_filename: str, draw_points: 
                                        dwg,
                                        gid,
                                        color,
-                                       text_attrs=text_attrs)
-            measures['Mid/Lowerthoracickyphosis'] = angle_deg
+                                       text_attrs=text_attrs,
+                                       hide=gid in hide)
+            measures[gid] = angle_deg
 
             # Proximal thoracic kyphosis
-            gid = 'Proximalthoracickyphosis'
+            gid = 'ProximalThoracicKyphosis'
             drawings.append((gid, 'Proximal thoracic kyphosis (p.87)'))
             color = 'blue'
             sup = vert_sup_cnrs[1]
@@ -495,9 +539,9 @@ def measure_json(json_fn: Path, height: int, config_filename: str, draw_points: 
                                        dwg,
                                        gid,
                                        color,
-                                       text_attrs=text_attrs)
-            measures['Proximalthoracickyphosis'] = angle_deg
-
+                                       text_attrs=text_attrs,
+                                       hide=gid in hide)
+            measures[gid] = angle_deg
 
             # Lumbar lordosis (T12/S)
             gid = 'LumbarLordosis'
@@ -505,16 +549,24 @@ def measure_json(json_fn: Path, height: int, config_filename: str, draw_points: 
             color = 'blue'
             sup = vert_sup_cnrs[11]
             inf = sacrum_tltr
-            grp, angle_deg = draw_cobb(sup, inf, dwg, gid, color, text_attrs=text_attrs)
-            measures['LumbarLordosis'] = angle_deg
-
+            grp, angle_deg = draw_cobb(sup,
+                                       inf,
+                                       dwg,
+                                       gid,
+                                       color,
+                                       text_attrs=text_attrs,
+                                       hide=gid in hide)
+            measures[gid] = angle_deg
 
             # Sacral Slope
             gid = 'SacralSlope'
             logger.debug(gid)
             drawings.append((gid, 'Sacral Slope (p.99)'))
             color = 'magenta'
-            grp = dwg.add(dwg.g(id=gid, stroke=color))
+            grp = dwg.add(
+                dwg.g(id=gid,
+                      stroke=color,
+                      visibility='hidden' if gid in hide else 'visible'))
             grp.add(dwg.path((['M'] + sacrum_tltr.ravel().tolist())))
             sacrum_width = np.linalg.norm(sacrum_tltr[1] - sacrum_tltr[0])
             sacrum_hl = sacrum_tltr[0] + sacrum_width * np.array(
@@ -536,7 +588,11 @@ def measure_json(json_fn: Path, height: int, config_filename: str, draw_points: 
                 logger.debug(gid)
                 drawings.append((gid, 'Pelvic Incidence (p.97)'))
                 color = 'cyan'
-                grp = dwg.add(dwg.g(id=gid, stroke=color, fill='none'))
+                grp = dwg.add(
+                    dwg.g(id=gid,
+                          stroke=color,
+                          fill='none',
+                          visibility='hidden' if gid in hide else 'visible'))
                 femoral_heads = np.array(circles['FemoralHead'])
                 grp.add(dwg.path((['M'] + sacrum_tltr.ravel().tolist())))
                 for femoral_head in femoral_heads:
@@ -581,7 +637,10 @@ def measure_json(json_fn: Path, height: int, config_filename: str, draw_points: 
                 logger.debug(gid)
                 drawings.append((gid, 'Pelvic Radius Angle (p.101)'))
                 color = 'blue'
-                grp = dwg.add(dwg.g(id=gid, stroke=color))
+                grp = dwg.add(
+                    dwg.g(id=gid,
+                          stroke=color,
+                          visibility='hidden' if gid in hide else 'visible'))
                 grp.add(dwg.path((['M'] + sacrum_tltr.ravel().tolist())))
                 grp.add(
                     dwg.path((['M'] + femoral_center.tolist() +
@@ -598,7 +657,10 @@ def measure_json(json_fn: Path, height: int, config_filename: str, draw_points: 
                 logger.debug(gid)
                 drawings.append((gid, 'L5 Incidence Angle (p.102)'))
                 color = 'red'
-                grp = dwg.add(dwg.g(id=gid, stroke=color))
+                grp = dwg.add(
+                    dwg.g(id=gid,
+                          stroke=color,
+                          visibility='hidden' if gid in hide else 'visible'))
                 l5_sup = vert_sup_cnrs[-1]
                 l5_sup_center = l5_sup.mean(axis=0)
                 l5_perp = perp(l5_sup[1] - l5_sup[0])
@@ -628,8 +690,9 @@ def measure_json(json_fn: Path, height: int, config_filename: str, draw_points: 
                                            dwg,
                                            gid,
                                            color,
-                                           text_attrs=text_attrs)
-                measures['LumbosacralAngle'] = angle_deg
+                                           text_attrs=text_attrs,
+                                           hide=gid in hide)
+                measures[gid] = angle_deg
 
     if image_filename:
         filename = Path(image_filename)
@@ -660,12 +723,16 @@ def measure_json(json_fn: Path, height: int, config_filename: str, draw_points: 
 
         cbs = []
         for name, label in drawings:
-            cbs.append(t_cb.render(name=name, label=label))
+            cbs.append(
+                t_cb.render(name=name,
+                            label=label,
+                            checked='' if name in hide else 'checked'))
         with open(html_filename, 'w', encoding='utf8') as f:
             f.write(
                 template.render(svg=dwg.tostring(),
                                 checkboxes='\n'.join(cbs),
                                 title=html_title))
+
 
 def main():
     parser = argparse.ArgumentParser(description='Measure and draw.')
@@ -684,6 +751,11 @@ def main():
                         help='Image type',
                         choices=['ap', 'lateral'],
                         default='ap')
+    parser.add_argument('--hide',
+                        help='Hide specified drawings',
+                        nargs='*',
+                        default=[])
+
     parser.add_argument('--height',
                         help='Output image height',
                         type=int,
@@ -694,26 +766,38 @@ def main():
     subparsers = parser.add_subparsers()
     sub_single = subparsers.add_parser('single',
                                        help="measure and draw from given file")
-    sub_single.add_argument('input', help='Input json filename', metavar='<input>', type=Path)
+    sub_single.add_argument('input',
+                            help='Input json filename',
+                            metavar='<input>',
+                            type=Path)
     sub_single.add_argument('--measure', help='Save measurements json')
     sub_single.add_argument('--html', help='Save html')
     sub_single.add_argument('--image', help='Save image (svg or png)')
 
     def command_single(args):
-        measure_json(args.input, args.height, args.config, args.points, args.image_type, args.image, args.html, args.measure, args.template, args.title)
+        measure_json(args.input, args.height, args.config, args.points,
+                     args.image_type, args.image, args.html, args.measure,
+                     args.template, args.title, args.hide)
 
     sub_single.set_defaults(handler=command_single)
 
     sub_batch = subparsers.add_parser(
         'batch', help="measure and draw from given directory")
-    sub_batch.add_argument('input',
-                           help='Input json directory')
-    sub_batch.add_argument('output',
-                           help='Output directory')
-    sub_batch.add_argument('--measure', help='Save measurements json', action='store_true')
+    sub_batch.add_argument('input', help='Input json directory')
+    sub_batch.add_argument('output', help='Output directory')
+    sub_batch.add_argument('--measure',
+                           help='Save measurements json',
+                           action='store_true')
     sub_batch.add_argument('--html', help='Save html', action='store_true')
-    sub_batch.add_argument('--image', help='Save image', metavar='ext', choices=['.svg', '.png'])
-    sub_batch.add_argument('--workers', help='The number of concurrent workers. default:%(default)s', type=int, default=4)
+    sub_batch.add_argument('--image',
+                           help='Save image',
+                           metavar='ext',
+                           choices=['.svg', '.png'])
+    sub_batch.add_argument(
+        '--workers',
+        help='The number of concurrent workers. default:%(default)s',
+        type=int,
+        default=4)
 
     def command_batch(args):
         if not args.html and not args.image and not args.measure:
@@ -727,12 +811,19 @@ def main():
 
         def do(fn):
             logger.info(str(fn))
-            measure = (outdir / fn.name).with_suffix('.json') if args.measure else None
-            image = (outdir / fn.name).with_suffix(args.image) if args.image else None
-            html = (outdir / fn.name).with_suffix('.html') if args.html else None
-            measure_json(fn, args.height, args.config, args.points, args.image_type, image, html, measure, args.template, args.title)
-        Parallel(n_jobs=args.workers)(delayed(do)(fn)
-                        for fn in tqdm.tqdm(sorted(Path(args.input).glob('*.json'))))
+            measure = (outdir /
+                       fn.name).with_suffix('.json') if args.measure else None
+            image = (outdir /
+                     fn.name).with_suffix(args.image) if args.image else None
+            html = (outdir /
+                    fn.name).with_suffix('.html') if args.html else None
+            measure_json(fn, args.height, args.config, args.points,
+                         args.image_type, image, html, measure, args.template,
+                         args.title, args.hide)
+
+        Parallel(n_jobs=args.workers)(
+            delayed(do)(fn)
+            for fn in tqdm.tqdm(sorted(Path(args.input).glob('*.json'))))
         return 1
 
     sub_batch.set_defaults(handler=command_batch)
@@ -748,7 +839,6 @@ def main():
         parser.print_help()
         sys.exit(1)
     return (args.handler(args))
-
 
 
 if __name__ == "__main__":
