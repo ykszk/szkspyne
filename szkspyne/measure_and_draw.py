@@ -24,9 +24,12 @@ PERP_BOX_SIZE = (20, 20)  # perpendicular sign
 def measure_json(json_fn: Path, height: int, config_filename: str,
                  draw_points: bool, image_type: str, image_filename: str,
                  html_filename, measure_filename: str, template_directory: str,
-                 html_title: str, hide: List[str]):
+                 html_title: str, hide: List[str], embed_svg: bool):
     with open(json_fn, encoding='utf8') as f:
         lm_data = json.load(f)
+
+    if not embed_svg and not str(image_filename).endswith('.svg'):
+        raise RuntimeError('.svg output is required to link external svg')
 
     img_fn = str(json_fn.parent / lm_data['imagePath']).replace('\\', '/')
     img = Image.open(img_fn)
@@ -727,9 +730,10 @@ def measure_json(json_fn: Path, height: int, config_filename: str,
                 t_cb.render(name=name,
                             label=label,
                             checked='' if name in hide else 'checked'))
+        svg_tag = dwg.tostring() if embed_svg else '<object type="image/svg+xml" data="{}"></object>'.format(Path(image_filename).name)
         with open(html_filename, 'w', encoding='utf8') as f:
             f.write(
-                template.render(svg=dwg.tostring(),
+                template.render(svg=svg_tag,
                                 checkboxes='\n'.join(cbs),
                                 title=html_title))
 
@@ -762,6 +766,7 @@ def main():
                         default=768)
     parser.add_argument('--points', help='Draw points', action='store_true')
     parser.add_argument('--verbose', help='Print logs', action='store_true')
+    parser.add_argument('--external_svg', help='Use external svg file for html output.', action='store_true')
 
     subparsers = parser.add_subparsers()
     sub_single = subparsers.add_parser('single',
@@ -777,7 +782,7 @@ def main():
     def command_single(args):
         measure_json(args.input, args.height, args.config, args.points,
                      args.image_type, args.image, args.html, args.measure,
-                     args.template, args.title, args.hide)
+                     args.template, args.title, args.hide, not args.external_svg)
 
     sub_single.set_defaults(handler=command_single)
 
@@ -819,7 +824,7 @@ def main():
                     fn.name).with_suffix('.html') if args.html else None
             measure_json(fn, args.height, args.config, args.points,
                          args.image_type, image, html, measure, args.template,
-                         args.title, args.hide)
+                         args.title, args.hide, not args.external_svg)
 
         Parallel(n_jobs=args.workers)(
             delayed(do)(fn)
