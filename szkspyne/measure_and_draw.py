@@ -22,7 +22,7 @@ PERP_BOX_SIZE = (20, 20)  # perpendicular sign
 
 
 def measure_json(json_fn: Path, height: int, config_filename: str,
-                 draw_points: bool, image_type: str, image_filename: str,
+                 draw_points: bool, draw_vertebral_number: bool, image_type: str, image_filename: str,
                  html_filename, measure_filename: str, template_directory: str,
                  html_title: str, hide: List[str], embed_svg: bool):
     with open(json_fn, encoding='utf8') as f:
@@ -82,6 +82,7 @@ def measure_json(json_fn: Path, height: int, config_filename: str,
                                stroke=color,
                                fill=color))
 
+
     measures = {}
     if len(kps['TL']) != len(kps['TR']) or len(kps['BL']) != len(kps['BR']):
         pass
@@ -101,6 +102,22 @@ def measure_json(json_fn: Path, height: int, config_filename: str,
         vert_inf_cnrs = vert_corners[:, 2:]
         vert_inf_vecs = vert_inf_cnrs[:, 1] - vert_inf_cnrs[:, 0]
         vert_inf_vecs /= np.linalg.norm(vert_inf_vecs, axis=1, keepdims=True)
+
+
+        if draw_vertebral_number:
+            gid = 'VertebralNumber'
+            drawings.append((gid, 'Vertebral Number'))
+            vn_attrs = text_attrs.copy()
+            vn_attrs.update(dict(stroke_width='2px'))
+            grp = dwg.add(dwg.g(id=gid, text_anchor="middle", dominant_baseline="central", **vn_attrs))
+            for i, vc in enumerate(vert_centroids, 1):
+                if i > 12:
+                    vn = f'L{i-12}'
+                else:
+                    vn = f'T{i}'
+                grp.add(
+                dwg.text(vn,
+                         insert=vc))
 
         if image_type == 'ap':
             #%% coronal translation
@@ -765,6 +782,7 @@ def main():
                         type=int,
                         default=768)
     parser.add_argument('--points', help='Draw points', action='store_true')
+    parser.add_argument('--numbers', help='Draw vertebral numbers', action='store_true')
     parser.add_argument('--verbose', help='Print logs', action='store_true')
     parser.add_argument('--external_svg', help='Use external svg file for html output.', action='store_true')
 
@@ -780,7 +798,7 @@ def main():
     sub_single.add_argument('--image', help='Save image (svg or png)')
 
     def command_single(args):
-        measure_json(args.input, args.height, args.config, args.points,
+        measure_json(args.input, args.height, args.config, args.points, args.numbers,
                      args.image_type, args.image, args.html, args.measure,
                      args.template, args.title, args.hide, not args.external_svg)
 
@@ -822,7 +840,7 @@ def main():
                      fn.name).with_suffix(args.image) if args.image else None
             html = (outdir /
                     fn.name).with_suffix('.html') if args.html else None
-            measure_json(fn, args.height, args.config, args.points,
+            measure_json(fn, args.height, args.config, args.points, args.numbers,
                          args.image_type, image, html, measure, args.template,
                          args.title, args.hide, not args.external_svg)
 
