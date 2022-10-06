@@ -315,12 +315,9 @@ def measure_json(json_fn: Path, height: int, config_filename: str,
                 dwg.path(
                     (['M'] + (aux_t1_tilt - 2 * t1_width * aux_vec).tolist() +
                      (aux_t1_tilt + 5 * t1_width * aux_vec).tolist())))
-            # angle = line_t1.angle_between(
-            #     Line([0, aux_t1_tilt[1]], [img.size[0], aux_t1_tilt[1]]))
             angle = calc_angle(
                 vert_corners[0],
                 ([0, aux_t1_tilt[1]], [img.size[0], aux_t1_tilt[1]]))
-            angle = np.abs(angle)
             angle_deg = np.rad2deg(angle)
             txt_angle = '{:.2f}°'.format(angle_deg)
             grp.add(dwg.text(txt_angle, insert=c7_centroid, **text_attrs))
@@ -364,15 +361,15 @@ def measure_json(json_fn: Path, height: int, config_filename: str,
                     dwg.path((['M'] + [0, clavicle_kps[:, 1].min()] +
                               [img.size[0], clavicle_kps[:, 1].min()])))
                 if clavicle_kps[0, 1] != clavicle_kps[1, 1]:
+                    clavicle_kps = np.array(
+                        sorted(clavicle_kps, key=lambda e: e[0]))  # sort by x
                     clavicle_intersection = chrl.intersect_line(line_clavicle)
 
                     angle = calc_angle(
-                        ([0, clavicle_kps[:, 1].min()
-                          ], [img.size[0], clavicle_kps[:, 1].min()]),
+                        ([0, 0], [10, 0]), # horizontal line
                         clavicle_kps)
-                    angle = np.abs(angle)
+                    angle = -angle
                     angle_deg = np.rad2deg(angle)
-                    angle_deg = min(180 - angle_deg, angle_deg)
                     txt_angle = '{:.1f}°'.format(angle_deg)
                     grp.add(
                         dwg.text(txt_angle,
