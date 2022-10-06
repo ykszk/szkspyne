@@ -124,51 +124,37 @@ def measure_json(json_fn: Path, height: int, config_filename: str,
             logger.debug('Coronal translation')
             coronal_translation = vert_centroids[:, 0] - sacrum_center[0]
             # Find vertebraes and calculate Cobb angles
-            best_set = None
-            best_score = 0
-            MT_MARGIN = 3
+            import itertools
+            itertools.product()
+            def maximum_angle_pair(sup_start, sup_end, inf_end):
+                angles, combos = [], []
+                for sup in range(sup_start, sup_end):
+                    for inf in range(sup+1, inf_end):
+                        if inf-sup>8:
+                            continue
+                        angles.append(np.abs(calc_angle(vert_sup_cnrs[sup],
+                                            vert_inf_cnrs[inf])))
+                        combos.append((sup, inf))
+                return combos[np.argmax(angles)]
 
-            for mt_sup in range(MT_MARGIN, 7):
-                for mt_inf in range(9, len(vert_sup_cnrs) - MT_MARGIN):
-                    mt_angle = calc_angle(vert_sup_cnrs[mt_sup],
-                                          vert_inf_cnrs[mt_inf])
-                    # pt
-                    best_pt_score = 0
-                    best_pt = None
-                    for pt_sup in range(0, mt_sup - 1):
-                        for pt_inf in range(pt_sup + 1, mt_sup + 1):
-                            pt_angle = calc_angle(vert_sup_cnrs[pt_sup],
-                                                  vert_inf_cnrs[pt_inf])
-                            score = np.abs(pt_angle - mt_angle)
-                            if score > best_pt_score:
-                                best_pt = (pt_sup, pt_inf)
-                                best_pt_score = score
-
-                    # lt
-                    lt_sup = mt_inf
-                    lt_infs = np.arange(mt_inf, len(vert_inf_cnrs))
-                    lt_angles = np.array([
-                        calc_angle(vert_sup_cnrs[lt_sup],
-                                   vert_inf_cnrs[lt_inf]) for lt_inf in lt_infs
-                    ])
-                    best_lt_score = 0
-                    best_lt = None
-                    for lt_sup in range(mt_inf, len(vert_inf_cnrs) - 2):
-                        for lt_inf in range(lt_sup + 1, len(vert_inf_cnrs)):
-                            lt_angle = calc_angle(vert_sup_cnrs[lt_sup],
-                                                  vert_inf_cnrs[lt_inf])
-                            score = np.abs(lt_angle - mt_angle)
-                            if score > best_lt_score:
-                                best_lt = (lt_sup, lt_inf)
-                                best_lt_score = score
-                    score = best_pt_score + best_lt_score
-                    if score > best_score:
-                        best_score = score
-                        best_set = (mt_sup, mt_inf), best_pt, best_lt
-            i_apex = np.abs(
-                coronal_translation[MT_MARGIN:-MT_MARGIN]).argmax() + MT_MARGIN
-            assert best_set is not None
-            (mt_sup, mt_inf), (pt_sup, pt_inf), (lt_sup, lt_inf) = best_set
+            sup, inf = maximum_angle_pair(2, len(vert_sup_cnrs)-2, len(vert_inf_cnrs))
+            cent_sup, cent_inf = vert_centroids[sup], vert_centroids[inf]
+            sup2inf_line = Line.from_points(cent_sup, cent_inf)
+            c2l_dist = [sup2inf_line.distance_point(vert_centroids[i]) for i in range(sup, inf)]
+            i_apex = np.argmax(np.abs(c2l_dist)) + sup
+            # i_apex = np.abs(
+            #     coronal_translation[sup:inf]).argmax() + sup
+            if i_apex < 12:
+                mt_sup, mt_inf = sup, inf
+                pt_sup, pt_inf = maximum_angle_pair(0, mt_sup-1, mt_sup+1)
+                try:
+                    lt_sup, lt_inf = maximum_angle_pair(mt_inf, len(vert_sup_cnrs)-2, len(vert_inf_cnrs))
+                except:
+                    lt_sup, lt_inf = None, None
+            else:
+                lt_sup, lt_inf = sup, inf
+                mt_sup, mt_inf = maximum_angle_pair(2, lt_sup-1, lt_sup+1)
+                pt_sup, pt_inf = maximum_angle_pair(0, mt_sup-1, mt_sup+1)
 
             # cobb angles
             logger.debug('Cobb angles')
@@ -190,14 +176,16 @@ def measure_json(json_fn: Path, height: int, config_filename: str,
                                       'green',
                                       text_attrs=text_attrs,
                                       hide=gid in hide)[1]
-            gid = 'LT'
-            measures[gid] = draw_cobb(vert_sup_cnrs[lt_sup],
-                                      vert_inf_cnrs[lt_inf],
-                                      dwg,
-                                      gid,
-                                      'blue',
-                                      text_attrs=text_attrs,
-                                      hide=gid in hide)[1]
+            if lt_sup is not None and lt_inf is not None:
+                gid = 'LT'
+                measures[gid] = draw_cobb(vert_sup_cnrs[lt_sup],
+                                        vert_inf_cnrs[lt_inf],
+                                        dwg,
+                                        gid,
+                                        'blue',
+                                        text_attrs=text_attrs,
+                                        hide=gid in hide)[1]
+
             # apical translation
             gid = 'APT'
             visibility = 'hidden' if gid in hide else 'visible'
