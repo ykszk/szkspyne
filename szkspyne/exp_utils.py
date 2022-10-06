@@ -65,8 +65,10 @@ def ndjson2csv(filename: Union[str, Path]) -> pd.DataFrame:
         data = json.loads(line)
         if '側面右向き' in data['flags']:
             print('Skip right facing', data['filepath'])
+            continue
         if '除外' in data['flags']:
             print('Skip 除外', data['filepath'])
+            continue
         if 'circle' in data:  # TODO: This is temporary. Circles should be handled properly in the future!
             data['point'].update(data['circle'])
         points = {
