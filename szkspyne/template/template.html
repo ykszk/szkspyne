@@ -32,7 +32,7 @@
         function change_visibility(cb) {
             let svg_id = cb.id.substring(3);
             let visibility = cb.checked ? "visible" : "hidden";
-            document.getElementById(svg_id).style.visibility = visibility;
+            {{svg_container}}.getElementById(svg_id).style.visibility = visibility;
         }
 
         function change_all(visibility) {

@@ -747,10 +747,11 @@ def measure_json(json_fn: Path, height: int, config_filename: str,
                 t_cb.render(name=name,
                             label=label,
                             checked='' if name in hide else 'checked'))
-        svg_tag = dwg.tostring() if embed_svg else '<object type="image/svg+xml" data="{}"></object>'.format(Path(image_filename).name)
+        svg_tag = dwg.tostring() if embed_svg else '<object id="svgfile" type="image/svg+xml" data="{}"></object>'.format(Path(image_filename).name)
         with open(html_filename, 'w', encoding='utf8') as f:
             f.write(
                 template.render(svg=svg_tag,
+                                svg_container='document' if embed_svg else 'document.getElementById("svgfile").contentDocument',
                                 checkboxes='\n'.join(cbs),
                                 title=html_title))
 
