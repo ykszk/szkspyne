@@ -185,7 +185,24 @@ def measure_json(json_fn: Path, height: int, config_filename: str,
                                         'blue',
                                         text_attrs=text_attrs,
                                         hide=gid in hide)[1]
-
+            # Major apex
+            gid = 'MajorApex'
+            visibility = 'hidden' if gid in hide else 'visible'
+            drawings.append((gid, 'Major Apex'))
+            color='orange'
+            grp = dwg.add(
+                dwg.g(id=gid,
+                      stroke=color,
+                      stroke_width=2.0,
+                      fill='none',
+                      visibility=visibility))
+            vert_apex = vert_corners[i_apex]
+            grp.add(dwg.path((['M'] + [vc.tolist() for vc in [vert_apex[0], vert_apex[1], vert_apex[3],vert_apex[2],vert_apex[0]]])))
+            for v in vert_centroids:
+                grp.add(
+                    dwg.circle(center=v,
+                               r=POINT_RADIUS,
+                               fill=color))
             # apical translation
             gid = 'APT'
             visibility = 'hidden' if gid in hide else 'visible'
