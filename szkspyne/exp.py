@@ -97,7 +97,8 @@ def main():
         json.dump(args.__dict__, f, indent=2)
 
     NDJSON_FILENAME = 'script/manual_annotation.ndjson'
-    df = exp_utils.ndjson2csv(NDJSON_FILENAME)
+    exclude_flags = set(['除外','側面右向き'])
+    df = exp_utils.ndjson2csv(NDJSON_FILENAME, exclude_flags)
     df['pid'] = df['filepath'].map(lambda pid: Path(pid).parts[1])
     df_all = df
     logger.info('All data %d', len(df_all))
@@ -152,6 +153,7 @@ def main():
             if True:  # create ndjson files for post processing
                 with open(NDJSON_FILENAME) as f:
                     all_data = [json.loads(l) for l in f.readlines()]
+                all_data = list(filter(lambda d: len(set(d['flags']).intersection(exclude_flags))>0, all_data))
                 for d in all_data:
                     pid = Path(d['filepath']).parts[1]
                     d['pid'] = pid
@@ -176,6 +178,7 @@ def main():
             df_train = df_train[df_train['pid'].map(lambda e: e in train_pids)]
         df_test = df_all[df_all['set_id'] == test_id]
         df_test.to_csv(outdir / 'testset.csv', index=False)
+        assert isinstance(df_train, pd.DataFrame) and isinstance(df_val, pd.DataFrame) and isinstance(df_test, pd.DataFrame)
         logger.info('train, val, test = %d, %d, %d', len(df_train),
                     len(df_val), len(df_test))
 
@@ -188,7 +191,7 @@ def main():
         if test_id == 0:
             lit_model.summary([BATCH_SIZE, n_chs, 1024, 1024])
 
-        def load_dataset(df, height, clahe):
+        def load_dataset(df: pd.DataFrame, height: int, clahe: bool):
             '''
             load images and keypoints
             '''
@@ -301,7 +304,7 @@ def main():
             return img
 
         dataset = point_utils.ImageDataset(test_xs, test_transform)
-        test_loader = DataLoader(dataset, shuffle=False, **loader_kwargs)
+        test_loader = DataLoader(dataset, shuffle=False, drop_last=False, **loader_kwargs)
 
         logger.info('Start test')
         y_preds = trainer.predict(dataloaders=test_loader, ckpt_path='best')
@@ -313,9 +316,9 @@ def main():
             axis=0)
         logger.info('End test')
         y_preds = np.moveaxis(y_preds, 1, -1).copy()  # to channel last
+        with open(outdir / 'test.ndjson') as f:
+            test_data = [json.loads(l) for l in f.readlines()]
         for image_type in ['ap_whole', 'lateral_whole']:
-            with open(outdir / 'test.ndjson') as f:
-                test_data = [json.loads(l) for l in f.readlines()]
             indices = []
             for i, data in enumerate(test_data):
                 if data['image_type'] == image_type:

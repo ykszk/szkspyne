@@ -5,7 +5,7 @@ from typing import Union
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
-from typing import Sequence, Tuple, List
+from typing import Sequence, Tuple, List, Set
 from pathlib import Path
 from PIL import Image
 
@@ -57,18 +57,16 @@ def _load_data(
     return x, kp
 
 
-def ndjson2csv(filename: Union[str, Path]) -> pd.DataFrame:
+def ndjson2csv(filename: Union[str, Path], exclude_flags: Set[str]) -> pd.DataFrame:
     with open(filename) as f:
         lines = f.readlines()
     rows = []
     for line in lines:
         data = json.loads(line)
-        if '側面右向き' in data['flags']:
-            print('Skip right facing', data['filepath'])
-            continue
-        if '除外' in data['flags']:
-            print('Skip 除外', data['filepath'])
-            continue
+        flags = set(data['flags'])
+        intxn = flags.intersection(exclude_flags)
+        if len(intxn) > 0:
+            print('Skip', data['filepath'], intxn)
         if 'circle' in data:  # TODO: This is temporary. Circles should be handled properly in the future!
             data['point'].update(data['circle'])
         points = {
