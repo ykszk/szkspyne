@@ -153,7 +153,7 @@ def main():
             if True:  # create ndjson files for post processing
                 with open(NDJSON_FILENAME) as f:
                     all_data = [json.loads(l) for l in f.readlines()]
-                all_data = list(filter(lambda d: len(set(d['flags']).intersection(exclude_flags))>0, all_data))
+                all_data = list(filter(lambda d: len(set(d['flags']).intersection(exclude_flags))==0, all_data))
                 for d in all_data:
                     pid = Path(d['filepath']).parts[1]
                     d['pid'] = pid
