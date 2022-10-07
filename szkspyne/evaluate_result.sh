@@ -4,6 +4,7 @@ if [ "$#" -ne 1 ]; then
     exit
 fi
 result_dir="$1"
+echo 'start:' $(date) > "$result_dir"/evaluate.log
 for i in $(seq 0 4); do
     echo fold "$i"
     fold_dir=$result_dir/$i
@@ -12,6 +13,7 @@ for i in $(seq 0 4); do
         outdir="$fold_dir"/auto/$image_type
         mkdir -p "$outdir"
         python3 apply_model.py hm2lm "$fold_dir"/y_pred_$image_type.mha "$fold_dir"/test_$image_type.ndjson "$outdir" --save_heatmap
-        python3 fit_spine_model.py "$outdir" --channel_first -m "$fold_dir"/pca_${image_type}_L4.npz -m "$fold_dir"/pca_${image_type}_L5.npz --device cpu
+        python3 fit_spine_model.py "$outdir" --channel_first -m "$fold_dir"/pca_${image_type}_L4.npz -m "$fold_dir"/pca_${image_type}_L5.npz --sigma 10 1 --device cpu
     done
 done
+echo 'end:' $(date) >> "$result_dir"/evaluate.log
