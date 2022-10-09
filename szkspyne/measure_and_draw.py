@@ -94,6 +94,7 @@ def measure_json(json_fn: Path, height: int, config_filename: str,
             kps[l] = np.delete(kps[l], 0, axis=0)
         sacrum_tltr, vert_corners, disc_corners = utils.get_vert_and_disc_corners(
             kps)
+        vert_corners = vert_corners.astype(np.float64)
 
         logger.debug('Compute centroids')
         sacrum_center = sacrum_tltr.mean(axis=0)
@@ -167,6 +168,7 @@ def measure_json(json_fn: Path, height: int, config_filename: str,
                                 best_lt = (lt_sup, lt_inf)
                                 best_lt_score = score
                     score = best_pt_score + best_lt_score
+                    assert best_pt is not None and best_lt is not None
                     if score > best_score:
                         best_score = score
                         best_set = (mt_sup, mt_inf), best_pt, best_lt
@@ -740,15 +742,7 @@ def measure_json(json_fn: Path, height: int, config_filename: str,
         if filename.suffix == '.svg':
             dwg.saveas(filename)
         elif filename.suffix == '.png':
-            from svg import Parser, Rasterizer
-            svg = Parser.parse(dwg.tostring())
-            rast = Rasterizer()
-            buff = rast.rasterize(svg, svg.width, svg.height)
-            mes = Image.frombytes('RGBA', (svg.width, svg.height), buff)
-            img = img.convert('RGBA')
-            img.alpha_composite(mes)
-            img = img.convert('RGB')
-            img.save(filename)
+            raise NotImplementedError
         else:
             raise NotImplementedError
 
@@ -768,6 +762,7 @@ def measure_json(json_fn: Path, height: int, config_filename: str,
                 t_cb.render(name=name,
                             label=label,
                             checked='' if name in hide else 'checked'))
+        assert image_filename is not None
         svg_tag = dwg.tostring() if embed_svg else '<object id="svgfile" type="image/svg+xml" data="{}"></object>'.format(Path(image_filename).name)
         with open(html_filename, 'w', encoding='utf8') as f:
             f.write(
