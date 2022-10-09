@@ -2,7 +2,7 @@
 from pathlib import Path
 import json
 import sys
-from typing import List
+from typing import List, Union
 from PIL import Image
 import numpy as np
 import logzero
@@ -22,16 +22,19 @@ PERP_BOX_SIZE = (20, 20)  # perpendicular sign
 
 
 def measure_json(json_fn: Path, height: int, config_filename: str,
-                 draw_points: bool, draw_vertebral_number: bool, image_type: str, image_filename: str,
-                 html_filename, measure_filename: str, template_directory: str,
-                 html_title: str, hide: List[str], embed_svg: bool):
+                 draw_points: bool, draw_vertebral_number: bool, image_type: Union[str, None], image_filename: Union[str, None],
+                 html_filename: Union[str, None], measure_filename: Union[str, None], template_directory: str,
+                 html_title: str, hide: List[str], embed_svg: bool, image_dir: Union[str, None]):
     with open(json_fn, encoding='utf8') as f:
         lm_data = json.load(f)
 
     if not embed_svg and not str(image_filename).endswith('.svg'):
         raise RuntimeError('.svg output is required to link external svg')
 
-    img_fn = str(json_fn.parent / lm_data['imagePath']).replace('\\', '/')
+    if image_dir:
+        img_fn = str(Path(image_dir) / Path(lm_data['imagePath'].replace('\\', '/')).name)
+    else:
+        img_fn = str(json_fn.parent / lm_data['imagePath']).replace('\\', '/')
     img = Image.open(img_fn)
     original_image_shape = img.size
 
@@ -83,7 +86,7 @@ def measure_json(json_fn: Path, height: int, config_filename: str,
                                fill=color))
 
 
-    measures = {}
+    measures = {'flags': lm_data['flags']}
     if len(kps['TL']) != len(kps['TR']) or len(kps['BL']) != len(kps['BR']):
         pass
     else:
@@ -795,6 +798,8 @@ def main():
                         help='Hide specified drawings',
                         nargs='*',
                         default=[])
+    parser.add_argument('--image_dir',
+                        help='Override parent directory of imagePath')
 
     parser.add_argument('--height',
                         help='Output image height',
@@ -819,7 +824,7 @@ def main():
     def command_single(args):
         measure_json(args.input, args.height, args.config, args.points, args.numbers,
                      args.image_type, args.image, args.html, args.measure,
-                     args.template, args.title, args.hide, not args.external_svg)
+                     args.template, args.title, args.hide, not args.external_svg, args.image_dir)
 
     sub_single.set_defaults(handler=command_single)
 
@@ -861,7 +866,7 @@ def main():
                     fn.name).with_suffix('.html') if args.html else None
             measure_json(fn, args.height, args.config, args.points, args.numbers,
                          args.image_type, image, html, measure, args.template,
-                         args.title, args.hide, not args.external_svg)
+                         args.title, args.hide, not args.external_svg, args.image_dir)
 
         Parallel(n_jobs=args.workers)(
             delayed(do)(fn)
