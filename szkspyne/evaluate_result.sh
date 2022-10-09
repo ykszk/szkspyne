@@ -4,16 +4,27 @@ if [ "$#" -ne 1 ]; then
     exit
 fi
 result_dir="$1"
-echo 'start:' $(date) > "$result_dir"/evaluate.log
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
+echo 'start:' "$(date)" >"$result_dir"/evaluate.log
 for i in $(seq 0 4); do
     echo fold "$i"
     fold_dir=$result_dir/$i
-    python3 pca_spine.py "$fold_dir"/train_val.ndjson "$fold_dir"
+    python3 "$SCRIPT_DIR"/pca_spine.py "$fold_dir"/train_val.ndjson "$fold_dir"
     for image_type in ap_whole lateral_whole; do
         outdir="$fold_dir"/auto/$image_type
         mkdir -p "$outdir"
-        python3 apply_model.py hm2lm "$fold_dir"/y_pred_$image_type.mha "$fold_dir"/test_$image_type.ndjson "$outdir" --save_heatmap
-        python3 fit_spine_model.py "$outdir" --channel_first -m "$fold_dir"/pca_${image_type}_L4.npz -m "$fold_dir"/pca_${image_type}_L5.npz --sigma 10 1 --device cpu
+        python3 "$SCRIPT_DIR"/apply_model.py hm2lm "$fold_dir"/y_pred_$image_type.mha "$fold_dir"/test_$image_type.ndjson "$outdir" --save_heatmap
+        python3 "$SCRIPT_DIR"/fit_spine_model.py "$outdir" --channel_first -m "$fold_dir"/pca_${image_type}_L4.npz -m "$fold_dir"/pca_${image_type}_L5.npz --sigma 10 1 --device cpu
     done
 done
-echo 'end:' $(date) >> "$result_dir"/evaluate.log
+echo 'end:' "$(date)" >>"$result_dir"/evaluate.log
+mkdir -p "$result_dir"/auto{,/keypoints}/{ap_whole,lateral_whole}
+echo 'copy'
+for image_type in ap_whole lateral_whole; do
+    cp "$result_dir"/?/auto/$image_type/*.json "$result_dir"/auto/$image_type/
+done
+# TODO: modify_ai_annotation.py
+
+for image_type in ap_whole lateral_whole; do
+    "$SCRIPT_DIR"/measure_and_draw.py --hide APT CoronalBalance T1Tilt ClavicleAngle ShoulderHeight Pelvis FemoralHead PelvicObliquity LegLength SacralObliquity Mid/LowerThoracicKyphosis ProximalThor acicKyphosis SacralSlope PelvicIncidence PelvicRadiusAngle L5IncidenceAngle LumbosacralAngle --height 1200--points --image_type $image_type --config /data/scoliosis/Osaka\ AI\ Team\ D ropbox/project/suzuki/scoliosis/annotation/tools/bin/config.yaml batch "$result_dir"/auto/keypoints/${image_type}_whole "$result_dir"/auto/${image_type}_whole/ --html --image .svg --measure
+done
