@@ -785,8 +785,8 @@ def main():
                         required=True)
     parser.add_argument('-t',
                         '--template',
-                        help='template directory',
-                        default='.')
+                        help='template directory. default: ${SCRIPT_DIR}/template',
+                        default=Path(sys.argv[0]).parent/'template')
     parser.add_argument('--title',
                         help='html title',
                         default='Scoliosis Measuaraments')
@@ -798,7 +798,7 @@ def main():
                         help='Hide specified drawings',
                         nargs='*',
                         default=[])
-    parser.add_argument('--image_dir',
+    parser.add_argument('--parent_dir',
                         help='Override parent directory of imagePath')
 
     parser.add_argument('--height',
