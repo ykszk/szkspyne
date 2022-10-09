@@ -67,6 +67,7 @@ def ndjson2csv(filename: Union[str, Path], exclude_flags: Set[str]) -> pd.DataFr
         intxn = flags.intersection(exclude_flags)
         if len(intxn) > 0:
             print('Skip', data['filepath'], intxn)
+            continue
         if 'circle' in data:  # TODO: This is temporary. Circles should be handled properly in the future!
             data['point'].update(data['circle'])
         points = {
@@ -76,7 +77,7 @@ def ndjson2csv(filename: Union[str, Path], exclude_flags: Set[str]) -> pd.DataFr
         for name in LABEL_NAMES:
             if name not in points.keys():
                 points[name] = np.array(())
-        row = {'filepath': data['filepath']}
+        row = {'filepath': data['filepath'], 'flags': data['flags']}
         row.update(points)
         rows.append(row)
     df = pd.DataFrame(rows)
