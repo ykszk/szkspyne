@@ -21,11 +21,11 @@ echo 'end applying and fitting:' "$(date)" >>"$result_dir"/evaluate.log
 mkdir -p "$result_dir"/auto{,/keypoints}/{ap_whole,lateral_whole}
 echo 'copy'
 for image_type in ap_whole lateral_whole; do
-    cp "$result_dir"/?/auto/$image_type/*.json "$result_dir"/auto/$image_type/
+    cp "$result_dir"/?/auto/$image_type/*.json "$result_dir"/auto/keypoints/$image_type/
 done
-python3 "$SCRIPT_DIR"/script/modify_ai_annotation.py "$result_dir"/auto
+python3 "$SCRIPT_DIR"/../script/modify_ai_annotation.py "$result_dir"/auto/keypoints
 
-for image_type in ap_whole lateral_whole; do
-    python3 "$SCRIPT_DIR"/measure_and_draw.py --hide APT CoronalBalance T1Tilt ClavicleAngle ShoulderHeight Pelvis FemoralHead PelvicObliquity LegLength SacralObliquity Mid/LowerThoracicKyphosis ProximalThor acicKyphosis SacralSlope PelvicIncidence PelvicRadiusAngle L5IncidenceAngle LumbosacralAngle --height 1200--points --image_type $image_type --config /data/scoliosis/Osaka\ AI\ Team\ D ropbox/project/suzuki/scoliosis/annotation/tools/bin/config.yaml batch "$result_dir"/auto/keypoints/${image_type}_whole "$result_dir"/auto/${image_type}_whole/ --html --image .svg --measure
+for image_type in ap lateral; do
+    python3 "$SCRIPT_DIR"/measure_and_draw.py --hide APT CoronalBalance T1Tilt ClavicleAngle ShoulderHeight Pelvis FemoralHead PelvicObliquity LegLength SacralObliquity Mid/LowerThoracicKyphosis ProximalThor acicKyphosis SacralSlope PelvicIncidence PelvicRadiusAngle L5IncidenceAngle LumbosacralAngle --height 1200 --points --image_type $image_type --parent_dir "$SCRIPT_DIR"/../../data/annotation/images/${image_type}_whole --config "$SCRIPT_DIR"/../../data/annotation/config.yaml batch "$result_dir"/auto/keypoints/${image_type}_whole "$result_dir"/auto/${image_type}_whole/ --html --image .svg --measure
 done
 echo 'end measuring:' "$(date)" >>"$result_dir"/evaluate.log

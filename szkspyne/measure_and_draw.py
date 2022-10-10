@@ -819,7 +819,7 @@ def main():
     def command_single(args):
         measure_json(args.input, args.height, args.config, args.points, args.numbers,
                      args.image_type, args.image, args.html, args.measure,
-                     args.template, args.title, args.hide, not args.external_svg, args.image_dir)
+                     args.template, args.title, args.hide, not args.external_svg, args.parent_dir)
 
     sub_single.set_defaults(handler=command_single)
 
@@ -861,7 +861,7 @@ def main():
                     fn.name).with_suffix('.html') if args.html else None
             measure_json(fn, args.height, args.config, args.points, args.numbers,
                          args.image_type, image, html, measure, args.template,
-                         args.title, args.hide, not args.external_svg, args.image_dir)
+                         args.title, args.hide, not args.external_svg, args.parent_dir)
 
         Parallel(n_jobs=args.workers)(
             delayed(do)(fn)
