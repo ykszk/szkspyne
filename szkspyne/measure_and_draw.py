@@ -176,6 +176,7 @@ def measure_json(json_fn: Path, height: int, config_filename: str,
                 coronal_translation[MT_MARGIN:-MT_MARGIN]).argmax() + MT_MARGIN
             assert best_set is not None
             (mt_sup, mt_inf), (pt_sup, pt_inf), (lt_sup, lt_inf) = best_set
+            measures['curve_indices'] = {'MT':(mt_sup, mt_inf), 'PT':(pt_sup, pt_inf), 'LT':(lt_sup, lt_inf)}
 
             # cobb angles
             logger.debug('Cobb angles')
@@ -748,7 +749,7 @@ def measure_json(json_fn: Path, height: int, config_filename: str,
 
     if measure_filename:
         with open(measure_filename, 'w') as f:
-            json.dump(measures, f)
+            json.dump(measures, f, ensure_ascii=False)
 
     if html_filename:
         env = Environment(
