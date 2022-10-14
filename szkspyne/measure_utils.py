@@ -107,7 +107,8 @@ def draw_cobb(sup_cnrs: np.ndarray,
 
     angle_deg = np.rad2deg(angle_rad)
     text_angle = '{:.1f}°'.format(angle_deg)
-    grp.add(dwg.text(text_angle, insert=tuple(text_pos),
+    text_anchor = 'end' if angle_deg < 0 else 'start'
+    grp.add(dwg.text(text_angle, insert=tuple(text_pos), text_anchor=text_anchor, dominant_baseline="central",
                      **text_attrs))
     return grp, angle_deg
 
