@@ -6,6 +6,7 @@ import svgwrite
 from collections import defaultdict
 from skspatial.objects import Line, Point
 from scipy import stats
+from szkspyne import settings
 
 def pearsonr_ci(x,y,alpha=0.05):
     ''' calculate Pearson correlation along with the confidence interval using scipy and numpy
@@ -207,7 +208,7 @@ def get_vert_corners(kps):
     n_vertebrae = len(kps['BR'])
     sacrum_tltr = np.array((kps['TL'][-1], kps['TR'][-1]))
     vert_corners = np.array(
-        [kps[l][:n_vertebrae] for l in ['TL', 'TR', 'BL', 'BR']]).transpose(
+        [kps[l][:n_vertebrae] for l in settings.VERTEBRA_LABEL_NAMES]).transpose(
             (1, 0, 2))
     return sacrum_tltr, vert_corners
 
@@ -215,10 +216,10 @@ def get_vert_and_disc_corners(kps):
     n_vertebrae = len(kps['BR'])
     sacrum_tltr = np.array((kps['TL'][-1], kps['TR'][-1]))
     vert_corners = np.array(
-        [kps[l][:n_vertebrae] for l in ['TL', 'TR', 'BL', 'BR']]).transpose(
+        [kps[l][:n_vertebrae] for l in settings.VERTEBRA_LABEL_NAMES]).transpose(
             (1, 0, 2))
     disc_corners = np.array([
         kps[l][(1 if l in ['TL', 'TR'] else 0):]
-        for l in ['TL', 'TR', 'BL', 'BR']
+        for l in settings.VERTEBRA_LABEL_NAMES
     ]).transpose((1, 0, 2))
     return sacrum_tltr, vert_corners, disc_corners

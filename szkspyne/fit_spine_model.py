@@ -12,7 +12,7 @@ from tqdm import tqdm
 import pandas as pd
 
 import mhd
-from szkspyne import labelme_utils
+from szkspyne import labelme_utils, settings
 from pca_spine import PointsPCA
 import point_utils
 import settings
@@ -310,7 +310,7 @@ if __name__ == '__main__':
                          for w in warped]
 
         original_shapes = result_json['shapes']
-        for l in pca.labels + ['C7-TL', 'C7-TR', 'S-TL', 'S-TR']:
+        for l in pca.labels + settings.ANCHOR_LABEL_NAMES:
             original_shapes = list(
                 filter(
                     lambda shape: shape['label'] != l or shape['shape_type'] !=

@@ -8,7 +8,7 @@ import numpy as np
 import logzero
 from logzero import logger
 from skspatial.objects import Line
-
+from szkspyne import settings
 import yaml
 import svgwrite
 from jinja2 import Environment, FileSystemLoader
@@ -49,7 +49,7 @@ def measure_json(json_fn: Path, height: int, config_filename: str,
     for shape in lm_data['shapes']:
         shape['points'] = [[scale * e for e in p] for p in shape['points']]
 
-    LABEL_NAMES = ['TL', 'TR', 'BL', 'BR']
+    LABEL_NAMES = settings.VERTEBRA_LABEL_NAMES
 
     w, h = img.size
     pixel_size = 1

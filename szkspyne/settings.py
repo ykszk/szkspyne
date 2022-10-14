@@ -1,16 +1,12 @@
-from typing import List, Tuple
-
-LABEL_NAMES = [
-    'TL', 'TR', 'BL', 'BR', 'Shoulder', 'Clavicle', 'Pelvis', 'Iliac',
-    'FemoralHead'
+VERTEBRA_LABEL_NAMES = ['TL', 'TR', 'BL', 'BR']
+NON_VERTEBRA_LABEL_NAMES = [
+    'Shoulder', 'Clavicle', 'Pelvis', 'Iliac', 'FemoralHead'
 ]
-LABEL_NAMES += ['C7-TL', 'C7-TR', 'S-TL', 'S-TR']
+ANCHOR_LABEL_NAMES = ['C7-TL', 'C7-TR', 'S-TL', 'S-TR']
+LABEL_NAMES = VERTEBRA_LABEL_NAMES + NON_VERTEBRA_LABEL_NAMES + ANCHOR_LABEL_NAMES
 
-FLIPPED_NAMES = [
-    'TR', 'TL', 'BR', 'BL', 'Shoulder', 'Clavicle', 'Pelvis', 'Iliac',
-    'FemoralHead'
-]
-FLIPPED_NAMES += ['C7-TR', 'C7-TL', 'S-TR', 'S-TL']
+FLIPPED_NAMES = ['TR', 'TL', 'BR', 'BL'
+                 ] + NON_VERTEBRA_LABEL_NAMES + ANCHOR_LABEL_NAMES
 
 flip_pairs = []
 for i, (ln, fn) in enumerate(zip(LABEL_NAMES, FLIPPED_NAMES)):

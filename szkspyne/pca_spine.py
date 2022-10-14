@@ -5,7 +5,7 @@ from sklearn.decomposition import PCA
 from logzero import logger
 from pathlib import Path
 from typing import NamedTuple, List, Union
-
+from szkspyne import settings
 
 class PointConfig(NamedTuple):
     name: str
@@ -82,13 +82,11 @@ if __name__ == '__main__':
         logger.warning('Unknown arguments:%s', unknown)
     outdir = Path(args.output)
     REF_HEIGHT = 1000
-    VERT_LABELS = ['TL', 'TR', 'BL', 'BR']
+    VERT_LABELS = settings.VERTEBRA_LABEL_NAMES
     L5_POINT_COUNTS = [19, 19, 18, 18]
     L4_POINT_COUNTS = (np.array(L5_POINT_COUNTS) - 1).tolist()
     L6_POINT_COUNTS = (np.array(L5_POINT_COUNTS) + 1).tolist()
-    LABELS_EXT = VERT_LABELS + [
-        'Shoulder', 'Clavicle', 'Pelvis', 'Iliac', 'FemoralHead'
-    ]
+    LABELS_EXT = VERT_LABELS + settings.NON_VERTEBRA_LABEL_NAMES
     CONFIGS = [
         PointConfig('L4', 'ap_whole', VERT_LABELS, L4_POINT_COUNTS),
         PointConfig('L5', 'ap_whole', VERT_LABELS, L5_POINT_COUNTS),
