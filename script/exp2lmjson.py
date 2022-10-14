@@ -1,0 +1,55 @@
+#%%
+import sys
+import argparse
+import json
+from pathlib import Path
+
+parser = argparse.ArgumentParser(
+    description='From ndjson for exp to ndjson of labelme.')
+parser.add_argument('input',
+                    help='Input ndjson filename. "-" to use stdin',
+                    metavar='<input>')
+parser.add_argument('output', help='Output directory', metavar='<output>')
+args = parser.parse_args()
+outdir = Path(args.output)
+
+if args.input == '-':
+    exp_data = [json.loads(l) for l in sys.stdin]
+else:
+    with open(args.input) as f:
+        exp_data = [json.loads(l) for l in f]
+
+from tqdm import tqdm
+for old in tqdm(exp_data):
+    image_type = old.pop('image_type')
+    flags = old.pop('flags')
+    for l in ['C7-TL', 'C7-TR', 'S-TL', 'S-TR']:
+        old['point'].pop(l, None)
+    new_shapes = []
+    for shape in ['point', 'rectangle', 'circle']:
+        if shape not in old:
+            continue
+        for k, v in old[shape].items():
+            for pts in v:
+                new_shapes.append({
+                    'label': k,
+                    'points': pts,
+                    'group_id': None,
+                    'shape_type': shape,
+                    'flags': {}
+                })
+    stem = '_'.join(Path(old['filepath']).parts[1:])
+    new = {
+        "version": "4.5.7",
+        'flags': {f: True
+                  for f in flags},
+        'shapes': new_shapes,
+        'imagePath': stem,
+        'imageData': None,
+        'imageHeight': old['imageHeight'],
+        'imageWidth': old['imageWidth']
+    }
+
+    filename = (outdir / stem).with_suffix('.json')
+    with open(filename, 'w') as f:
+        json.dump(new, f, indent=2, ensure_ascii=False)
