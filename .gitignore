@@ -3,6 +3,7 @@
 *.ndjson
 *.jsonl
 *.npz
+*.html
 docs/
 output/
 .vscode/
