@@ -153,10 +153,6 @@ def measure_json(json_fn: Path, height: int, config_filename: str,
                     # lt
                     lt_sup = mt_inf
                     lt_infs = np.arange(mt_inf, len(vert_inf_cnrs))
-                    lt_angles = np.array([
-                        calc_angle(vert_sup_cnrs[lt_sup],
-                                   vert_inf_cnrs[lt_inf]) for lt_inf in lt_infs
-                    ])
                     best_lt_score = 0
                     best_lt = None
                     for lt_sup in range(mt_inf, len(vert_inf_cnrs) - 2):

@@ -25,7 +25,8 @@ for image_type in ap_whole lateral_whole; do
 done
 python3 "$SCRIPT_DIR"/../script/modify_ai_annotation.py "$result_dir"/auto/keypoints
 
+HIDE="MajorApex APT CoronalBalance T1Tilt ClavicleAngle ShoulderHeight Pelvis FemoralHead PelvicObliquity LegLength SacralObliquity Mid/LowerThoracicKyphosis ProximalThoracicKyphosis SacralSlope PelvicIncidence PelvicRadiusAngle L5IncidenceAngle LumbosacralAngle"
 for image_type in ap lateral; do
-    python3 "$SCRIPT_DIR"/measure_and_draw.py --hide APT CoronalBalance T1Tilt ClavicleAngle ShoulderHeight Pelvis FemoralHead PelvicObliquity LegLength SacralObliquity Mid/LowerThoracicKyphosis ProximalThor acicKyphosis SacralSlope PelvicIncidence PelvicRadiusAngle L5IncidenceAngle LumbosacralAngle --height 1200 --points --image_type $image_type --parent_dir "$SCRIPT_DIR"/../../data/annotation/images/${image_type}_whole --config "$SCRIPT_DIR"/../../data/annotation/config.yaml batch "$result_dir"/auto/keypoints/${image_type}_whole "$result_dir"/auto/${image_type}_whole/ --html --image .svg --measure
+    python3 "$SCRIPT_DIR"/measure_and_draw.py --hide $HIDE --height 1200 --points --image_type $image_type --parent_dir "$SCRIPT_DIR"/../../data/annotation/images/${image_type}_whole --config "$SCRIPT_DIR"/../../data/annotation/config.yaml batch "$result_dir"/auto/keypoints/${image_type}_whole "$result_dir"/auto/${image_type}_whole/ --html --image .svg --measure
 done
 echo 'end measuring:' "$(date)" >>"$result_dir"/evaluate.log
