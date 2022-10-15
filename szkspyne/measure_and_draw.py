@@ -20,6 +20,55 @@ LINE_WIDTH = 2.0
 POINT_RADIUS = 2.0
 PERP_BOX_SIZE = (20, 20)  # perpendicular sign
 
+def init_svg(lm_data, image_dir: str, height: int):
+    lm_data = lm_data.copy()
+    img_fn = Path(image_dir) / Path(lm_data['imagePath'].replace('\\', '/')).name
+    if not img_fn.exists():
+        img_fn = str(Path(image_dir) / Path(lm_data['imagePath']).name.replace('_','/'))
+
+    img = Image.open(img_fn)
+    original_image_shape = img.size
+
+    img.thumbnail((100000, height))
+    scale = height / original_image_shape[1]
+
+    for shape in lm_data['shapes']:
+        shape['points'] = [[scale * e for e in p] for p in shape['points']]
+
+    w, h = img.size
+    pixel_size = 1
+    image_size = (w * pixel_size, h * pixel_size)
+    dwg = svgwrite.Drawing('output.svg',
+                           size=image_size,
+                           viewBox=('0 0 {} {}'.format(w, h)))
+    dwg.add(
+        dwg.image('data:image/jpg;base64,' + utils.img2b64(img),
+                  size=img.size))
+
+    text_attrs = dict(stroke='black',
+                      stroke_width='1px',
+                      fill='white',
+                      style="font-size:24px; font-family:sans-serif")
+
+    points = utils.get_point_dict(lm_data)
+    kps = utils.sort_kps(points)
+
+    return dwg, points, kps, text_attrs, img
+
+
+def draw_line(a, b, x0, x1, grp, dwg):
+    '''
+    draw horizontal line
+    '''
+    d = b - a
+    slope = d[1] / d[0]
+    t0 = -a[0] / d[0]
+    y0 = a[1] + t0 * d[1]
+    f0 = slope * x0 + y0
+    f1 = slope * x1 + y0
+    grp.add(dwg.path((['M'] + [x0, f0] + [x1, f1])))
+    return f0, f1
+
 
 def measure_json(json_fn: Path, height: int, config_filename: str,
                  draw_points: bool, draw_vertebral_number: bool, image_type: Union[str, None], image_filename: Union[str, None],
@@ -31,46 +80,16 @@ def measure_json(json_fn: Path, height: int, config_filename: str,
     if not embed_svg and not str(image_filename).endswith('.svg'):
         raise RuntimeError('.svg output is required to link external svg')
 
-    if image_dir:
-        img_fn = str(Path(image_dir) / Path(lm_data['imagePath'].replace('\\', '/')).name)
-    else:
-        img_fn = str(json_fn.parent / lm_data['imagePath']).replace('\\', '/')
-    img = Image.open(img_fn)
-    original_image_shape = img.size
-
-    HEIGHT = height
-    img.thumbnail((HEIGHT, HEIGHT))
-    scale = HEIGHT / original_image_shape[1]
+    if not image_dir:
+        image_dir = str(json_fn.parent)
+    dwg, points, kps, text_attrs, img = init_svg(lm_data, image_dir, height)
 
     with open(config_filename) as f:
         color_data = yaml.safe_load(f)
     label_colors = color_data['label_colors']
-
-    for shape in lm_data['shapes']:
-        shape['points'] = [[scale * e for e in p] for p in shape['points']]
-
     LABEL_NAMES = settings.VERTEBRA_LABEL_NAMES
 
-    w, h = img.size
-    pixel_size = 1
-    image_size = (w * pixel_size, h * pixel_size)
-    logger.debug('drawing')
-    dwg = svgwrite.Drawing('output.svg',
-                           size=image_size,
-                           viewBox=('0 0 {} {}'.format(w, h)))
-    logger.debug('image')
-    dwg.add(
-        dwg.image('data:image/jpg;base64,' + utils.img2b64(img),
-                  size=img.size))
     drawings = []
-
-    text_attrs = dict(stroke='black',
-                      stroke_width='1px',
-                      fill='white',
-                      style="font-size:24px; font-family:sans-serif")
-
-    points = utils.get_point_dict(lm_data)
-    kps = utils.sort_kps(points)
 
     if draw_points:
         drawings.append(('Points', 'Points'))
@@ -88,7 +107,7 @@ def measure_json(json_fn: Path, height: int, config_filename: str,
 
     measures = {'flags': lm_data['flags']}
     if len(kps['TL']) != len(kps['TR']) or len(kps['BL']) != len(kps['BR']):
-        pass
+        raise NotImplementedError
     else:
         for l in LABEL_NAMES:  # remove C7
             kps[l] = np.delete(kps[l], 0, axis=0)
@@ -341,18 +360,6 @@ def measure_json(json_fn: Path, height: int, config_filename: str,
             grp.add(dwg.text(txt_angle, insert=c7_centroid, **text_attrs))
             measures['T1Tilt'] = angle_deg
 
-            def draw_line(a, b, x0, x1, grp, dwg):
-                '''
-                draw horizontal line
-                '''
-                d = b - a
-                slope = d[1] / d[0]
-                t0 = -a[0] / d[0]
-                y0 = a[1] + t0 * d[1]
-                f0 = slope * x0 + y0
-                f1 = slope * x1 + y0
-                grp.add(dwg.path((['M'] + [x0, f0] + [x1, f1])))
-                return f0, f1
 
             # Clavicle Angle
             if 'Clavicle' in kps and len(kps['Clavicle']) == 2:
