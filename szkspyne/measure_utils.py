@@ -94,12 +94,11 @@ def draw_cobb(sup_cnrs: np.ndarray,
               hide=False) -> svgwrite.container.Group:
     up_line = Line.from_points(sup_cnrs[0], sup_cnrs[1])
     low_line = Line.from_points(inf_cnrs[0], inf_cnrs[1])
+    view_box = np.array([float(e) for e in dwg['viewBox'].split(' ')]).reshape(2, 2) # [[xmin, ymin], [xmax, ymax]]
     try:
         up_low_cross = up_line.intersect_line(low_line)
-        angle_rad = calc_angle((sup_cnrs[0], sup_cnrs[1]), (inf_cnrs[0], inf_cnrs[1])) #float(up_line.angle_between(low_line).evalf())
-        angle_rad = np.abs(angle_rad)
-
-        if up_low_cross[0] < sup_cnrs[0, 0]:
+        angle_rad = -calc_angle((sup_cnrs[0], sup_cnrs[1]), (inf_cnrs[0], inf_cnrs[1]))
+        if angle_rad > 0:
             up_end = sup_cnrs[1]
             low_end = inf_cnrs[1]
             pts = up_end + aux_dist * (sup_cnrs[0] - sup_cnrs[1])
@@ -107,22 +106,28 @@ def draw_cobb(sup_cnrs: np.ndarray,
             up_end = sup_cnrs[0]
             low_end = inf_cnrs[0]
             pts = up_end + aux_dist * (sup_cnrs[1] - sup_cnrs[0])
-            angle_rad *= -1
-        aux_cross = Point(rotate_around(pts, angle_rad / 2, up_low_cross))
-        up_aux1 = up_line.project_point(aux_cross)
-        up_aux2 = up_aux1 + 1.5 * (aux_cross - up_aux1)
-        up_auxs = np.array((up_aux1, up_aux2))
-        low_aux1 = low_line.project_point(aux_cross)
-        low_aux2 = low_aux1 + 1.5 * (aux_cross - low_aux1)
-        low_auxs = np.array((low_aux1, low_aux2))
-        text_pos = aux_cross
 
         grp = dwg.add(
             dwg.g(id=group_id, stroke=color, stroke_width=2.0, fill='none', visibility='hidden' if hide else 'visible'))
-        grp.add(dwg.path((['M'] + up_end.tolist() + up_auxs[0].tolist())))
-        grp.add(dwg.path((['M'] + up_auxs.tolist())))
-        grp.add(dwg.path((['M'] + low_end.tolist() + low_auxs[0].tolist())))
-        grp.add(dwg.path((['M'] + low_auxs.tolist())))
+        is_inside = np.all(view_box[0] <= up_low_cross) and np.all(up_low_cross <= view_box[1])
+        if is_inside:
+            text_pos = up_low_cross
+            grp.add(dwg.path((['M'] + up_end.tolist() + up_low_cross.tolist())))
+            grp.add(dwg.path((['M'] + low_end.tolist() + up_low_cross.tolist())))
+        else:
+            aux_cross = Point(rotate_around(pts, angle_rad / 2, up_low_cross))
+            up_aux1 = up_line.project_point(aux_cross)
+            up_aux2 = up_aux1 + 1.5 * (aux_cross - up_aux1)
+            up_auxs = np.array((up_aux1, up_aux2))
+            low_aux1 = low_line.project_point(aux_cross)
+            low_aux2 = low_aux1 + 1.5 * (aux_cross - low_aux1)
+            low_auxs = np.array((low_aux1, low_aux2))
+            text_pos = aux_cross
+
+            grp.add(dwg.path((['M'] + up_end.tolist() + up_auxs[0].tolist())))
+            grp.add(dwg.path((['M'] + up_auxs.tolist())))
+            grp.add(dwg.path((['M'] + low_end.tolist() + low_auxs[0].tolist())))
+            grp.add(dwg.path((['M'] + low_auxs.tolist())))
     except ValueError:
         angle_rad = 0
         text_pos = np.concatenate([sup_cnrs, inf_cnrs], axis=0).mean(axis=0)
