@@ -2,140 +2,23 @@
 from pathlib import Path
 import json
 import sys
-from typing import List, Union
-from PIL import Image
+from typing import List, Union, Tuple
 import numpy as np
 import logzero
 from logzero import logger
-from skspatial.objects import Line
+from skspatial.objects import Line, Point
 from szkspyne import settings
 import yaml
 import svgwrite
 from jinja2 import Environment, FileSystemLoader
-import itertools
 import argparse
 import measure_utils as utils
-from measure_utils import calc_centroid, draw_cobb, perp, get_circle_dict, calc_angle
+from measure_utils import calc_centroid, perp, get_circle_dict, calc_angle, Canvas
 
 LINE_WIDTH = 2.0
 POINT_RADIUS = 2.0
 PERP_BOX_SIZE = (20, 20)  # perpendicular sign
 
-
-class Canvas(svgwrite.Drawing):
-
-    def __init__(self, lm_data, image_dir: Path, height: int):
-        lm_data = lm_data.copy()
-        img_fn = Path(image_dir) / Path(lm_data['imagePath'].replace(
-            '\\', '/')).name
-        if not img_fn.exists():
-            img_fn = str(
-                Path(image_dir) /
-                Path(lm_data['imagePath']).name.replace('_', '/'))
-        img = Image.open(img_fn)
-        original_image_shape = img.size
-
-        img.thumbnail((100000, height))
-        scale = height / original_image_shape[1]
-
-        for shape in lm_data['shapes']:
-            shape['points'] = [[scale * e for e in p] for p in shape['points']]
-
-        w, h = img.size
-        pixel_size = 1
-        image_size = (w * pixel_size, h * pixel_size)
-        super().__init__('output.svg',
-                         size=image_size,
-                         viewBox=('0 0 {} {}'.format(w, h)))
-        self.add(
-            self.image('data:image/jpg;base64,' + utils.img2b64(img),
-                       size=img.size))
-
-        text_attrs = dict(stroke='black',
-                          stroke_width='1px',
-                          fill='white',
-                          style="font-size:24px; font-family:sans-serif")
-
-        points = utils.get_point_dict(lm_data)
-        kps = utils.sort_kps(points)
-
-        self.size = img.size
-        self.text_attrs = text_attrs
-        self.points = points
-        self.kps = kps
-        self.img = img
-
-    def draw_line(self, a, b, grp, xrange=None, yrange=None):
-        d = b - a
-        if d[1] == 0:
-            p0 = [0, a[1]]
-            p1 = [self.size[0], a[1]]
-            grp.add(self.path((['M'] + p0 + p1)))
-            return p0, p1
-        if d[0] == 0:
-            p0 = [a[0], self.size[0]]
-            p1 = [a[0], self.size[1]]
-            grp.add(self.path((['M'] + p0 + p1)))
-            return p0, p1
-        if xrange is None:
-            xrange=(0, self.size[0])
-        if yrange is None:
-            yrange=(0, self.size[1])
-        slope = d[1] / d[0]
-        t0 = -a[0] / d[0]
-        y0 = a[1] + t0 * d[1]
-        f0 = slope * xrange[0] + y0
-        f1 = slope * xrange[1] + y0
-        xmin = [xrange[0], f0]
-        xmax = [xrange[1], f1]
-        f0 = (yrange[0] - y0) / slope
-        f1 = (yrange[1] - y0) / slope
-        ymin = [f0, yrange[0]]
-        ymax = [f1, yrange[1]]
-        combos = list(itertools.combinations([xmin, xmax, ymin, ymax], 2))
-        ds = [np.linalg.norm(np.array(c[1])-np.array(c[0])) for c in combos]
-        p0, p1 = combos[np.argmin(ds)]
-        grp.add(self.path((['M'] + p0 + p1)))
-        return p0, p1
-
-
-def init_svg(lm_data, image_dir: str, height: int):
-    lm_data = lm_data.copy()
-    img_fn = Path(image_dir) / Path(lm_data['imagePath'].replace('\\',
-                                                                 '/')).name
-    if not img_fn.exists():
-        img_fn = str(
-            Path(image_dir) /
-            Path(lm_data['imagePath']).name.replace('_', '/'))
-
-    img = Image.open(img_fn)
-    original_image_shape = img.size
-
-    img.thumbnail((100000, height))
-    scale = height / original_image_shape[1]
-
-    for shape in lm_data['shapes']:
-        shape['points'] = [[scale * e for e in p] for p in shape['points']]
-
-    w, h = img.size
-    pixel_size = 1
-    image_size = (w * pixel_size, h * pixel_size)
-    dwg = svgwrite.Drawing('output.svg',
-                           size=image_size,
-                           viewBox=('0 0 {} {}'.format(w, h)))
-    dwg.add(
-        dwg.image('data:image/jpg;base64,' + utils.img2b64(img),
-                  size=img.size))
-
-    text_attrs = dict(stroke='black',
-                      stroke_width='1px',
-                      fill='white',
-                      style="font-size:24px; font-family:sans-serif")
-
-    points = utils.get_point_dict(lm_data)
-    kps = utils.sort_kps(points)
-
-    return dwg, points, kps, text_attrs, img
 
 def measure_json(json_fn: Path, height: int, config_filename: str,
                  draw_points: bool, draw_vertebral_number: bool,
@@ -154,7 +37,6 @@ def measure_json(json_fn: Path, height: int, config_filename: str,
 
     if not image_dir:
         image_dir = str(json_fn.parent)
-    # dwg, points, kps, text_attrs, img = init_svg(lm_data, image_dir, height)
     dwg = Canvas(lm_data, Path(image_dir), height)
     points, kps, text_attrs, img = dwg.points, dwg.kps, dwg.text_attrs, dwg.img
 
@@ -167,7 +49,7 @@ def measure_json(json_fn: Path, height: int, config_filename: str,
 
     if draw_points:
         drawings.append(('Points', 'Points'))
-        grp = dwg.add(dwg.g(id='Points', stroke_width=2.0, fill='none'))
+        grp = dwg.add(dwg.g(id='Points', stroke_width=LINE_WIDTH, fill='none'))
         for label, pts in points.items():
             color = '#' + ''.join(
                 ['{:02x}'.format(c) for c in label_colors[label]])
@@ -276,30 +158,42 @@ def measure_json(json_fn: Path, height: int, config_filename: str,
             drawings += [('PT', 'PT Cobb (p.49)'), ('MT', 'MT Cobb (p.49)'),
                          ('LT', 'LT Cobb (p.49)')]
             gid = 'PT'
-            measures[gid] = draw_cobb(vert_sup_cnrs[pt_sup],
-                                      vert_inf_cnrs[pt_inf],
-                                      dwg,
-                                      gid,
-                                      'red',
-                                      text_attrs=text_attrs,
-                                      hide=gid in hide)[1]
+            visibility = 'hidden' if gid in hide else 'visible'
+            grp = dwg.add(
+                dwg.g(id=gid,
+                      stroke='red',
+                      stroke_width=LINE_WIDTH,
+                      fill='none',
+                      visibility=visibility))
+            measures[gid] = dwg.draw_cobb(vert_sup_cnrs[pt_sup],
+                                          vert_inf_cnrs[pt_inf],
+                                          grp,
+                                          text_attrs=text_attrs)
             gid = 'MT'
-            measures[gid] = draw_cobb(vert_sup_cnrs[mt_sup],
-                                      vert_inf_cnrs[mt_inf],
-                                      dwg,
-                                      gid,
-                                      'green',
-                                      text_attrs=text_attrs,
-                                      hide=gid in hide)[1]
+            visibility = 'hidden' if gid in hide else 'visible'
+            grp = dwg.add(
+                dwg.g(id=gid,
+                      stroke='green',
+                      stroke_width=LINE_WIDTH,
+                      fill='none',
+                      visibility=visibility))
+            measures[gid] = dwg.draw_cobb(vert_sup_cnrs[mt_sup],
+                                          vert_inf_cnrs[mt_inf],
+                                          grp,
+                                          text_attrs=text_attrs)
             if lt_sup is not None and lt_inf is not None:
                 gid = 'LT'
-                measures[gid] = draw_cobb(vert_sup_cnrs[lt_sup],
-                                          vert_inf_cnrs[lt_inf],
-                                          dwg,
-                                          gid,
-                                          'blue',
-                                          text_attrs=text_attrs,
-                                          hide=gid in hide)[1]
+                visibility = 'hidden' if gid in hide else 'visible'
+                grp = dwg.add(
+                    dwg.g(id=gid,
+                          stroke='blue',
+                          stroke_width=LINE_WIDTH,
+                          fill='none',
+                          visibility=visibility))
+                measures[gid] = dwg.draw_cobb(vert_sup_cnrs[lt_sup],
+                                              vert_inf_cnrs[lt_inf],
+                                              grp,
+                                              text_attrs=text_attrs)
             # Major apex
             gid = 'MajorApex'
             visibility = 'hidden' if gid in hide else 'visible'
@@ -308,7 +202,7 @@ def measure_json(json_fn: Path, height: int, config_filename: str,
             grp = dwg.add(
                 dwg.g(id=gid,
                       stroke=color,
-                      stroke_width=2.0,
+                      stroke_width=LINE_WIDTH,
                       fill='none',
                       visibility=visibility))
             vert_apex = vert_corners[i_apex]
@@ -331,7 +225,7 @@ def measure_json(json_fn: Path, height: int, config_filename: str,
             grp = dwg.add(
                 dwg.g(id=gid,
                       stroke=color,
-                      stroke_width=2.0,
+                      stroke_width=LINE_WIDTH,
                       fill='none',
                       visibility=visibility))
             grp.add(
@@ -368,7 +262,7 @@ def measure_json(json_fn: Path, height: int, config_filename: str,
             grp = dwg.add(
                 dwg.g(id=gid,
                       stroke=color,
-                      stroke_width=2.0,
+                      stroke_width=LINE_WIDTH,
                       fill='none',
                       visibility=visibility))
             c7_centroid = vert_centroids[0]
@@ -412,7 +306,7 @@ def measure_json(json_fn: Path, height: int, config_filename: str,
             grp = dwg.add(
                 dwg.g(id=gid,
                       stroke=color,
-                      stroke_width=2.0,
+                      stroke_width=LINE_WIDTH,
                       fill='none',
                       visibility=visibility))
             c7_centroid = vert_centroids[0]
@@ -450,7 +344,7 @@ def measure_json(json_fn: Path, height: int, config_filename: str,
                 grp = dwg.add(
                     dwg.g(id=gid,
                           stroke=color,
-                          stroke_width=2.0,
+                          stroke_width=LINE_WIDTH,
                           fill='none',
                           visibility='hidden' if gid in hide else 'visible'))
                 assert kps['Clavicle'].shape == (2, 2)
@@ -496,7 +390,7 @@ def measure_json(json_fn: Path, height: int, config_filename: str,
                 grp = dwg.add(
                     dwg.g(id=gid,
                           stroke=color,
-                          stroke_width=2.0,
+                          stroke_width=LINE_WIDTH,
                           fill='none',
                           visibility='hidden' if gid in hide else 'visible'))
                 shoulder_kps = kps['Shoulder']
@@ -575,7 +469,7 @@ def measure_json(json_fn: Path, height: int, config_filename: str,
                 grp = dwg.add(
                     dwg.g(id=gid,
                           stroke=color,
-                          stroke_width=2.0,
+                          stroke_width=LINE_WIDTH,
                           fill='none',
                           visibility='hidden' if gid in hide else 'visible'))
                 femoral_kps = kps['FemoralHead']
@@ -609,12 +503,20 @@ def measure_json(json_fn: Path, height: int, config_filename: str,
                 color = 'hotpink'
                 x_pos1, x_pos2 = femoral_kps[:, 0]
                 grp = dwg.add(
-                    dwg.g(id=gid, stroke=color, stroke_width=2.0, fill='none', visibility='hidden' if gid in hide else 'visible'))
-                (_, y_pos1), (_, y_pos2) = dwg.draw_line(sacrum_tltr[0], sacrum_tltr[1], grp, xrange=(x_pos1, x_pos2))
+                    dwg.g(id=gid,
+                          stroke=color,
+                          stroke_width=LINE_WIDTH,
+                          fill='none',
+                          visibility='hidden' if gid in hide else 'visible'))
+                (_, y_pos1), (_, y_pos2) = dwg.draw_line(sacrum_tltr[0],
+                                                         sacrum_tltr[1],
+                                                         grp,
+                                                         xrange=(x_pos1,
+                                                                 x_pos2))
 
-                grp, angle_deg = draw_cobb(
+                angle_deg = dwg.draw_cobb(
                     np.array([[x_pos1, y_pos1], [x_pos2, y_pos2]]),
-                    femoral_kps, dwg, gid, color, 1, text_attrs, gid in hide, grp)
+                    femoral_kps, grp, 1, text_attrs)
                 for pos in np.concatenate((femoral_kps, sacrum_tltr), axis=0):
                     grp.add(
                         dwg.circle(center=pos.tolist(),
@@ -627,60 +529,67 @@ def measure_json(json_fn: Path, height: int, config_filename: str,
             gid = 'ThoracicKyphosis'
             drawings.append((gid, 'Thoracic kyphosis (p.87)'))
             color = 'red'
+            visibility = 'hidden' if gid in hide else 'visible'
+            grp = dwg.add(
+                dwg.g(id=gid,
+                      stroke=color,
+                      stroke_width=LINE_WIDTH,
+                      fill='none',
+                      visibility=visibility))
             sup = vert_sup_cnrs[1]
             inf = vert_inf_cnrs[11]
-            grp, angle_deg = draw_cobb(sup,
-                                       inf,
-                                       dwg,
-                                       gid,
-                                       color,
-                                       text_attrs=text_attrs,
-                                       hide=gid in hide)
+            angle_deg = dwg.draw_cobb(sup, inf, grp, text_attrs=text_attrs)
             measures[gid] = angle_deg
 
             # Mid/Lower thoracic kyphosis
             gid = 'Mid/LowerThoracicKyphosis'
             drawings.append((gid, 'Mid/Lower thoracic kyphosis (p.87)'))
             color = 'green'
+            visibility = 'hidden' if gid in hide else 'visible'
+            grp = dwg.add(
+                dwg.g(id=gid,
+                      stroke=color,
+                      stroke_width=LINE_WIDTH,
+                      fill='none',
+                      visibility=visibility))
             sup = vert_sup_cnrs[4]
             inf = vert_inf_cnrs[11]
-            grp, angle_deg = draw_cobb(sup,
-                                       inf,
-                                       dwg,
-                                       gid,
-                                       color,
-                                       text_attrs=text_attrs,
-                                       hide=gid in hide)
+            angle_deg = dwg.draw_cobb(sup, inf, grp, text_attrs=text_attrs)
+
             measures[gid] = angle_deg
 
             # Proximal thoracic kyphosis
             gid = 'ProximalThoracicKyphosis'
             drawings.append((gid, 'Proximal thoracic kyphosis (p.87)'))
             color = 'blue'
+            visibility = 'hidden' if gid in hide else 'visible'
+            grp = dwg.add(
+                dwg.g(id=gid,
+                      stroke=color,
+                      stroke_width=LINE_WIDTH,
+                      fill='none',
+                      visibility=visibility))
             sup = vert_sup_cnrs[1]
             inf = vert_inf_cnrs[4]
-            grp, angle_deg = draw_cobb(sup,
-                                       inf,
-                                       dwg,
-                                       gid,
-                                       color,
-                                       text_attrs=text_attrs,
-                                       hide=gid in hide)
+            angle_deg = dwg.draw_cobb(sup, inf, grp, text_attrs=text_attrs)
+
             measures[gid] = angle_deg
 
             # Lumbar lordosis (T12/S)
             gid = 'LumbarLordosis'
             drawings.append((gid, 'Lumbar lordosis (T12/S) '))
             color = 'blue'
+            visibility = 'hidden' if gid in hide else 'visible'
+            grp = dwg.add(
+                dwg.g(id=gid,
+                      stroke=color,
+                      stroke_width=LINE_WIDTH,
+                      fill='none',
+                      visibility=visibility))
             sup = vert_sup_cnrs[11]
             inf = sacrum_tltr
-            grp, angle_deg = draw_cobb(sup,
-                                       inf,
-                                       dwg,
-                                       gid,
-                                       color,
-                                       text_attrs=text_attrs,
-                                       hide=gid in hide)
+            angle_deg = dwg.draw_cobb(sup, inf, grp, text_attrs=text_attrs)
+
             measures[gid] = angle_deg
 
             # Sacral Slope
@@ -809,14 +718,17 @@ def measure_json(json_fn: Path, height: int, config_filename: str,
                 logger.debug(gid)
                 drawings.append((gid, 'Lumbosacral Angle (p.105)'))
                 color = 'green'
-                # grp = dwg.add(dwg.g(id=gid, stroke=color))
-                grp, angle_deg = draw_cobb(vert_inf_cnrs[-1],
-                                           sacrum_tltr,
-                                           dwg,
-                                           gid,
-                                           color,
-                                           text_attrs=text_attrs,
-                                           hide=gid in hide)
+                visibility = 'hidden' if gid in hide else 'visible'
+                grp = dwg.add(
+                    dwg.g(id=gid,
+                          stroke=color,
+                          stroke_width=LINE_WIDTH,
+                          fill='none',
+                          visibility=visibility))
+                angle_deg = dwg.draw_cobb(vert_inf_cnrs[-1],
+                                          sacrum_tltr,
+                                          grp,
+                                          text_attrs=text_attrs)
                 measures[gid] = angle_deg
 
     if image_filename:
