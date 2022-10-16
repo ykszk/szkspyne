@@ -91,7 +91,8 @@ def draw_cobb(sup_cnrs: np.ndarray,
               color: str,
               aux_dist: float = 3,
               text_attrs: dict = {},
-              hide=False) -> svgwrite.container.Group:
+              hide=False,
+              grp=None) -> svgwrite.container.Group:
     up_line = Line.from_points(sup_cnrs[0], sup_cnrs[1])
     low_line = Line.from_points(inf_cnrs[0], inf_cnrs[1])
     view_box = np.array([float(e) for e in dwg['viewBox'].split(' ')]).reshape(2, 2) # [[xmin, ymin], [xmax, ymax]]
@@ -106,9 +107,10 @@ def draw_cobb(sup_cnrs: np.ndarray,
             up_end = sup_cnrs[0]
             low_end = inf_cnrs[0]
             pts = up_end + aux_dist * (sup_cnrs[1] - sup_cnrs[0])
-
-        grp = dwg.add(
-            dwg.g(id=group_id, stroke=color, stroke_width=2.0, fill='none', visibility='hidden' if hide else 'visible'))
+        
+        if grp is None:
+            grp = dwg.add(
+                dwg.g(id=group_id, stroke=color, stroke_width=2.0, fill='none', visibility='hidden' if hide else 'visible'))
         is_inside = np.all(view_box[0] <= up_low_cross) and np.all(up_low_cross <= view_box[1])
         if is_inside:
             text_pos = up_low_cross

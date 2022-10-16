@@ -12,6 +12,7 @@ from szkspyne import settings
 import yaml
 import svgwrite
 from jinja2 import Environment, FileSystemLoader
+import itertools
 import argparse
 import measure_utils as utils
 from measure_utils import calc_centroid, draw_cobb, perp, get_circle_dict, calc_angle
@@ -20,11 +21,92 @@ LINE_WIDTH = 2.0
 POINT_RADIUS = 2.0
 PERP_BOX_SIZE = (20, 20)  # perpendicular sign
 
+
+class Canvas(svgwrite.Drawing):
+
+    def __init__(self, lm_data, image_dir: Path, height: int):
+        lm_data = lm_data.copy()
+        img_fn = Path(image_dir) / Path(lm_data['imagePath'].replace(
+            '\\', '/')).name
+        if not img_fn.exists():
+            img_fn = str(
+                Path(image_dir) /
+                Path(lm_data['imagePath']).name.replace('_', '/'))
+        img = Image.open(img_fn)
+        original_image_shape = img.size
+
+        img.thumbnail((100000, height))
+        scale = height / original_image_shape[1]
+
+        for shape in lm_data['shapes']:
+            shape['points'] = [[scale * e for e in p] for p in shape['points']]
+
+        w, h = img.size
+        pixel_size = 1
+        image_size = (w * pixel_size, h * pixel_size)
+        super().__init__('output.svg',
+                         size=image_size,
+                         viewBox=('0 0 {} {}'.format(w, h)))
+        self.add(
+            self.image('data:image/jpg;base64,' + utils.img2b64(img),
+                       size=img.size))
+
+        text_attrs = dict(stroke='black',
+                          stroke_width='1px',
+                          fill='white',
+                          style="font-size:24px; font-family:sans-serif")
+
+        points = utils.get_point_dict(lm_data)
+        kps = utils.sort_kps(points)
+
+        self.size = img.size
+        self.text_attrs = text_attrs
+        self.points = points
+        self.kps = kps
+        self.img = img
+
+    def draw_line(self, a, b, grp, xrange=None, yrange=None):
+        d = b - a
+        if d[1] == 0:
+            p0 = [0, a[1]]
+            p1 = [self.size[0], a[1]]
+            grp.add(self.path((['M'] + p0 + p1)))
+            return p0, p1
+        if d[0] == 0:
+            p0 = [a[0], self.size[0]]
+            p1 = [a[0], self.size[1]]
+            grp.add(self.path((['M'] + p0 + p1)))
+            return p0, p1
+        if xrange is None:
+            xrange=(0, self.size[0])
+        if yrange is None:
+            yrange=(0, self.size[1])
+        slope = d[1] / d[0]
+        t0 = -a[0] / d[0]
+        y0 = a[1] + t0 * d[1]
+        f0 = slope * xrange[0] + y0
+        f1 = slope * xrange[1] + y0
+        xmin = [xrange[0], f0]
+        xmax = [xrange[1], f1]
+        f0 = (yrange[0] - y0) / slope
+        f1 = (yrange[1] - y0) / slope
+        ymin = [f0, yrange[0]]
+        ymax = [f1, yrange[1]]
+        combos = list(itertools.combinations([xmin, xmax, ymin, ymax], 2))
+        ds = [np.linalg.norm(np.array(c[1])-np.array(c[0])) for c in combos]
+        p0, p1 = combos[np.argmin(ds)]
+        grp.add(self.path((['M'] + p0 + p1)))
+        return p0, p1
+
+
 def init_svg(lm_data, image_dir: str, height: int):
     lm_data = lm_data.copy()
-    img_fn = Path(image_dir) / Path(lm_data['imagePath'].replace('\\', '/')).name
+    img_fn = Path(image_dir) / Path(lm_data['imagePath'].replace('\\',
+                                                                 '/')).name
     if not img_fn.exists():
-        img_fn = str(Path(image_dir) / Path(lm_data['imagePath']).name.replace('_','/'))
+        img_fn = str(
+            Path(image_dir) /
+            Path(lm_data['imagePath']).name.replace('_', '/'))
 
     img = Image.open(img_fn)
     original_image_shape = img.size
@@ -55,25 +137,15 @@ def init_svg(lm_data, image_dir: str, height: int):
 
     return dwg, points, kps, text_attrs, img
 
-
-def draw_line(a, b, x0, x1, grp, dwg):
-    '''
-    draw horizontal line
-    '''
-    d = b - a
-    slope = d[1] / d[0]
-    t0 = -a[0] / d[0]
-    y0 = a[1] + t0 * d[1]
-    f0 = slope * x0 + y0
-    f1 = slope * x1 + y0
-    grp.add(dwg.path((['M'] + [x0, f0] + [x1, f1])))
-    return f0, f1
-
-
 def measure_json(json_fn: Path, height: int, config_filename: str,
-                 draw_points: bool, draw_vertebral_number: bool, image_type: Union[str, None], image_filename: Union[str, None],
-                 html_filename: Union[str, None], measure_filename: Union[str, None], template_directory: str,
-                 html_title: str, hide: List[str], embed_svg: bool, image_dir: Union[str, None]):
+                 draw_points: bool, draw_vertebral_number: bool,
+                 image_type: Union[str, None], image_filename: Union[str,
+                                                                     None],
+                 html_filename: Union[str,
+                                      None], measure_filename: Union[str,
+                                                                     None],
+                 template_directory: str, html_title: str, hide: List[str],
+                 embed_svg: bool, image_dir: Union[str, None]):
     with open(json_fn, encoding='utf8') as f:
         lm_data = json.load(f)
 
@@ -82,7 +154,9 @@ def measure_json(json_fn: Path, height: int, config_filename: str,
 
     if not image_dir:
         image_dir = str(json_fn.parent)
-    dwg, points, kps, text_attrs, img = init_svg(lm_data, image_dir, height)
+    # dwg, points, kps, text_attrs, img = init_svg(lm_data, image_dir, height)
+    dwg = Canvas(lm_data, Path(image_dir), height)
+    points, kps, text_attrs, img = dwg.points, dwg.kps, dwg.text_attrs, dwg.img
 
     with open(config_filename) as f:
         color_data = yaml.safe_load(f)
@@ -103,7 +177,6 @@ def measure_json(json_fn: Path, height: int, config_filename: str,
                                r=POINT_RADIUS,
                                stroke=color,
                                fill=color))
-
 
     measures = {'flags': lm_data['flags']}
     if len(kps['TL']) != len(kps['TR']) or len(kps['BL']) != len(kps['BR']):
@@ -126,21 +199,22 @@ def measure_json(json_fn: Path, height: int, config_filename: str,
         vert_inf_vecs = vert_inf_cnrs[:, 1] - vert_inf_cnrs[:, 0]
         vert_inf_vecs /= np.linalg.norm(vert_inf_vecs, axis=1, keepdims=True)
 
-
         if draw_vertebral_number:
             gid = 'VertebralNumber'
             drawings.append((gid, 'Vertebral Number'))
             vn_attrs = text_attrs.copy()
             vn_attrs.update(dict(stroke_width='2px'))
-            grp = dwg.add(dwg.g(id=gid, text_anchor="middle", dominant_baseline="central", **vn_attrs))
+            grp = dwg.add(
+                dwg.g(id=gid,
+                      text_anchor="middle",
+                      dominant_baseline="central",
+                      **vn_attrs))
             for i, vc in enumerate(vert_centroids, 1):
                 if i > 12:
                     vn = f'L{i-12}'
                 else:
                     vn = f'T{i}'
-                grp.add(
-                dwg.text(vn,
-                         insert=vc))
+                grp.add(dwg.text(vn, insert=vc))
 
         if image_type == 'ap':
             #%% coronal translation
@@ -153,7 +227,7 @@ def measure_json(json_fn: Path, height: int, config_filename: str,
 
             for mt_sup in range(MT_MARGIN, 7):
                 for mt_inf in range(9, len(vert_sup_cnrs) - MT_MARGIN):
-                    if mt_inf-mt_sup >= 10:
+                    if mt_inf - mt_sup >= 10:
                         continue
                     mt_angle = calc_angle(vert_sup_cnrs[mt_sup],
                                           vert_inf_cnrs[mt_inf])
@@ -191,7 +265,11 @@ def measure_json(json_fn: Path, height: int, config_filename: str,
                 coronal_translation[MT_MARGIN:-MT_MARGIN]).argmax() + MT_MARGIN
             assert best_set is not None
             (mt_sup, mt_inf), (pt_sup, pt_inf), (lt_sup, lt_inf) = best_set
-            measures['curve_indices'] = {'MT':(mt_sup, mt_inf), 'PT':(pt_sup, pt_inf), 'LT':(lt_sup, lt_inf)}
+            measures['curve_indices'] = {
+                'MT': (mt_sup, mt_inf),
+                'PT': (pt_sup, pt_inf),
+                'LT': (lt_sup, lt_inf)
+            }
 
             # cobb angles
             logger.debug('Cobb angles')
@@ -216,17 +294,17 @@ def measure_json(json_fn: Path, height: int, config_filename: str,
             if lt_sup is not None and lt_inf is not None:
                 gid = 'LT'
                 measures[gid] = draw_cobb(vert_sup_cnrs[lt_sup],
-                                        vert_inf_cnrs[lt_inf],
-                                        dwg,
-                                        gid,
-                                        'blue',
-                                        text_attrs=text_attrs,
-                                        hide=gid in hide)[1]
+                                          vert_inf_cnrs[lt_inf],
+                                          dwg,
+                                          gid,
+                                          'blue',
+                                          text_attrs=text_attrs,
+                                          hide=gid in hide)[1]
             # Major apex
             gid = 'MajorApex'
             visibility = 'hidden' if gid in hide else 'visible'
             drawings.append((gid, 'Major Apex'))
-            color='orange'
+            color = 'orange'
             grp = dwg.add(
                 dwg.g(id=gid,
                       stroke=color,
@@ -234,12 +312,15 @@ def measure_json(json_fn: Path, height: int, config_filename: str,
                       fill='none',
                       visibility=visibility))
             vert_apex = vert_corners[i_apex]
-            grp.add(dwg.path((['M'] + [vc.tolist() for vc in [vert_apex[0], vert_apex[1], vert_apex[3],vert_apex[2],vert_apex[0]]])))
+            grp.add(
+                dwg.path((['M'] + [
+                    vc.tolist() for vc in [
+                        vert_apex[0], vert_apex[1], vert_apex[3], vert_apex[2],
+                        vert_apex[0]
+                    ]
+                ])))
             for v in vert_centroids:
-                grp.add(
-                    dwg.circle(center=v,
-                               r=POINT_RADIUS,
-                               fill=color))
+                grp.add(dwg.circle(center=v, r=POINT_RADIUS, fill=color))
             # apical translation
             gid = 'APT'
             visibility = 'hidden' if gid in hide else 'visible'
@@ -360,7 +441,6 @@ def measure_json(json_fn: Path, height: int, config_filename: str,
             grp.add(dwg.text(txt_angle, insert=c7_centroid, **text_attrs))
             measures['T1Tilt'] = angle_deg
 
-
             # Clavicle Angle
             if 'Clavicle' in kps and len(kps['Clavicle']) == 2:
                 gid = 'ClavicleAngle'
@@ -380,8 +460,7 @@ def measure_json(json_fn: Path, height: int, config_filename: str,
                 chrl = Line.from_points(
                     [0, clavicle_kps[:, 1].min()],
                     [img.size[0], clavicle_kps[:, 1].min()])
-                draw_line(clavicle_kps[0], clavicle_kps[1], 0, img.size[0],
-                          grp, dwg)
+                dwg.draw_line(clavicle_kps[0], clavicle_kps[1], grp)
                 grp.add(
                     dwg.path((['M'] + [0, clavicle_kps[:, 1].min()] +
                               [img.size[0], clavicle_kps[:, 1].min()])))
@@ -391,7 +470,7 @@ def measure_json(json_fn: Path, height: int, config_filename: str,
                     clavicle_intersection = chrl.intersect_line(line_clavicle)
 
                     angle = calc_angle(
-                        ([0, 0], [10, 0]), # horizontal line
+                        ([0, 0], [10, 0]),  # horizontal line
                         clavicle_kps)
                     angle = -angle
                     angle_deg = np.rad2deg(angle)
@@ -460,8 +539,7 @@ def measure_json(json_fn: Path, height: int, config_filename: str,
                                              key=lambda e: e[0]))  # sort by x
                 pelvic_ref_line = Line.from_points(pelvic_kps[0],
                                                    pelvic_kps[1])
-                draw_line(pelvic_kps[0], pelvic_kps[1], 0, img.size[0], grp,
-                          dwg)
+                dwg.draw_line(pelvic_kps[0], pelvic_kps[1], grp)
                 y_up = pelvic_kps[:, 1].min()
                 grp.add(dwg.path((['M'] + [0, y_up] + [img.size[0], y_up])))
                 for pos in pelvic_kps:
@@ -529,14 +607,14 @@ def measure_json(json_fn: Path, height: int, config_filename: str,
                 drawings.append((gid, 'Sacral Obliquity (p.94)'))
                 logger.debug(drawings[-1][1])
                 color = 'hotpink'
-                sacrum_line = Line.from_points(sacrum_tltr[0], sacrum_tltr[1])
                 x_pos1, x_pos2 = femoral_kps[:, 0]
-                y_pos1, y_pos2 = draw_line(sacrum_tltr[0], sacrum_tltr[1],
-                                           x_pos1, x_pos2, grp, dwg)
+                grp = dwg.add(
+                    dwg.g(id=gid, stroke=color, stroke_width=2.0, fill='none', visibility='hidden' if gid in hide else 'visible'))
+                (_, y_pos1), (_, y_pos2) = dwg.draw_line(sacrum_tltr[0], sacrum_tltr[1], grp, xrange=(x_pos1, x_pos2))
 
                 grp, angle_deg = draw_cobb(
                     np.array([[x_pos1, y_pos1], [x_pos2, y_pos2]]),
-                    femoral_kps, dwg, gid, color, 1, text_attrs, gid in hide)
+                    femoral_kps, dwg, gid, color, 1, text_attrs, gid in hide, grp)
                 for pos in np.concatenate((femoral_kps, sacrum_tltr), axis=0):
                     grp.add(
                         dwg.circle(center=pos.tolist(),
@@ -767,13 +845,17 @@ def measure_json(json_fn: Path, height: int, config_filename: str,
                             label=label,
                             checked='' if name in hide else 'checked'))
         assert image_filename is not None
-        svg_tag = dwg.tostring() if embed_svg else '<object id="svgfile" type="image/svg+xml" data="{}"></object>'.format(Path(image_filename).name)
+        svg_tag = dwg.tostring(
+        ) if embed_svg else '<object id="svgfile" type="image/svg+xml" data="{}"></object>'.format(
+            Path(image_filename).name)
         with open(html_filename, 'w', encoding='utf8') as f:
             f.write(
-                template.render(svg=svg_tag,
-                                svg_container='document' if embed_svg else 'document.getElementById("svgfile").contentDocument',
-                                checkboxes='\n'.join(cbs),
-                                title=html_title))
+                template.render(
+                    svg=svg_tag,
+                    svg_container='document' if embed_svg else
+                    'document.getElementById("svgfile").contentDocument',
+                    checkboxes='\n'.join(cbs),
+                    title=html_title))
 
 
 def main():
@@ -782,10 +864,11 @@ def main():
                         '--config',
                         help='Config yaml filename',
                         required=True)
-    parser.add_argument('-t',
-                        '--template',
-                        help='template directory. default: ${SCRIPT_DIR}/template',
-                        default=Path(sys.argv[0]).parent/'template')
+    parser.add_argument(
+        '-t',
+        '--template',
+        help='template directory. default: ${SCRIPT_DIR}/template',
+        default=Path(sys.argv[0]).parent / 'template')
     parser.add_argument('--title',
                         help='html title',
                         default='Scoliosis Measuaraments')
@@ -805,9 +888,13 @@ def main():
                         type=int,
                         default=768)
     parser.add_argument('--points', help='Draw points', action='store_true')
-    parser.add_argument('--numbers', help='Draw vertebral numbers', action='store_true')
+    parser.add_argument('--numbers',
+                        help='Draw vertebral numbers',
+                        action='store_true')
     parser.add_argument('--verbose', help='Print logs', action='store_true')
-    parser.add_argument('--external_svg', help='Use external svg file for html output.', action='store_true')
+    parser.add_argument('--external_svg',
+                        help='Use external svg file for html output.',
+                        action='store_true')
 
     subparsers = parser.add_subparsers()
     sub_single = subparsers.add_parser('single',
@@ -821,9 +908,10 @@ def main():
     sub_single.add_argument('--image', help='Save image (svg or png)')
 
     def command_single(args):
-        measure_json(args.input, args.height, args.config, args.points, args.numbers,
-                     args.image_type, args.image, args.html, args.measure,
-                     args.template, args.title, args.hide, not args.external_svg, args.parent_dir)
+        measure_json(args.input, args.height, args.config, args.points,
+                     args.numbers, args.image_type, args.image, args.html,
+                     args.measure, args.template, args.title, args.hide,
+                     not args.external_svg, args.parent_dir)
 
     sub_single.set_defaults(handler=command_single)
 
@@ -863,9 +951,10 @@ def main():
                      fn.name).with_suffix(args.image) if args.image else None
             html = (outdir /
                     fn.name).with_suffix('.html') if args.html else None
-            measure_json(fn, args.height, args.config, args.points, args.numbers,
-                         args.image_type, image, html, measure, args.template,
-                         args.title, args.hide, not args.external_svg, args.parent_dir)
+            measure_json(fn, args.height, args.config, args.points,
+                         args.numbers, args.image_type, image, html, measure,
+                         args.template, args.title, args.hide,
+                         not args.external_svg, args.parent_dir)
 
         Parallel(n_jobs=args.workers)(
             delayed(do)(fn)
