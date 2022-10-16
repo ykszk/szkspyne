@@ -12,7 +12,7 @@ from PIL import Image
 import itertools
 
 
-def pearsonr_ci(x,y,alpha=0.05):
+def pearsonr_ci(x, y, alpha=0.05):
     ''' calculate Pearson correlation along with the confidence interval using scipy and numpy
     Parameters
     ----------
@@ -30,13 +30,14 @@ def pearsonr_ci(x,y,alpha=0.05):
       The lower and upper bound of confidence intervals
     '''
 
-    r, p = stats.pearsonr(x,y)
+    r, p = stats.pearsonr(x, y)
     r_z = np.arctanh(r)
-    se = 1/np.sqrt(x.size-3)
-    z = stats.norm.ppf(1-alpha/2)
-    lo_z, hi_z = r_z-z*se, r_z+z*se
+    se = 1 / np.sqrt(x.size - 3)
+    z = stats.norm.ppf(1 - alpha / 2)
+    lo_z, hi_z = r_z - z * se, r_z + z * se
     lo, hi = np.tanh((lo_z, hi_z))
     return r, p, lo, hi
+
 
 def img2b64(img):
     with io.BytesIO() as bio:
@@ -69,6 +70,7 @@ def rotate_around(pts, angle_rad, origin):
     t = origin
     return r @ (pts - t) + t
 
+
 def calc_angle(line1, line2):
     '''
     >>> np.round(np.rad2deg(calc_angle(((0, 0), (1, 1)), ((0, 0), (0, 1)))), 3)
@@ -83,7 +85,7 @@ def calc_angle(line1, line2):
     v2 = v2 / np.linalg.norm(v2)
     cos = v1 @ v2
     a = np.arccos(cos)
-    if v1[1]-v2[1] <= 0:
+    if v1[1] - v2[1] <= 0:
         a = -a
     return a
 
@@ -99,10 +101,12 @@ def draw_cobb(sup_cnrs: np.ndarray,
               grp=None) -> svgwrite.container.Group:
     up_line = Line.from_points(sup_cnrs[0], sup_cnrs[1])
     low_line = Line.from_points(inf_cnrs[0], inf_cnrs[1])
-    view_box = np.array([float(e) for e in dwg['viewBox'].split(' ')]).reshape(2, 2) # [[xmin, ymin], [xmax, ymax]]
+    view_box = np.array([float(e) for e in dwg['viewBox'].split(' ')
+                         ]).reshape(2, 2)  # [[xmin, ymin], [xmax, ymax]]
     try:
         up_low_cross = up_line.intersect_line(low_line)
-        angle_rad = -calc_angle((sup_cnrs[0], sup_cnrs[1]), (inf_cnrs[0], inf_cnrs[1]))
+        angle_rad = -calc_angle((sup_cnrs[0], sup_cnrs[1]),
+                                (inf_cnrs[0], inf_cnrs[1]))
         if angle_rad > 0:
             up_end = sup_cnrs[1]
             low_end = inf_cnrs[1]
@@ -111,15 +115,22 @@ def draw_cobb(sup_cnrs: np.ndarray,
             up_end = sup_cnrs[0]
             low_end = inf_cnrs[0]
             pts = up_end + aux_dist * (sup_cnrs[1] - sup_cnrs[0])
-        
+
         if grp is None:
             grp = dwg.add(
-                dwg.g(id=group_id, stroke=color, stroke_width=2.0, fill='none', visibility='hidden' if hide else 'visible'))
-        is_inside = np.all(view_box[0] <= up_low_cross) and np.all(up_low_cross <= view_box[1])
+                dwg.g(id=group_id,
+                      stroke=color,
+                      stroke_width=2.0,
+                      fill='none',
+                      visibility='hidden' if hide else 'visible'))
+        is_inside = np.all(view_box[0] <= up_low_cross) and np.all(
+            up_low_cross <= view_box[1])
         if is_inside:
             text_pos = up_low_cross
-            grp.add(dwg.path((['M'] + up_end.tolist() + up_low_cross.tolist())))
-            grp.add(dwg.path((['M'] + low_end.tolist() + up_low_cross.tolist())))
+            grp.add(dwg.path(
+                (['M'] + up_end.tolist() + up_low_cross.tolist())))
+            grp.add(
+                dwg.path((['M'] + low_end.tolist() + up_low_cross.tolist())))
         else:
             aux_cross = Point(rotate_around(pts, angle_rad / 2, up_low_cross))
             up_aux1 = up_line.project_point(aux_cross)
@@ -132,22 +143,31 @@ def draw_cobb(sup_cnrs: np.ndarray,
 
             grp.add(dwg.path((['M'] + up_end.tolist() + up_auxs[0].tolist())))
             grp.add(dwg.path((['M'] + up_auxs.tolist())))
-            grp.add(dwg.path((['M'] + low_end.tolist() + low_auxs[0].tolist())))
+            grp.add(dwg.path(
+                (['M'] + low_end.tolist() + low_auxs[0].tolist())))
             grp.add(dwg.path((['M'] + low_auxs.tolist())))
     except ValueError:
         angle_rad = 0
         text_pos = np.concatenate([sup_cnrs, inf_cnrs], axis=0).mean(axis=0)
         grp = dwg.add(
             dwg.g(id=group_id, stroke=color, stroke_width=2.0, fill='none'))
-        grp.add(dwg.path((['M'] + sup_cnrs[0].tolist() + sup_cnrs[1].tolist())))
-        grp.add(dwg.path((['M'] + inf_cnrs[0].tolist() + inf_cnrs[1].tolist())))
-        grp.add(dwg.path((['M'] + sup_cnrs.mean(axis=0).tolist() + inf_cnrs.mean(axis=1).tolist())))
+        grp.add(dwg.path(
+            (['M'] + sup_cnrs[0].tolist() + sup_cnrs[1].tolist())))
+        grp.add(dwg.path(
+            (['M'] + inf_cnrs[0].tolist() + inf_cnrs[1].tolist())))
+        grp.add(
+            dwg.path((['M'] + sup_cnrs.mean(axis=0).tolist() +
+                      inf_cnrs.mean(axis=1).tolist())))
 
     angle_deg = np.rad2deg(angle_rad)
     text_angle = '{:.1f}°'.format(angle_deg)
     text_anchor = 'end' if angle_deg < 0 else 'start'
-    grp.add(dwg.text(text_angle, insert=tuple(text_pos), text_anchor=text_anchor, dominant_baseline="central",
-                     **text_attrs))
+    grp.add(
+        dwg.text(text_angle,
+                 insert=tuple(text_pos),
+                 text_anchor=text_anchor,
+                 dominant_baseline="central",
+                 **text_attrs))
     return grp, angle_deg
 
 
@@ -218,17 +238,18 @@ def sort_kps(points):
 def get_vert_corners(kps):
     n_vertebrae = len(kps['BR'])
     sacrum_tltr = np.array((kps['TL'][-1], kps['TR'][-1]))
-    vert_corners = np.array(
-        [kps[l][:n_vertebrae] for l in settings.VERTEBRA_LABEL_NAMES]).transpose(
-            (1, 0, 2))
+    vert_corners = np.array([
+        kps[l][:n_vertebrae] for l in settings.VERTEBRA_LABEL_NAMES
+    ]).transpose((1, 0, 2))
     return sacrum_tltr, vert_corners
+
 
 def get_vert_and_disc_corners(kps):
     n_vertebrae = len(kps['BR'])
     sacrum_tltr = np.array((kps['TL'][-1], kps['TR'][-1]))
-    vert_corners = np.array(
-        [kps[l][:n_vertebrae] for l in settings.VERTEBRA_LABEL_NAMES]).transpose(
-            (1, 0, 2))
+    vert_corners = np.array([
+        kps[l][:n_vertebrae] for l in settings.VERTEBRA_LABEL_NAMES
+    ]).transpose((1, 0, 2))
     disc_corners = np.array([
         kps[l][(1 if l in ['TL', 'TR'] else 0):]
         for l in settings.VERTEBRA_LABEL_NAMES
@@ -262,8 +283,7 @@ class Canvas(svgwrite.Drawing):
                          size=image_size,
                          viewBox=('0 0 {} {}'.format(w, h)))
         self.add(
-            self.image('data:image/jpg;base64,' + img2b64(img),
-                       size=img.size))
+            self.image('data:image/jpg;base64,' + img2b64(img), size=img.size))
 
         text_attrs = dict(stroke='black',
                           stroke_width='1px',
@@ -292,9 +312,9 @@ class Canvas(svgwrite.Drawing):
             grp.add(self.path((['M'] + p0 + p1)))
             return p0, p1
         if xrange is None:
-            xrange=(0, self.size[0])
+            xrange = (0, self.size[0])
         if yrange is None:
-            yrange=(0, self.size[1])
+            yrange = (0, self.size[1])
         slope = d[1] / d[0]
         t0 = -a[0] / d[0]
         y0 = a[1] + t0 * d[1]
@@ -307,23 +327,25 @@ class Canvas(svgwrite.Drawing):
         ymin = [f0, yrange[0]]
         ymax = [f1, yrange[1]]
         combos = list(itertools.combinations([xmin, xmax, ymin, ymax], 2))
-        ds = [np.linalg.norm(np.array(c[1])-np.array(c[0])) for c in combos]
+        ds = [np.linalg.norm(np.array(c[1]) - np.array(c[0])) for c in combos]
         p0, p1 = combos[np.argmin(ds)]
         grp.add(self.path((['M'] + p0 + p1)))
         return p0, p1
 
-
-    def draw_cobb(self, sup_cnrs: np.ndarray,
-                inf_cnrs: np.ndarray,
-                grp,
-                aux_dist: float = 3,
-                text_attrs: dict = {}) -> float:
+    def draw_cobb(self,
+                  sup_cnrs: np.ndarray,
+                  inf_cnrs: np.ndarray,
+                  grp,
+                  aux_dist: float = 3,
+                  text_attrs: dict = {}) -> float:
         up_line = Line.from_points(sup_cnrs[0], sup_cnrs[1])
         low_line = Line.from_points(inf_cnrs[0], inf_cnrs[1])
-        view_box = np.array([float(e) for e in self['viewBox'].split(' ')]).reshape(2, 2) # [[xmin, ymin], [xmax, ymax]]
+        view_box = np.array([float(e) for e in self['viewBox'].split(' ')
+                             ]).reshape(2, 2)  # [[xmin, ymin], [xmax, ymax]]
         try:
             up_low_cross = up_line.intersect_line(low_line)
-            angle_rad = -calc_angle((sup_cnrs[0], sup_cnrs[1]), (inf_cnrs[0], inf_cnrs[1]))
+            angle_rad = -calc_angle((sup_cnrs[0], sup_cnrs[1]),
+                                    (inf_cnrs[0], inf_cnrs[1]))
             if angle_rad > 0:
                 up_end = sup_cnrs[1]
                 low_end = inf_cnrs[1]
@@ -332,14 +354,20 @@ class Canvas(svgwrite.Drawing):
                 up_end = sup_cnrs[0]
                 low_end = inf_cnrs[0]
                 pts = up_end + aux_dist * (sup_cnrs[1] - sup_cnrs[0])
-            
-            is_inside = np.all(view_box[0] <= up_low_cross) and np.all(up_low_cross <= view_box[1])
+
+            is_inside = np.all(view_box[0] <= up_low_cross) and np.all(
+                up_low_cross <= view_box[1])
             if is_inside:
                 text_pos = up_low_cross
-                grp.add(self.path((['M'] + up_end.tolist() + up_low_cross.tolist())))
-                grp.add(self.path((['M'] + low_end.tolist() + up_low_cross.tolist())))
+                grp.add(
+                    self.path(
+                        (['M'] + up_end.tolist() + up_low_cross.tolist())))
+                grp.add(
+                    self.path(
+                        (['M'] + low_end.tolist() + up_low_cross.tolist())))
             else:
-                aux_cross = Point(rotate_around(pts, angle_rad / 2, up_low_cross))
+                aux_cross = Point(
+                    rotate_around(pts, angle_rad / 2, up_low_cross))
                 up_aux1 = up_line.project_point(aux_cross)
                 up_aux2 = up_aux1 + 1.5 * (aux_cross - up_aux1)
                 up_auxs = np.array((up_aux1, up_aux2))
@@ -348,20 +376,40 @@ class Canvas(svgwrite.Drawing):
                 low_auxs = np.array((low_aux1, low_aux2))
                 text_pos = aux_cross
 
-                grp.add(self.path((['M'] + up_end.tolist() + up_auxs[0].tolist())))
+                grp.add(
+                    self.path((['M'] + up_end.tolist() + up_auxs[0].tolist())))
                 grp.add(self.path((['M'] + up_auxs.tolist())))
-                grp.add(self.path((['M'] + low_end.tolist() + low_auxs[0].tolist())))
+                grp.add(
+                    self.path(
+                        (['M'] + low_end.tolist() + low_auxs[0].tolist())))
                 grp.add(self.path((['M'] + low_auxs.tolist())))
         except ValueError:
             angle_rad = 0
-            text_pos = np.concatenate([sup_cnrs, inf_cnrs], axis=0).mean(axis=0)
-            grp.add(self.path((['M'] + sup_cnrs[0].tolist() + sup_cnrs[1].tolist())))
-            grp.add(self.path((['M'] + inf_cnrs[0].tolist() + inf_cnrs[1].tolist())))
-            grp.add(self.path((['M'] + sup_cnrs.mean(axis=0).tolist() + inf_cnrs.mean(axis=1).tolist())))
+            text_pos = np.concatenate([sup_cnrs, inf_cnrs],
+                                      axis=0).mean(axis=0)
+            grp.add(
+                self.path(
+                    (['M'] + sup_cnrs[0].tolist() + sup_cnrs[1].tolist())))
+            grp.add(
+                self.path(
+                    (['M'] + inf_cnrs[0].tolist() + inf_cnrs[1].tolist())))
+            grp.add(
+                self.path((['M'] + sup_cnrs.mean(axis=0).tolist() +
+                           inf_cnrs.mean(axis=1).tolist())))
 
         angle_deg = np.rad2deg(angle_rad)
         text_angle = '{:.1f}°'.format(angle_deg)
         text_anchor = 'end' if angle_deg < 0 else 'start'
-        grp.add(self.text(text_angle, insert=tuple(text_pos), text_anchor=text_anchor, dominant_baseline="central",
-                        **text_attrs))
+        grp.add(
+            self.text(text_angle,
+                      insert=tuple(text_pos),
+                      text_anchor=text_anchor,
+                      dominant_baseline="central",
+                      **text_attrs))
         return angle_deg
+
+    def draw_vertical_dist(self, p1, p2, grp):
+        grp.add(self.path((['M'] + [0, p1[1]] + [self.size[0], p1[1]])))
+        grp.add(self.path((['M'] + [0, p2[1]] + [self.size[0], p2[1]])))
+        height_text = '{:.1f} pixels'.format(np.abs(p1[1] - p2[1]))
+        grp.add(self.text(height_text, insert=p1, **self.text_attrs))

@@ -335,7 +335,6 @@ def measure_json(json_fn: Path, height: int, config_filename: str,
             grp.add(dwg.text(txt_angle, insert=c7_centroid, **text_attrs))
             measures['T1Tilt'] = angle_deg
 
-            # Clavicle Angle
             if 'Clavicle' in kps and len(kps['Clavicle']) == 2:
                 gid = 'ClavicleAngle'
                 drawings.append((gid, 'Clavicle Angle (p.56)'))
@@ -396,17 +395,8 @@ def measure_json(json_fn: Path, height: int, config_filename: str,
                 shoulder_kps = kps['Shoulder']
                 shoulder_kps = np.array(
                     sorted(shoulder_kps, key=lambda e: e[0]))  # sort by x
-                grp.add(
-                    dwg.path((['M'] + [0, shoulder_kps[0, 1]] +
-                              [img.size[0], shoulder_kps[0, 1]])))
-                grp.add(
-                    dwg.path((['M'] + [0, shoulder_kps[1, 1]] +
-                              [img.size[0], shoulder_kps[1, 1]])))
-                height_text = '{:.1f} pixels'.format(shoulder_kps[0, 1] -
-                                                     shoulder_kps[1, 1])
-                grp.add(
-                    dwg.text(height_text, insert=shoulder_kps[0],
-                             **text_attrs))
+                dwg.draw_vertical_dist(shoulder_kps[0], shoulder_kps[1], grp)
+
                 for pos in shoulder_kps:
                     grp.add(
                         dwg.circle(center=pos.tolist(),
@@ -476,17 +466,7 @@ def measure_json(json_fn: Path, height: int, config_filename: str,
                 assert femoral_kps.shape == (2, 2)
                 femoral_kps = np.array(sorted(femoral_kps,
                                               key=lambda e: e[0]))  # sort by x
-                y_up = femoral_kps[:, 1].min()
-                grp.add(dwg.path((['M'] + [0, y_up] + [img.size[0], y_up])))
-                y_low = femoral_kps[:, 1].max()
-                grp.add(dwg.path((['M'] + [0, y_low] + [img.size[0], y_low])))
-                grp.add(
-                    dwg.path((['M'] + femoral_kps[1].tolist() +
-                              [femoral_kps[1, 0], femoral_kps[0, 1]])))
-                height_text = '{:.1f} pixels'.format(femoral_kps[1, 1] -
-                                                     femoral_kps[0, 1])
-                grp.add(
-                    dwg.text(height_text, insert=femoral_kps[1], **text_attrs))
+                dwg.draw_vertical_dist(femoral_kps[0], femoral_kps[1], grp)
                 for pos in femoral_kps:
                     grp.add(
                         dwg.circle(center=pos.tolist(),
