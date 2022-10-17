@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import NamedTuple, List, Union
 from szkspyne import settings
 
+
 class PointConfig(NamedTuple):
     name: str
     image_type: str
@@ -24,11 +25,12 @@ class PointsPCA(PCA):
         top, bottom = np.array(top), np.array(bottom)
         v = bottom - top  # type: ignore
         s = self.ref_height / np.linalg.norm(v)
+        s = np.diag([s, s, 1.0])
         cos = v[1] / np.linalg.norm(v)
         sin = np.sign(v[0]) * np.sqrt(1 - cos**2)
         rot = np.array([[cos, -sin, 0], [sin, cos, 0], [0, 0, 1]])
         t = np.array([[1, 0, -top[0]], [0, 1, -top[1]], [0, 0, 1]])
-        mat = (s * np.eye(3)) @ rot @ t
+        mat = s @ rot @ t
         return mat
 
     def to_target_mat(self, top, bottom):

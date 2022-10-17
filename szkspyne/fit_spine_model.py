@@ -24,6 +24,7 @@ ANCHOR_INDICES = [settings.LABEL_NAMES.index(l) for l in ANCHOR_LABELS]
 IMG_HEIGHT = 768
 EPSILON = np.finfo(float).eps
 
+
 class TorchPCA(nn.Module):
 
     def __init__(self, filename):
@@ -91,8 +92,7 @@ class PointAlignModel(nn.Module):
         # convert (x, y) to (y, x)
         mat_ref2pt[0, 0], mat_ref2pt[1, 1] = mat_ref2pt[1, 1], mat_ref2pt[0, 0]
         t = mat_ref2pt[:2, 2].copy()
-        mat_ref2pt[0, 2], mat_ref2pt[
-            1, 2] = t[1] / mat_ref2pt[-1, -1], t[0] / mat_ref2pt[-1, -1]
+        mat_ref2pt[0, 2], mat_ref2pt[1, 2] = t[1], t[0]
         self.mat_ref2pt = nn.parameter.Parameter(torch.from_numpy(mat_ref2pt))
         self.mat_ref2pt.requires_grad = False
 
@@ -162,38 +162,41 @@ if __name__ == '__main__':
         help='PCA model filename(s).',
         nargs='+',
         default=[f'pca_{image_type}_L4.npz', f'pca_{image_type}_L5.npz'])
-    parser.add_argument(
-        '--sigma',
-        help='Sigma value(s) for heatmap blurring.',
-        nargs='+',
-        type=int,
-        default=[10, 1])
+    parser.add_argument('--sigma',
+                        help='Sigma value(s) for heatmap blurring.',
+                        nargs='+',
+                        type=int,
+                        default=[10, 1])
     parser.add_argument('--lr',
                         help='Initial learning rate. default: %(default)s',
                         type=float,
                         default=0.1)
-    parser.add_argument('--max_iter',
-                        help='The maximum number of iteration for fitting. default: %(default)s',
-                        type=int,
-                        default=200)
-    parser.add_argument('--patience',
-                        help='Patience for early stopping. default: %(default)s',
-                        type=int,
-                        default=20)
+    parser.add_argument(
+        '--max_iter',
+        help=
+        'The maximum number of iteration for fitting. default: %(default)s',
+        type=int,
+        default=200)
+    parser.add_argument(
+        '--patience',
+        help='Patience for early stopping. default: %(default)s',
+        type=int,
+        default=20)
     parser.add_argument('--contr_rate',
                         help='Contribution rate for PCA. default: %(default)s',
                         type=float,
                         default=0.999)
-    parser.add_argument('--l2_reg',
-                        help='Coefficient for the L2 regularization term (weight decay). default: %(default)s',
-                        type=float,
-                        default=0.01)
+    parser.add_argument(
+        '--l2_reg',
+        help=
+        'Coefficient for the L2 regularization term (weight decay). default: %(default)s',
+        type=float,
+        default=0.01)
     parser.add_argument('--skipped',
                         help='Optional argument. default: %(default)s',
                         metavar='<name>',
                         default=f'skipped_{image_type}.txt')
-    parser.add_argument('--device',
-                        help='Device for pytorch')
+    parser.add_argument('--device', help='Device for pytorch')
     parser.add_argument('--channel_first',
                         help='Heatmap is in channel-first format',
                         action='store_true')
@@ -236,14 +239,17 @@ if __name__ == '__main__':
             n_comps = pca.calc_n_comps(args.contr_rate)
             pt_pca = PointAlignModel(pca, n_comps, top_anchor, bottom_anchor)
             pt_pca.to(device)
-            optimizer = Adam([pt_pca.coefs], lr=args.lr, weight_decay=args.l2_reg)
+            optimizer = Adam([pt_pca.coefs],
+                             lr=args.lr,
+                             weight_decay=args.l2_reg)
             try:
                 for blur_sigma in args.sigma:
                     if blur_sigma == 0:
                         blurred_hm = heatmaps[:len(pca.labels)]
                     else:
                         blurred_hm = np.array([
-                            gaussian_filter(hm, blur_sigma) for hm in heatmaps[:len(pca.labels)]
+                            gaussian_filter(hm, blur_sigma)
+                            for hm in heatmaps[:len(pca.labels)]
                         ])
                     blurred_hm = (blurred_hm / blurred_hm.max()).astype(
                         np.float32)
@@ -258,8 +264,7 @@ if __name__ == '__main__':
                     patience = 0
                     for i in range(args.max_iter):
                         probas = pt_pca(t_heatmaps)
-                        loss = -torch.log(torch.concat(probas)).mean(
-                        )
+                        loss = -torch.log(torch.concat(probas)).mean()
                         history.append(loss.detach().item())
                         if history[-1] <= best_loss:
                             best_loss = history[-1]
@@ -288,9 +293,9 @@ if __name__ == '__main__':
             df_history = pd.concat(histories, ignore_index=True)
             sns.set(context='notebook', style='whitegrid', font='serif')
             sns.lineplot(data=df_history, x='x', y='loss', hue='model')
-            plt.gcf().savefig(str(outdir/f'{file_id}.png'),
-                  transparent=False,
-                  bbox_inches='tight')
+            plt.gcf().savefig(str(outdir / f'{file_id}.png'),
+                              transparent=False,
+                              bbox_inches='tight')
             plt.clf()
 
         if len(results) == 0:
@@ -301,9 +306,9 @@ if __name__ == '__main__':
         result_json = original_json.copy()
         results.sort(key=lambda e: e[1])  # sort results by loss
         best_name, best_loss, best_coefs, best_pca = results[0]
-        pca = best_pca #TorchPCA(f'pca_{image_type}_{best_name}.npz')
-        pt_pca = PointAlignModel(pca, pca.calc_n_comps(args.contr_rate), top_anchor,
-                                 bottom_anchor).to(device)
+        pca = best_pca  #TorchPCA(f'pca_{image_type}_{best_name}.npz')
+        pt_pca = PointAlignModel(pca, pca.calc_n_comps(args.contr_rate),
+                                 top_anchor, bottom_anchor).to(device)
         warped = pca.unravel(pt_pca.ref2pt(pca.warp(best_coefs.to(device))))
         s = original_json['imageHeight'] / IMG_HEIGHT
         scaled_warped = [(s * w.detach().cpu().numpy()).tolist()
@@ -315,8 +320,7 @@ if __name__ == '__main__':
                 filter(
                     lambda shape: shape['label'] != l or shape['shape_type'] !=
                     'point', original_shapes))
-        result_shapes = labelme_utils.kps2shapes(scaled_warped,
-                                                 pca.labels)
+        result_shapes = labelme_utils.kps2shapes(scaled_warped, pca.labels)
         result_shapes.extend(original_shapes)
         result_json['shapes'] = result_shapes
         result_json['flags'] = {best_name: True}
