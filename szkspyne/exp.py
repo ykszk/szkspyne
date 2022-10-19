@@ -97,6 +97,7 @@ def main():
         json.dump(args.__dict__, f, indent=2)
 
     NDJSON_FILENAME = 'script/manual_annotation.ndjson'
+    shutil.copy(NDJSON_FILENAME, outroot)
     exclude_flags = set(['除外','側面右向き'])
     df = exp_utils.ndjson2csv(NDJSON_FILENAME, exclude_flags)
     df['pid'] = df['filepath'].map(lambda pid: Path(pid).parts[1])

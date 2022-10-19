@@ -211,6 +211,7 @@ if __name__ == '__main__':
     # The operator 'aten::index.Tensor' is not current implemented for the MPS device.
     # device = torch.device('mps' if torch.backends.mps.is_available() else 'cpu')
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+    torch.set_num_threads(4)
     if args.device:
         device = args.device
 

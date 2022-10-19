@@ -5,8 +5,15 @@ import pandas as pd
 from typing import List
 from pathlib import Path
 import json
+import argparse
 
-data_dir = Path('../../result/exp20221009')
+parser = argparse.ArgumentParser(description='Pair pre-op left-right bend.')
+parser.add_argument(
+    'root',
+    help='root directory',
+    metavar='<input>')
+args = parser.parse_args()
+data_dir = Path(args.root)
 
 with open(data_dir / 'manual_annotation.ndjson') as f:
     all_data = [json.loads(l) for l in f]
@@ -68,7 +75,7 @@ df_complete.drop_duplicates(['PatientID', 'StudyDate', 'pose_id'],
                             inplace=True)
 del df_complete['gai']
 print(len(complete_pids))
-df_complete.to_csv(data_dir / 'ap_flexion_completed_set.csv',
+df_complete.to_csv(data_dir / 'ap_bend_completed_set.csv',
                    index=False,
                    encoding='utf8')
 df_complete.head(10)

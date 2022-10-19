@@ -12,8 +12,8 @@ import yaml
 import svgwrite
 from jinja2 import Environment, FileSystemLoader
 import argparse
-import measure_utils as utils
-from measure_utils import calc_centroid, perp, get_circle_dict, calc_angle, Canvas
+from szkspyne import measure_utils as utils
+from szkspyne.measure_utils import calc_centroid, perp, get_circle_dict, calc_angle, Canvas
 
 LINE_WIDTH = 2.0
 POINT_RADIUS = 2.0

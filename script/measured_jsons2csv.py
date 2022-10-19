@@ -2,8 +2,14 @@
 import json
 from pathlib import Path
 import pandas as pd
-
-data_root = Path('../../result/exp20221009')
+import argparse
+parser = argparse.ArgumentParser(description='Exp output to csv.')
+parser.add_argument(
+    'root',
+    help='root directory with ap_whole and lateral_whole directory',
+    metavar='<input>')
+args = parser.parse_args()
+data_root = Path(args.root)
 IMAGE_TYPES = ['ap_whole', 'lateral_whole']
 flags_required = ['術後', '左屈', '右屈', '除外', 'L4', 'L5', 'L6', '先天性側彎']
 
