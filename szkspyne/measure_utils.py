@@ -90,87 +90,6 @@ def calc_angle(line1, line2):
     return a
 
 
-def draw_cobb(sup_cnrs: np.ndarray,
-              inf_cnrs: np.ndarray,
-              dwg: svgwrite.Drawing,
-              group_id: str,
-              color: str,
-              aux_dist: float = 3,
-              text_attrs: dict = {},
-              hide=False,
-              grp=None) -> svgwrite.container.Group:
-    up_line = Line.from_points(sup_cnrs[0], sup_cnrs[1])
-    low_line = Line.from_points(inf_cnrs[0], inf_cnrs[1])
-    view_box = np.array([float(e) for e in dwg['viewBox'].split(' ')
-                         ]).reshape(2, 2)  # [[xmin, ymin], [xmax, ymax]]
-    try:
-        up_low_cross = up_line.intersect_line(low_line)
-        angle_rad = -calc_angle((sup_cnrs[0], sup_cnrs[1]),
-                                (inf_cnrs[0], inf_cnrs[1]))
-        if angle_rad > 0:
-            up_end = sup_cnrs[1]
-            low_end = inf_cnrs[1]
-            pts = up_end + aux_dist * (sup_cnrs[0] - sup_cnrs[1])
-        else:
-            up_end = sup_cnrs[0]
-            low_end = inf_cnrs[0]
-            pts = up_end + aux_dist * (sup_cnrs[1] - sup_cnrs[0])
-
-        if grp is None:
-            grp = dwg.add(
-                dwg.g(id=group_id,
-                      stroke=color,
-                      stroke_width=2.0,
-                      fill='none',
-                      visibility='hidden' if hide else 'visible'))
-        is_inside = np.all(view_box[0] <= up_low_cross) and np.all(
-            up_low_cross <= view_box[1])
-        if is_inside:
-            text_pos = up_low_cross
-            grp.add(dwg.path(
-                (['M'] + up_end.tolist() + up_low_cross.tolist())))
-            grp.add(
-                dwg.path((['M'] + low_end.tolist() + up_low_cross.tolist())))
-        else:
-            aux_cross = Point(rotate_around(pts, angle_rad / 2, up_low_cross))
-            up_aux1 = up_line.project_point(aux_cross)
-            up_aux2 = up_aux1 + 1.5 * (aux_cross - up_aux1)
-            up_auxs = np.array((up_aux1, up_aux2))
-            low_aux1 = low_line.project_point(aux_cross)
-            low_aux2 = low_aux1 + 1.5 * (aux_cross - low_aux1)
-            low_auxs = np.array((low_aux1, low_aux2))
-            text_pos = aux_cross
-
-            grp.add(dwg.path((['M'] + up_end.tolist() + up_auxs[0].tolist())))
-            grp.add(dwg.path((['M'] + up_auxs.tolist())))
-            grp.add(dwg.path(
-                (['M'] + low_end.tolist() + low_auxs[0].tolist())))
-            grp.add(dwg.path((['M'] + low_auxs.tolist())))
-    except ValueError:
-        angle_rad = 0
-        text_pos = np.concatenate([sup_cnrs, inf_cnrs], axis=0).mean(axis=0)
-        grp = dwg.add(
-            dwg.g(id=group_id, stroke=color, stroke_width=2.0, fill='none'))
-        grp.add(dwg.path(
-            (['M'] + sup_cnrs[0].tolist() + sup_cnrs[1].tolist())))
-        grp.add(dwg.path(
-            (['M'] + inf_cnrs[0].tolist() + inf_cnrs[1].tolist())))
-        grp.add(
-            dwg.path((['M'] + sup_cnrs.mean(axis=0).tolist() +
-                      inf_cnrs.mean(axis=1).tolist())))
-
-    angle_deg = np.rad2deg(angle_rad)
-    text_angle = '{:.1f}°'.format(angle_deg)
-    text_anchor = 'end' if angle_deg < 0 else 'start'
-    grp.add(
-        dwg.text(text_angle,
-                 insert=tuple(text_pos),
-                 text_anchor=text_anchor,
-                 dominant_baseline="central",
-                 **text_attrs))
-    return grp, angle_deg
-
-
 def calc_intersection(A: np.ndarray, B: np.ndarray, C: np.ndarray,
                       D: np.ndarray) -> np.ndarray:
     '''
@@ -340,8 +259,6 @@ class Canvas(svgwrite.Drawing):
                   text_attrs: dict = {}) -> float:
         up_line = Line.from_points(sup_cnrs[0], sup_cnrs[1])
         low_line = Line.from_points(inf_cnrs[0], inf_cnrs[1])
-        view_box = np.array([float(e) for e in self['viewBox'].split(' ')
-                             ]).reshape(2, 2)  # [[xmin, ymin], [xmax, ymax]]
         try:
             up_low_cross = up_line.intersect_line(low_line)
             angle_rad = -calc_angle((sup_cnrs[0], sup_cnrs[1]),
@@ -355,8 +272,8 @@ class Canvas(svgwrite.Drawing):
                 low_end = inf_cnrs[0]
                 pts = up_end + aux_dist * (sup_cnrs[1] - sup_cnrs[0])
 
-            is_inside = np.all(view_box[0] <= up_low_cross) and np.all(
-                up_low_cross <= view_box[1])
+            aux_cross = Point(rotate_around(pts, angle_rad / 2, up_low_cross))
+            is_inside = np.linalg.norm(aux_cross-sup_cnrs[0]) > np.linalg.norm(up_low_cross - sup_cnrs[0])
             if is_inside:
                 text_pos = up_low_cross
                 grp.add(

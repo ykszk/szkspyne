@@ -845,7 +845,7 @@ def main():
                     fn.name).with_suffix('.html') if args.html else None
             measure_json(fn, args.height, args.config, args.points,
                          args.numbers, args.image_type, image, html, measure,
-                         args.template, args.title, args.hide,
+                         args.template, '{} - {}'.format(fn.stem, args.title), args.hide,
                          not args.external_svg, args.parent_dir)
 
         Parallel(n_jobs=args.workers)(
