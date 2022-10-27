@@ -8,7 +8,7 @@ import shutil
 from pathlib import Path
 import argparse
 import json
-from typing import Tuple
+from typing import Tuple, Union
 
 import pandas as pd
 import numpy as np
@@ -71,6 +71,9 @@ def main():
     parser.add_argument('--debug',
                         help='Run in debug mode',
                         action='store_true')
+    parser.add_argument('--train_cropped',
+                        help='Train for cropped images',
+                        action='store_true')
     parser.add_argument('--clahe',
                         help='Use CLAHE for image normalization',
                         action='store_true')
@@ -120,7 +123,7 @@ def main():
     NUM_WORKERS = len(
         os.sched_getaffinity(0)) - 1  #2 if os.name == 'nt' else 0
     logger.info('workers %d', NUM_WORKERS)
-    EPOCHS = 2 if DEBUG else 128
+    EPOCHS = 1 if DEBUG else 128
     if DEBUG:
         logger.warning('In debug mode')
     if args.gpus is None:
@@ -151,32 +154,35 @@ def main():
                                  size=int(0.1 * len(non_test_pids)),
                                  replace=False))
             train_pids = set(pids) - val_pids
-            if True:  # create ndjson files for post processing
-                with open(NDJSON_FILENAME) as f:
-                    all_data = [json.loads(l) for l in f.readlines()]
-                all_data = list(filter(lambda d: len(set(d['flags']).intersection(exclude_flags))==0, all_data))
-                for d in all_data:
-                    pid = Path(d['filepath']).parts[1]
-                    d['pid'] = pid
-                    if pid in val_pids:
-                        d['set'] = 'val'
-                    elif pid in train_pids:
-                        d['set'] = 'train'
-                    else:
-                        d['set'] = 'test'
-
-                def save_ndjson(pids, filename):
-                    save_data = filter(lambda d: d['pid'] in pids, all_data)
-                    with open(filename, 'w') as f:
-                        for d in save_data:
-                            f.write(json.dumps(d, ensure_ascii=False))
-                            f.write('\n')
-
-                save_ndjson(set(non_test_pids), outdir / 'train_val.ndjson')
-                save_ndjson(
-                    set(pids) - set(non_test_pids), outdir / 'test.ndjson')
             df_val = df_train[df_train['pid'].map(lambda e: e in val_pids)]
             df_train = df_train[df_train['pid'].map(lambda e: e in train_pids)]
+        if True:  # create ndjson files for post processing
+            val_pids = set(df_val['pid'])
+            train_pids = set(df_train['pid'])
+            non_test_pids = train_pids
+            with open(NDJSON_FILENAME) as f:
+                all_data = [json.loads(l) for l in f.readlines()]
+            all_data = list(filter(lambda d: len(set(d['flags']).intersection(exclude_flags))==0, all_data))
+            for d in all_data:
+                pid = Path(d['filepath']).parts[1]
+                d['pid'] = pid
+                if pid in val_pids:
+                    d['set'] = 'val'
+                elif pid in train_pids:
+                    d['set'] = 'train'
+                else:
+                    d['set'] = 'test'
+
+            def save_ndjson(pids, filename):
+                save_data = filter(lambda d: d['pid'] in pids, all_data)
+                with open(filename, 'w') as f:
+                    for d in save_data:
+                        f.write(json.dumps(d, ensure_ascii=False))
+                        f.write('\n')
+
+            save_ndjson(set(non_test_pids), outdir / 'train_val.ndjson')
+            save_ndjson(
+                set(pids) - set(non_test_pids), outdir / 'test.ndjson')
         df_test = df_all[df_all['set_id'] == test_id]
         df_test.to_csv(outdir / 'testset.csv', index=False)
         assert isinstance(df_train, pd.DataFrame) and isinstance(df_val, pd.DataFrame) and isinstance(df_test, pd.DataFrame)
@@ -192,14 +198,15 @@ def main():
         if test_id == 0:
             lit_model.summary([BATCH_SIZE, n_chs, 1024, 1024])
 
-        def load_dataset(df: pd.DataFrame, height: int, clahe: bool):
+        def load_dataset(df: pd.DataFrame, height: Union[int, None], clahe: bool):
             '''
             load images and keypoints
             '''
 
             def load(row):
                 x, kp = exp_utils.load_data(row, data_root, LABEL_NAMES)
-                x, kp = img_utils.resize_height(height, x, kp)
+                if height is not None:
+                    x, kp = img_utils.resize_height(height, x, kp)
                 if clahe:
                     x = transforms.apply_clahe(x)
                 return x, kp
@@ -220,11 +227,12 @@ def main():
             return xs, kps
 
         logger.info('load train set')
-        train_xs, train_kps = load_dataset(df_train, HEIGHT, False)
+        height = None if args.train_cropped else HEIGHT
+        train_xs, train_kps = load_dataset(df_train, height, False)
         train_xs, train_kps = train_xs + train_xs, train_kps + train_kps  # TODO: remove
         logger.info('train size %d', len(train_xs))
         logger.info('load val set')
-        val_xs, val_kps = load_dataset(df_val, HEIGHT, True)
+        val_xs, val_kps = load_dataset(df_val, height, True)
         logger.info('val size %d', len(val_xs))
         flip_pairs = FLIP_PAIRS
 
@@ -236,7 +244,7 @@ def main():
                                               train_kps,
                                               None,
                                               flip_pairs,
-                                              transforms.random_transform,
+                                              transforms.random_crop_transform if args.train_cropped else transforms.random_transform,
                                               sigma=SIGMA)
         train_loader = DataLoader(
             dataset,
@@ -258,7 +266,7 @@ def main():
                                               val_kps,
                                               None,
                                               flip_pairs,
-                                              base_kps_transform,
+                                              transforms.base_crop_transform if args.train_cropped else base_kps_transform,
                                               sigma=SIGMA)
         val_loader = DataLoader(dataset,
                                 shuffle=False,

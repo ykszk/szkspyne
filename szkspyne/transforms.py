@@ -79,7 +79,7 @@ class RandomClahe(ImageOnlyTransform):
 
 img_tfs = [
     A.HorizontalFlip(p=0.25),
-    RandomClahe(always_apply=True),
+    # RandomClahe(always_apply=True),
     A.RandomBrightnessContrast(brightness_limit=0.4, contrast_limit=0.2,
                                p=.25),
     A.Affine(scale={
@@ -97,15 +97,25 @@ album_transform = A.ReplayCompose(img_tfs,
                                   keypoint_params=A.KeypointParams(
                                       format='yx', remove_invisible=False))
 
+CROPPER = A.RandomResizedCrop(768, 512, [.9, 1.1], [.9, 1.1], p=1)
+album_crop_transform = A.ReplayCompose([CROPPER] + img_tfs,
+                                  keypoint_params=A.KeypointParams(
+                                      format='yx', remove_invisible=False))
+
+album_base_crop_transform = A.ReplayCompose([CROPPER, A.Normalize(mean=0.485, std=0.229)],
+                                  keypoint_params=A.KeypointParams(
+                                      format='yx', remove_invisible=False))
+
+
 import warnings
 
-def random_transform(x: np.ndarray, keypoints, flip_pairs: List[Tuple[int,
-                                                                      int]]):
+def _random_transform(x: np.ndarray, keypoints, flip_pairs: List[Tuple[int,
+                                                                      int]], tf_func):
     sizes = [len(ps) for ps in keypoints]
     flat_points = point_utils.flatten_nest(keypoints)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        tfed = album_transform(image=x, keypoints=flat_points)
+        tfed = tf_func(image=x, keypoints=flat_points)
     x, keypoints = tfed['image'], tfed['keypoints']
     keypoints = point_utils.partition(keypoints, sizes)
     for tf in tfed['replay']['transforms']:
@@ -115,3 +125,15 @@ def random_transform(x: np.ndarray, keypoints, flip_pairs: List[Tuple[int,
                     keypoints[i], keypoints[j] = keypoints[j], keypoints[i]
     x = x[np.newaxis]
     return x, keypoints
+
+def random_transform(x: np.ndarray, keypoints, flip_pairs: List[Tuple[int,
+                                                                      int]]):
+    return _random_transform(x, keypoints, flip_pairs, album_transform)
+
+def random_crop_transform(x: np.ndarray, keypoints, flip_pairs: List[Tuple[int,
+                                                                      int]]):
+    return _random_transform(x, keypoints, flip_pairs, album_crop_transform)
+
+def base_crop_transform(x: np.ndarray, keypoints, flip_pairs: List[Tuple[int,
+                                                                      int]]):
+    return _random_transform(x, keypoints, flip_pairs, album_base_crop_transform)
