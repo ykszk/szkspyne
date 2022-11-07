@@ -7,10 +7,9 @@ result_dir="$1"
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
 
 echo 'start:' "$(date)"
-for i in $(seq 0 4); do
+for fold_dir in "$result_dir"/?; do
     (
-        echo fold "$i"
-        fold_dir=$result_dir/$i
+        echo "$fold_dir"
         python3 "$SCRIPT_DIR"/pca_spine.py "$fold_dir"/train_val.ndjson "$fold_dir"
         for image_type in ap_whole lateral_whole; do
             outdir="$fold_dir"/auto/$image_type

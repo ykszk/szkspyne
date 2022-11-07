@@ -226,6 +226,7 @@ def main():
                 image_filenames = [fn.name for fn in filenames]
 
                 def save_json(args):
+                    args = list(args)
                     args += [settings.LABEL_NAMES]
                     return save_kps_json(*args, min_thresh=.1 * PROB_MAX)
 
