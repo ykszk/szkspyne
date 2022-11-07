@@ -3,6 +3,46 @@ import argparse
 
 PROB_MAX = 4000
 
+# Cannot lazy load for pickling
+import json
+import numpy as np
+import point_utils
+import labelme_utils
+import mhd
+import settings
+
+
+def save_kps_json(pred,
+                  original_shape,
+                  image_filename: str,
+                  json_filename: str,
+                  label_names,
+                  min_thresh=.25):
+    kps_per_ch = point_utils.local_center_of_masses(pred, min_thresh)
+    scale = original_shape[0] / pred.shape[1]
+    kps_per_ch = [(np.array(kps, dtype=np.float32) * scale).tolist()
+                  for kps in kps_per_ch]
+    json_data = labelme_utils.kps2labelme(kps_per_ch, image_filename,
+                                          original_shape, label_names)
+    with open(json_filename, 'w') as f:
+        json.dump(json_data, f, indent=2)
+
+
+def worker(task_args):
+    (pred, original_shape, image_filename, json_filename,
+     hm_filename) = task_args
+    if json_filename:
+        save_kps_json(pred,
+                      original_shape,
+                      image_filename,
+                      json_filename,
+                      settings.LABEL_NAMES,
+                      min_thresh=.1 * PROB_MAX)
+    if hm_filename:
+        pred = np.transpose(pred, [1, 2, 0])
+        mhd.write(hm_filename, pred,
+                  {'ElementNumberOfChannels': pred.shape[-1]})
+
 
 def main():
     parser = argparse.ArgumentParser(description='Apply spine model.')
@@ -83,15 +123,10 @@ def main():
     args = parser.parse_args()
     # lazy import
     from pathlib import Path
-    import numpy as np
     from logzero import logger
     import pretrained_models
     import transforms
-    import mhd
-    import point_utils
     import img_utils
-    import labelme_utils
-    import settings
     from typing import Union
 
     import torch
@@ -119,27 +154,10 @@ def main():
         return x, original_shape
 
     def apply_clahe(img, clipLimit=5000, tileGridSize=(32, 32)):
-        clahe = cv2.createCLAHE(clipLimit=clipLimit,
-                                tileGridSize=tileGridSize)  # type: ignore
+        clahe = cv2.createCLAHE(  # type: ignore
+            clipLimit=clipLimit, tileGridSize=tileGridSize)
         cl = clahe.apply(img)
         return cl
-
-    def save_kps_json(pred,
-                      original_shape,
-                      image_filename: str,
-                      json_filename: str,
-                      label_names,
-                      min_thresh=.25):
-        kps_per_ch = point_utils.local_center_of_masses(pred, min_thresh)
-        # half_shape = (np.array(original_shape, dtype=np.float32) // 2).tolist()
-        # scale = half_shape[0] / pred.shape[1]
-        scale = original_shape[0] / pred.shape[1]
-        kps_per_ch = [(np.array(kps, dtype=np.float32) * scale).tolist()
-                      for kps in kps_per_ch]
-        json_data = labelme_utils.kps2labelme(kps_per_ch, image_filename,
-                                              original_shape, label_names)
-        with open(json_filename, 'w') as f:
-            json.dump(json_data, f, indent=2)
 
     def load_model(args) -> pretrained_models.LitSMP:
         if args.hparams and not args.weights:
@@ -231,41 +249,41 @@ def main():
         lit_model.to(device)
         lit_model.eval()
 
+        task_pbar = tqdm.tqdm(total=len(xs))
         logger.info('Apply model')
-        for batch, (filenames, original_shapes) in tqdm.tqdm(loader):
-            batch = batch.to(device)
-            with torch.no_grad():
-                pred = torch.sigmoid(lit_model(batch))
-                pred *= PROB_MAX
-                pred = pred.to('cpu').detach().numpy().astype(np.uint16)
 
-            filenames = [Path(fn) for fn in filenames]
-            original_shapes = list(
-                zip(*[t.to('cpu').tolist() for t in original_shapes]))
-            if args.labelme:
-                json_filenames = [fn.with_suffix('.json') for fn in filenames]
+        def callback(_):
+            task_pbar.update()
+
+        from multiprocessing import Pool
+        with Pool(processes=args.workers) as pool:
+            for batch, (filenames, original_shapes) in tqdm.tqdm(loader):
+                batch = batch.to(device)
+                with torch.no_grad():
+                    pred = torch.sigmoid(lit_model(batch))
+                    pred *= PROB_MAX
+                    pred = pred.to('cpu').detach().numpy().astype(np.uint16)
+
+                filenames = [Path(fn) for fn in filenames]
+                original_shapes = list(
+                    zip(*[t.to('cpu').tolist() for t in original_shapes]))
                 image_filenames = [fn.name for fn in filenames]
-
-                def save_json(args):
-                    args = list(args)
-                    args += [settings.LABEL_NAMES]
-                    return save_kps_json(*args, min_thresh=.1 * PROB_MAX)
-
-                Parallel(n_jobs=args.workers)(
-                    delayed(save_json)(arg)
-                    for arg in zip(pred, original_shapes, image_filenames,
-                                   json_filenames))
-
-            if args.heatmap:
-
-                def save_hm(pred, fn):
-                    pred = np.transpose(pred, [1, 2, 0])
-                    mhd.write(fn, pred,
-                              {'ElementNumberOfChannels': pred.shape[-1]})
-
-                hm_filenames = [fn.with_suffix('.mha') for fn in filenames]
-                Parallel(n_jobs=args.workers)(
-                    delayed(save_hm)(*arg) for arg in zip(pred, hm_filenames))
+                json_filenames = [
+                    fn.with_suffix('.json') if args.labelme else None
+                    for fn in filenames
+                ]
+                hm_filenames = [
+                    fn.with_suffix('.mha') if args.heatmap else None
+                    for fn in filenames
+                ]
+                for task_args in zip(pred, original_shapes, image_filenames,
+                                     json_filenames, hm_filenames):
+                    pool.apply_async(worker, (task_args, ),
+                                     callback=callback,
+                                     error_callback=print)
+            pool.close()
+            pool.join()
+        logger.info('Done applying')
 
     def heatmap2labelme(heatmap_filename: str, ndjson_filename: str,
                         outdir: Union[str,
