@@ -8,14 +8,21 @@ def main():
     parser = argparse.ArgumentParser(description='Apply spine model.')
 
     subparsers = parser.add_subparsers()
+
+    def add_model_params(parser):
+        model_group = parser.add_mutually_exclusive_group(required=True)
+        model_group.add_argument('--ckpt', help='Model checkpoint')
+        model_group.add_argument('--hparams',
+                                 help='Model hyperparameters in pickle')
+        parser.add_argument(
+            '--weights', help='Model weights. Required for --hparams option')
+        return model_group
+
     p_single = subparsers.add_parser('single', help="Apply to a single image.")
     p_single.add_argument('input',
                           help='Input mhd filename:',
                           metavar='<input>')
-    p_single.add_argument('model', help='Model checkpoint', metavar='<model>')
-    # p_single.add_argument('output',
-    #                       help='Output mhd filename:',
-    #                       metavar='<output>')
+    add_model_params(p_single)
     p_single.add_argument('--preproc', help='Save preprocessed input image')
     p_single.add_argument('--labelme', help='Save labelme json file')
     p_single.add_argument('--heatmap', help='Save heatmap file')
@@ -31,13 +38,8 @@ def main():
     p_batch.add_argument('--output',
                          help='Optional output image. e.g. keypoints.svg')
 
-    p_batch.add_argument('input',
-                         help='Input mhd filename:',
-                         metavar='<input>')
-    p_batch.add_argument('model', help='Model checkpoint', metavar='<model>')
-    # p_batch.add_argument('output',
-    #                      help='Output mhd filename:',
-    #                      metavar='<output>')
+    p_batch.add_argument('input', help='Input directory:', metavar='<input>')
+    add_model_params(p_batch)
     p_batch.add_argument('--ext',
                          help='Input image file extension: %(default)s',
                          default='.png')
@@ -117,7 +119,8 @@ def main():
         return x, original_shape
 
     def apply_clahe(img, clipLimit=5000, tileGridSize=(32, 32)):
-        clahe = cv2.createCLAHE(clipLimit=clipLimit, tileGridSize=tileGridSize)
+        clahe = cv2.createCLAHE(clipLimit=clipLimit,
+                                tileGridSize=tileGridSize)  # type: ignore
         cl = clahe.apply(img)
         return cl
 
@@ -138,9 +141,27 @@ def main():
         with open(json_filename, 'w') as f:
             json.dump(json_data, f, indent=2)
 
+    def load_model(args) -> pretrained_models.LitSMP:
+        if args.hparams and not args.weights:
+            print('--weights is required for --hparams')
+            sys.exit(1)
+        if args.ckpt:
+            lit_model = pretrained_models.LitSMP.load_from_checkpoint(
+                args.ckpt)
+            assert isinstance(lit_model, pretrained_models.LitSMP)
+        else:
+            import pickle
+            with open(args.hparams, 'rb') as f:
+                hparams = pickle.load(f)
+            lit_model = pretrained_models.LitSMP(hparams.in_chs,
+                                                 hparams.out_chs,
+                                                 hparams.hparams)
+            lit_model.model.load_state_dict(torch.load(args.weights))
+        return lit_model
+
     def apply_single(args):
         logger.info('load model')
-        lit_model = pretrained_models.LitSMP.load_from_checkpoint(args.model)
+        lit_model = load_model(args)
         lit_model.eval()
         logger.info('load image')
         x, original_shape = load(args.input, args.height, True)
@@ -206,7 +227,7 @@ def main():
         device = torch.device(
             'cuda:0') if torch.cuda.is_available() else torch.device('cpu')
         logger.info('load model')
-        lit_model = pretrained_models.LitSMP.load_from_checkpoint(args.model)
+        lit_model = load_model(args)
         lit_model.to(device)
         lit_model.eval()
 

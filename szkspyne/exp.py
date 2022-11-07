@@ -197,6 +197,9 @@ def main():
 
         if test_id == 0:
             lit_model.summary([BATCH_SIZE, n_chs, 1024, 1024])
+            import pickle
+            with open(outdir / 'model_hparams.pickle', 'wb') as f:
+                pickle.dump(lit_model.hparams, f)
 
         def load_dataset(df: pd.DataFrame, height: Union[int, None], clahe: bool):
             '''
@@ -344,7 +347,7 @@ def main():
         if USE_TEST_AS_VAL:
             torch.save(
                 lit_model.model.to('cpu').state_dict(),
-                outdir / 'checkpoint' / 'best.pth')
+                outdir / 'best_weights.pth')
         del y_preds, test_loader, dataset, test_xs, test_kps
 
     for test_id in range(K_FOLD):
