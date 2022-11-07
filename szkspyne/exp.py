@@ -49,10 +49,18 @@ def main():
                         metavar='<int>',
                         type=int,
                         default=768)
-    parser.add_argument('--gpus',
-                        help='# of gpus. Use all available gpus by default.',
-                        metavar='<int>',
-                        type=int)
+    parser.add_argument(
+        '--accelerator',
+        help='Accelerator argument for pl.Trainer. default: %(default)s',
+        default='auto')
+    parser.add_argument(
+        '--devices',
+        help='devices argument for pl.Trainer. default: %(default)s',
+        default='auto')
+    parser.add_argument(
+        '--strategy',
+        help='strategy argument for pl.Trainer. default: %(default)s',
+        default='ddp')
     parser.add_argument('--sigma',
                         help='Sigma: %(default)s',
                         metavar='<sigma>',
@@ -101,7 +109,7 @@ def main():
 
     NDJSON_FILENAME = 'script/manual_annotation.ndjson'
     shutil.copy(NDJSON_FILENAME, outroot)
-    exclude_flags = set(['除外','側面右向き'])
+    exclude_flags = set(['除外', '側面右向き'])
     df = exp_utils.ndjson2csv(NDJSON_FILENAME, exclude_flags)
     df['pid'] = df['filepath'].map(lambda pid: Path(pid).parts[1])
     df_all = df
@@ -126,15 +134,7 @@ def main():
     EPOCHS = 1 if DEBUG else 128
     if DEBUG:
         logger.warning('In debug mode')
-    if args.gpus is None:
-        gpus = torch.cuda.device_count()
-    else:
-        gpus = args.gpus
-    logger.info('gpus %d', gpus)
-    accelerator = 'dp'
     BATCH_SIZE = args.batch_size
-    if accelerator == 'dp':
-        BATCH_SIZE *= max(gpus, 1)
     HEIGHT = args.height  # 256 * 5
     SIGMA = args.sigma
 
@@ -162,7 +162,10 @@ def main():
             non_test_pids = train_pids
             with open(NDJSON_FILENAME) as f:
                 all_data = [json.loads(l) for l in f.readlines()]
-            all_data = list(filter(lambda d: len(set(d['flags']).intersection(exclude_flags))==0, all_data))
+            all_data = list(
+                filter(
+                    lambda d: len(set(d['flags']).intersection(exclude_flags))
+                    == 0, all_data))
             for d in all_data:
                 pid = Path(d['filepath']).parts[1]
                 d['pid'] = pid
@@ -181,11 +184,11 @@ def main():
                         f.write('\n')
 
             save_ndjson(set(non_test_pids), outdir / 'train_val.ndjson')
-            save_ndjson(
-                set(pids) - set(non_test_pids), outdir / 'test.ndjson')
+            save_ndjson(set(pids) - set(non_test_pids), outdir / 'test.ndjson')
         df_test = df_all[df_all['set_id'] == test_id]
         df_test.to_csv(outdir / 'testset.csv', index=False)
-        assert isinstance(df_train, pd.DataFrame) and isinstance(df_val, pd.DataFrame) and isinstance(df_test, pd.DataFrame)
+        assert isinstance(df_train, pd.DataFrame) and isinstance(
+            df_val, pd.DataFrame) and isinstance(df_test, pd.DataFrame)
         logger.info('train, val, test = %d, %d, %d', len(df_train),
                     len(df_val), len(df_test))
 
@@ -201,7 +204,8 @@ def main():
             with open(outdir / 'model_hparams.pickle', 'wb') as f:
                 pickle.dump(lit_model.hparams, f)
 
-        def load_dataset(df: pd.DataFrame, height: Union[int, None], clahe: bool):
+        def load_dataset(df: pd.DataFrame, height: Union[int, None],
+                         clahe: bool):
             '''
             load images and keypoints
             '''
@@ -243,12 +247,14 @@ def main():
                              pin_memory=True,
                              num_workers=NUM_WORKERS,
                              prefetch_factor=2)
-        dataset = point_utils.KeypointDataset(train_xs,
-                                              train_kps,
-                                              None,
-                                              flip_pairs,
-                                              transforms.random_crop_transform if args.train_cropped else transforms.random_transform,
-                                              sigma=SIGMA)
+        dataset = point_utils.KeypointDataset(
+            train_xs,
+            train_kps,
+            None,
+            flip_pairs,
+            transforms.random_crop_transform
+            if args.train_cropped else transforms.random_transform,
+            sigma=SIGMA)
         train_loader = DataLoader(
             dataset,
             shuffle=True,
@@ -265,12 +271,14 @@ def main():
             img, kps = transforms.base_transform(img, kps)
             return img, kps
 
-        dataset = point_utils.KeypointDataset(val_xs,
-                                              val_kps,
-                                              None,
-                                              flip_pairs,
-                                              transforms.base_crop_transform if args.train_cropped else base_kps_transform,
-                                              sigma=SIGMA)
+        dataset = point_utils.KeypointDataset(
+            val_xs,
+            val_kps,
+            None,
+            flip_pairs,
+            transforms.base_crop_transform
+            if args.train_cropped else base_kps_transform,
+            sigma=SIGMA)
         val_loader = DataLoader(dataset,
                                 shuffle=False,
                                 drop_last=True,
@@ -279,23 +287,21 @@ def main():
         import pytorch_lightning as pl
         from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
         from pytorch_lightning.loggers import CSVLogger
-        from pytorch_lightning.plugins import DDPPlugin
         early_stop_callback = EarlyStopping(monitor='val_loss',
                                             patience=args.patience,
                                             verbose=False,
                                             mode='min')
         mc = ModelCheckpoint(monitor='val_loss', dirpath=outdir / 'checkpoint')
         csv_logger = CSVLogger(str(outdir), name='logs')
-        trainer = pl.Trainer(
-            gpus=gpus,
-            precision=16 if gpus > 0 else 32,  # mixed precision
-            strategy=accelerator,
-            plugins=DDPPlugin(find_unused_parameters=False)
-            if accelerator == 'ddp' else None,
-            max_epochs=EPOCHS,
-            logger=csv_logger,
-            log_every_n_steps=len(train_loader),
-            callbacks=[early_stop_callback, mc])
+        precision = 16 if args.accelerator != 'cpu' else 32
+        trainer = pl.Trainer(accelerator=args.accelerator,
+                             devices=args.devices,
+                             precision=precision,
+                             strategy=args.strategy,
+                             max_epochs=EPOCHS,
+                             logger=csv_logger,
+                             log_every_n_steps=len(train_loader),
+                             callbacks=[early_stop_callback, mc])
 
         logger.info('Start training')
         trainer.fit(lit_model, train_loader, val_loader)
@@ -316,16 +322,20 @@ def main():
             return img
 
         dataset = point_utils.ImageDataset(test_xs, test_transform)
-        test_loader = DataLoader(dataset, shuffle=False, drop_last=False, **loader_kwargs)
+        test_loader = DataLoader(dataset,
+                                 shuffle=False,
+                                 drop_last=False,
+                                 **loader_kwargs)
 
         logger.info('Start test')
         y_preds = trainer.predict(dataloaders=test_loader, ckpt_path='best')
         assert y_preds is not None
         from szkspyne.apply_model import PROB_MAX
-        y_preds = np.concatenate(
-            [(PROB_MAX * y_pred).cpu().numpy().astype(np.int16)
-             for y_pred in y_preds],  # type: ignore
-            axis=0)
+        y_preds = [
+            (PROB_MAX * y_pred).cpu().numpy().astype(np.int16)  # type: ignore
+            for y_pred in y_preds
+        ]
+        y_preds = np.concatenate(y_preds, axis=0)
         logger.info('End test')
         y_preds = np.moveaxis(y_preds, 1, -1).copy()  # to channel last
         with open(outdir / 'test.ndjson') as f:
@@ -337,7 +347,7 @@ def main():
                     indices.append(i)
             y_preds_it = y_preds[indices].copy()
             mhd.write(outdir / f'y_pred_{image_type}.mha', y_preds_it,
-                        {'ElementNumberOfChannels': y_preds_it.shape[-1]})
+                      {'ElementNumberOfChannels': y_preds_it.shape[-1]})
             it_data = [test_data[i] for i in indices]
             with open(outdir / f'test_{image_type}.ndjson', 'w') as f:
                 for data in it_data:
