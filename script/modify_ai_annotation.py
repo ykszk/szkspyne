@@ -18,6 +18,8 @@ parser.add_argument(
 args = parser.parse_args()
 root_dir = Path(args.root)
 
+AP_ONLY = set(['Shoulder','Clavicle','Pelvis','Iliac'])
+
 # convert FemoralHead points to circles based on average vertebra sizes
 logger.info('lateral')
 indir = root_dir / 'lateral_whole'
@@ -25,6 +27,9 @@ for filename in tqdm(sorted(indir.glob('*.json'))):
     with open(filename) as f:
         data = json.load(f)
     fhs = []
+    shapes = data['shapes']
+    shapes = list(filter(lambda e: e['label'] not in AP_ONLY, shapes))
+    data['shapes'] = shapes
     for shape in data['shapes']:
         if shape['shape_type'] == 'point' and shape['label'] == 'FemoralHead':
             fhs.append(shape)
