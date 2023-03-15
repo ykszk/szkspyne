@@ -8,7 +8,6 @@ from szkspyne import labelme_utils
 
 data_root = Path('../../data')
 indir = data_root / 'annotation/annotated/'
-imgdir = data_root / 'jpg_half'
 sorted_fns = sorted(indir.glob('**/valid*.ndjson'))
 logger.info('file list done')
 logger.info(sorted_fns)
@@ -22,10 +21,20 @@ for fn in sorted_fns:
     image_type = '_'.join(fn.stem.split('_')[1:])
     for line in lines:
         data = json.loads(line)
-        filename = '/'.join(
-            Path(data['filepath']).with_suffix('.jpg').name.split('_'))
-        filepath = (imgdir / filename).relative_to(data_root)
-        filepath = str(filepath).replace('\\', '/')
+        if fn.parent.name.startswith('CO'):
+            last2 = Path(data['filepath']).with_suffix('.jpg').parts[-2:]
+            filepath = data_root / 'CLO/jpg' / last2[0] / last2[1]
+        elif fn.parent.name.startswith('SSS'):
+            last2 = Path(data['filepath']).with_suffix('.jpg').parts[-2:]
+            filepath = data_root / 'SSS/images/PREop/sorted' / last2[0] / last2[1]
+        else:
+            filename = '/'.join(
+                Path(data['filepath']).with_suffix('.jpg').name.split('_'))
+            filepath = data_root / 'jpg_half' / filename
+        if not filepath.exists():
+            logger.warning('Skip entry with no image: %s', filepath)
+            continue
+        filepath = str(filepath.relative_to(data_root)).replace('\\', '/')
         shape_data = labelme_utils.conv2shape_dict(data)
         if ADD_C7S:
             d_points = shape_data['point']
