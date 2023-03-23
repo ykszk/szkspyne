@@ -4,6 +4,7 @@ from typing import Union
 
 import pandas as pd
 import matplotlib.pyplot as plt
+import seaborn as sns
 import numpy as np
 from typing import Sequence, Tuple, List, Set
 from pathlib import Path
@@ -12,13 +13,14 @@ from PIL import Image
 from settings import LABEL_NAMES
 
 
-def plot_history(df, set_ylim=True):
-    df = pd.DataFrame((df['train_loss'].dropna().reset_index(drop=True),
-                       df['val_loss'].dropna().reset_index(drop=True))).T
-    df.plot(y=['train_loss', 'val_loss'])
-    if set_ylim and len(df) > 1:
-        plt.ylim(df[['train_loss', 'val_loss']].min().min(),
-                 sorted(df['train_loss'])[-2])
+def plot_history(df):
+    melted = pd.melt(df,
+                     value_vars=['train_loss', 'val_loss'],
+                     id_vars=['step'],
+                     value_name='loss',
+                     var_name='subset')
+    sns.lineplot(data=melted, x='step', y='loss', hue='subset')
+
 
 
 def load_data(
