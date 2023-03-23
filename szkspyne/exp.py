@@ -9,6 +9,10 @@ from pathlib import Path
 import argparse
 import json
 from typing import Tuple, Union
+import torch
+torch.set_num_threads(1)
+# import multiprocessing as mp
+# mp.set_start_method('spawn')
 
 import pandas as pd
 import numpy as np
@@ -60,7 +64,7 @@ def main():
     parser.add_argument(
         '--strategy',
         help='strategy argument for pl.Trainer. default: %(default)s',
-        default='ddp')
+        default='ddp_find_unused_parameters_true')
     parser.add_argument('--sigma',
                         help='Sigma: %(default)s',
                         metavar='<sigma>',
@@ -94,6 +98,7 @@ def main():
     parser = pretrained_models.LitSMP.add_model_specific_args(parser)
 
     args = parser.parse_args()
+    DEBUG = args.debug
 
     data_root = Path('../data/')
     outroot = Path(args.output)
@@ -111,25 +116,40 @@ def main():
     shutil.copy(NDJSON_FILENAME, outroot)
     exclude_flags = set(['除外', '側面右向き'])
     df = exp_utils.ndjson2csv(NDJSON_FILENAME, exclude_flags)
-    df['pid'] = df['filepath'].map(lambda pid: Path(pid).parts[1])
+    RANDOM_STATE = 2022
+    if DEBUG:
+        pass
+        # df = df.sample(frac=.1, random_state=RANDOM_STATE).reset_index(drop=True)
+    def extract_pid(filepath: str):
+        fp = Path(filepath)
+        if filepath.startswith('SSS'):
+            return fp.stem.split('-')[0]
+        elif filepath.startswith('CLO'):
+            return 'CLO' + fp.stem.split('_')[0]
+        else:
+            return Path(filepath).parts[1]
+    df['pid'] = df['filepath'].map(lambda pid: extract_pid(pid))
     df_all = df
     logger.info('All data %d', len(df_all))
     pids = df_all['pid'].unique()
+    logger.info('Unique pid count %d', len(pids))
     K_FOLD = args.fold
     df_all['set_id'] = -1
     kfold = KFold(n_splits=K_FOLD,
-                  shuffle=not args.debug,
-                  random_state=None if args.debug else 2022)
+                  shuffle=True,
+                  random_state=RANDOM_STATE)#None if args.debug else 2022)
     for set_id, (_, test_index) in enumerate(kfold.split(pids)):
         idset = set(pids[test_index])
         df_all.loc[df_all['pid'].map(lambda e: e in idset), 'set_id'] = set_id
-    df_all.to_csv(outroot / 'dataset.csv', index=False)
+    df_all.to_csv(outroot / f'dataset_{os.getpid()}.csv', index=False)
 
     USE_TEST_AS_VAL = args.holdout
 
-    DEBUG = args.debug
     NUM_WORKERS = len(
         os.sched_getaffinity(0)) - 1  #2 if os.name == 'nt' else 0
+    NUM_WORKERS = min(NUM_WORKERS, 8)
+    # if NUM_WORKERS > 8:
+    #     NUM_WORKERS = max(10, NUM_WORKERS // 2)
     logger.info('workers %d', NUM_WORKERS)
     EPOCHS = 1 if DEBUG else 128
     if DEBUG:
@@ -149,25 +169,33 @@ def main():
         else:
             df_train = df_all[df_all['set_id'].map(lambda e: e in train_ids)]
             non_test_pids = df_train['pid'].unique()
+            rng = np.random.RandomState(RANDOM_STATE)
             val_pids = set(
-                np.random.choice(non_test_pids,
+                rng.choice(non_test_pids,
                                  size=int(0.1 * len(non_test_pids)),
                                  replace=False))
             train_pids = set(pids) - val_pids
+            print('sizes pids, train_pids, val_pids', len(pids), len(train_pids), len(val_pids))
             df_val = df_train[df_train['pid'].map(lambda e: e in val_pids)]
             df_train = df_train[df_train['pid'].map(lambda e: e in train_pids)]
         if True:  # create ndjson files for post processing
             val_pids = set(df_val['pid'])
             train_pids = set(df_train['pid'])
-            non_test_pids = train_pids
+            non_test_pids = train_pids.union(val_pids)
             with open(NDJSON_FILENAME) as f:
                 all_data = [json.loads(l) for l in f.readlines()]
+            valid_imgs = set(df_all['filepath'])
+            print('all raw data', len(all_data))
             all_data = list(
                 filter(
-                    lambda d: len(set(d['flags']).intersection(exclude_flags))
-                    == 0, all_data))
+                    lambda d: d['filepath'] in valid_imgs, all_data))
+            print('all filtered data', len(all_data))
+            # all_data = list(
+            #     filter(
+            #         lambda d: len(set(d['flags']).intersection(exclude_flags))
+            #         == 0, all_data))
             for d in all_data:
-                pid = Path(d['filepath']).parts[1]
+                pid = extract_pid(d['filepath'])
                 d['pid'] = pid
                 if pid in val_pids:
                     d['set'] = 'val'
@@ -186,6 +214,7 @@ def main():
             save_ndjson(set(non_test_pids), outdir / 'train_val.ndjson')
             save_ndjson(set(pids) - set(non_test_pids), outdir / 'test.ndjson')
         df_test = df_all[df_all['set_id'] == test_id]
+        assert df_test['pid'].nunique() == len(set(pids) - set(non_test_pids)), f'Size mismatch {df_test["pid"].nunique()} vs {len(set(pids) - set(non_test_pids))}'
         df_test.to_csv(outdir / 'testset.csv', index=False)
         assert isinstance(df_train, pd.DataFrame) and isinstance(
             df_val, pd.DataFrame) and isinstance(df_test, pd.DataFrame)
@@ -236,7 +265,8 @@ def main():
         logger.info('load train set')
         height = None if args.train_cropped else HEIGHT
         train_xs, train_kps = load_dataset(df_train, height, False)
-        train_xs, train_kps = train_xs + train_xs, train_kps + train_kps  # TODO: remove
+        if not DEBUG:
+            train_xs, train_kps = train_xs + train_xs, train_kps + train_kps  # TODO: remove
         logger.info('train size %d', len(train_xs))
         logger.info('load val set')
         val_xs, val_kps = load_dataset(df_val, height, True)
@@ -246,6 +276,7 @@ def main():
         loader_kwargs = dict(batch_size=BATCH_SIZE,
                              pin_memory=True,
                              num_workers=NUM_WORKERS,
+                             persistent_workers=True,
                              prefetch_factor=2)
         dataset = point_utils.KeypointDataset(
             train_xs,
@@ -259,9 +290,9 @@ def main():
             dataset,
             shuffle=True,
             drop_last=True,
-            collate_fn=img_utils.CropCollate(p=args.crop,
-                                             margin=32,
-                                             multiple=down_factor),
+            # collate_fn=img_utils.CropCollate(p=args.crop,
+            #                                  margin=32,
+            #                                  multiple=down_factor),
             **loader_kwargs,
         )
 
@@ -300,21 +331,34 @@ def main():
                              strategy=args.strategy,
                              max_epochs=EPOCHS,
                              logger=csv_logger,
-                             log_every_n_steps=len(train_loader),
+                             log_every_n_steps=len(train_loader)//8,
                              callbacks=[early_stop_callback, mc])
 
         logger.info('Start training')
         trainer.fit(lit_model, train_loader, val_loader)
         logger.info('Finish training')
-        df_logs = pd.read_csv(csv_logger.experiment.metrics_file_path)
-        exp_utils.plot_history(df_logs)
-        plt.gcf().savefig(str(outdir / 'history.png'),
-                          transparent=True,
-                          bbox_inches='tight')
 
         del dataset, train_loader, val_loader, train_xs, val_xs  # release memory
 
+        if os.getenv("LOCAL_RANK", '0') != '0':
+            print('Exit because LOCAL_RANK != 0')
+            return 1
+
+        df_logs = pd.read_csv(csv_logger.experiment.metrics_file_path)
+        try:
+            if len(df_logs)>1:
+                df_logs = df_logs.iloc[1:]
+            exp_utils.plot_history(df_logs)
+            plt.gcf().savefig(str(outdir / 'history.png'),
+                            transparent=True,
+                            bbox_inches='tight')
+            plt.clf()
+        except Exception as e:
+            logger.error('Failed to plot history: %s', e)
+
+
         test_xs, test_kps = load_dataset(df_test, HEIGHT, True)
+        logger.info('test size %d', len(test_xs))
 
         def test_transform(img) -> np.ndarray:
             img = transforms.base_transform(img)
@@ -328,15 +372,34 @@ def main():
                                  **loader_kwargs)
 
         logger.info('Start test')
-        y_preds = trainer.predict(dataloaders=test_loader, ckpt_path='best')
+        # trainer.predict(ckpt_path='best') # reload best weight
+        logger.info('Load weight:%s', mc.best_model_path)
+        lit_model.load_from_checkpoint(mc.best_model_path)
+        # create new trainer with `devices=1`
+        trainer = pl.Trainer(accelerator=args.accelerator,
+                             devices=1, #args.devices,
+                             precision=precision)
+                            #  logger=csv_logger,
+                            #  log_every_n_steps=len(train_loader)//8,
+                            #  callbacks=[early_stop_callback, mc])
+        y_preds = trainer.predict(model=lit_model, dataloaders=test_loader, ckpt_path=None)
+        # y_preds = []
+        # with torch.no_grad():
+        #     y_preds.append(trainer.predict(dataloaders=test_loader, ckpt_path=None))
         assert y_preds is not None
         from szkspyne.apply_model import PROB_MAX
         y_preds = [
             (PROB_MAX * y_pred).cpu().numpy().astype(np.int16)  # type: ignore
             for y_pred in y_preds
         ]
+        print(len(y_preds))
         y_preds = np.concatenate(y_preds, axis=0)
+        print(y_preds.shape)
         logger.info('End test')
+        if USE_TEST_AS_VAL:
+            torch.save(
+                lit_model.model.to('cpu').state_dict(),
+                outdir / 'best_weights.pth')
         y_preds = np.moveaxis(y_preds, 1, -1).copy()  # to channel last
         with open(outdir / 'test.ndjson') as f:
             test_data = [json.loads(l) for l in f.readlines()]
@@ -354,10 +417,8 @@ def main():
                     f.write(json.dumps(data))
                     f.write('\n')
         logger.info('End saving results')
-        if USE_TEST_AS_VAL:
-            torch.save(
-                lit_model.model.to('cpu').state_dict(),
-                outdir / 'best_weights.pth')
+
+
         del y_preds, test_loader, dataset, test_xs, test_kps
 
     for test_id in range(K_FOLD):
