@@ -28,7 +28,8 @@ def measure_json(json_fn: Path, height: int, config_filename: str,
                                       None], measure_filename: Union[str,
                                                                      None],
                  template_directory: str, html_title: str, hide: List[str],
-                 embed_svg: bool, image_dir: Union[str, None]):
+                 embed_svg: bool, image_dir: Union[str,
+                                                   None], calc_slopes: bool):
     with open(json_fn, encoding='utf8') as f:
         lm_data = json.load(f)
 
@@ -51,8 +52,12 @@ def measure_json(json_fn: Path, height: int, config_filename: str,
         drawings.append(('Points', 'Points'))
         grp = dwg.add(dwg.g(id='Points', stroke_width=LINE_WIDTH, fill='none'))
         for label, pts in points.items():
-            color = '#' + ''.join(
-                ['{:02x}'.format(c) for c in label_colors[label]])
+            if label not in label_colors:
+                logger.warning('No label `%s` found in defined colors in `%s`. Using black', label, json_fn)
+                color = '#black'
+            else:
+                color = '#' + ''.join(
+                    ['{:02x}'.format(c) for c in label_colors[label]])
             for pt in pts:
                 grp.add(
                     dwg.circle(center=pt,
@@ -711,6 +716,42 @@ def measure_json(json_fn: Path, height: int, config_filename: str,
                                           text_attrs=text_attrs)
                 measures[gid] = angle_deg
 
+        if calc_slopes:
+            grps = {}
+            for ul, name, color in [('upper', 'Upper slope', 'red'),
+                                    ('lower', 'Lower slope', 'blue')]:
+                gid = f'{ul}_slope'
+                grp = dwg.add(
+                    dwg.g(id=gid,
+                          stroke=color,
+                          visibility='hidden' if gid in hide else 'visible'))
+                grps[gid] = grp
+                drawings.append((gid, name))
+            for i, corners in enumerate(vert_corners, 1):
+                for pair, ul, color in ((corners[:2], 'upper', 'red'),
+                                        (corners[2:], 'lower', 'blue')):
+                    name = f'V{i}_{ul}_slope'
+                    gid = f'{ul}_slope'
+                    v = pair[1] - pair[0]
+                    angle = -np.arctan2(
+                        v[1], v[0]
+                    )  # negation because y axis in image is upside down
+                    angle_deg = np.rad2deg(angle)
+                    txt_angle = '{:.2f}°'.format(angle_deg)
+                    measures[name] = angle_deg
+                    grp = grps[gid]
+                    grp.add(dwg.path((['M'] + pair.ravel().tolist())))
+                    grp.add(dwg.text(txt_angle, insert=pair[0], **text_attrs))
+                name = f'V{i}_center'
+                center = corners.mean(axis=1)
+                measures[name + '_x'] = center[0]
+                measures[name + '_y'] = center[1]
+            circles = get_circle_dict(lm_data)
+            for i, pts in enumerate(circles.get('FemoralHead', []), 1):
+                name = f'femoral_head_{i}'
+                measures[name + '_x'] = pts[0][0]
+                measures[name + '_y'] = pts[0][1]
+
     if image_filename:
         filename = Path(image_filename)
         if filename.suffix == '.svg':
@@ -780,6 +821,9 @@ def main():
                         type=int,
                         default=768)
     parser.add_argument('--points', help='Draw points', action='store_true')
+    parser.add_argument('--slopes',
+                        help='Add slopes to measuremens json',
+                        action='store_true')
     parser.add_argument('--numbers',
                         help='Draw vertebral numbers',
                         action='store_true')
@@ -803,7 +847,7 @@ def main():
         measure_json(args.input, args.height, args.config, args.points,
                      args.numbers, args.image_type, args.image, args.html,
                      args.measure, args.template, args.title, args.hide,
-                     not args.external_svg, args.parent_dir)
+                     not args.external_svg, args.parent_dir, args.slopes)
 
     sub_single.set_defaults(handler=command_single)
 
@@ -845,8 +889,9 @@ def main():
                     fn.name).with_suffix('.html') if args.html else None
             measure_json(fn, args.height, args.config, args.points,
                          args.numbers, args.image_type, image, html, measure,
-                         args.template, '{} - {}'.format(fn.stem, args.title), args.hide,
-                         not args.external_svg, args.parent_dir)
+                         args.template, '{} - {}'.format(fn.stem, args.title),
+                         args.hide, not args.external_svg, args.parent_dir,
+                         args.slopes)
 
         Parallel(n_jobs=args.workers)(
             delayed(do)(fn)
@@ -865,6 +910,11 @@ def main():
         print('No command was specified.')
         parser.print_help()
         sys.exit(1)
+
+    if args.slopes and (not args.measure):
+        print('`--slopes` option has no effect without `--measure` option')
+        sys.exit(1)
+
     return (args.handler(args))
 
 
