@@ -300,7 +300,11 @@ def main():
         def save_json(args):
             heatmap, data = args
             original_shape = data['imageHeight'], data['imageWidth']
-            stem = '_'.join(Path(data['filepath']).with_suffix('').parts[1:])
+            filepath = Path(data['filepath'])
+            if filepath.parts[0] in ['CLO', 'SSS']:
+                stem = filepath.stem
+            else:
+                stem = '_'.join(filepath.with_suffix('').parts[1:])
             if save_heatmap:
                 mhd.write(outdir / f'{stem}.mha', heatmap)
             return save_kps_json(heatmap,

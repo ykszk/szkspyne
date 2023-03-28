@@ -60,6 +60,8 @@ def main():
         else:
             return Path(filepath).parts[1]
     df['pid'] = df['filepath'].map(lambda pid: extract_pid(pid))
+    # if True: # TODO: remove after debugging
+    #     df = df[df['pid'].map(lambda e:e.startswith('OSC'))]
     df_all = df
     logger.info('All data %d', len(df_all))
     pids = df_all['pid'].unique()
@@ -85,9 +87,11 @@ def main():
         if USE_TEST_AS_VAL:
             df_train = df_all[df_all['set_id'].map(lambda e: e in train_ids)]
             df_val = df_all[df_all['set_id'] == test_id]
+            test_pids = set(df_val['pid'])
         else:
             df_train = df_all[df_all['set_id'].map(lambda e: e in train_ids)]
             non_test_pids = df_train['pid'].unique()
+            test_pids = set(pids) - set(non_test_pids)
             rng = np.random.RandomState(RANDOM_STATE)
             val_pids = set(
                 rng.choice(non_test_pids,
@@ -131,16 +135,19 @@ def main():
                         f.write('\n')
 
             save_ndjson(set(non_test_pids), outdir / 'train_val.ndjson')
-            save_ndjson(set(pids) - set(non_test_pids), outdir / 'test.ndjson')
+            save_ndjson(test_pids, outdir / 'test.ndjson')
         df_test = df_all[df_all['set_id'] == test_id]
-        assert df_test['pid'].nunique() == len(set(pids) - set(non_test_pids)), f'Size mismatch {df_test["pid"].nunique()} vs {len(set(pids) - set(non_test_pids))}'
+        assert df_test['pid'].nunique() == len(test_pids), f'Size mismatch {df_test["pid"].nunique()} vs {len(test_pids)}'
         assert isinstance(df_train, pd.DataFrame) and isinstance(
             df_val, pd.DataFrame) and isinstance(df_test, pd.DataFrame)
         logger.info('train, val, test = %d, %d, %d', len(df_train),
                     len(df_val), len(df_test))
-        df_train.to_csv(outdir / 'trainset.csv', index=False)
-        df_val.to_csv(outdir / 'valset.csv', index=False)
-        df_test.to_csv(outdir / 'testset.csv', index=False)
+        for df_sub, name in ((df_train, 'train'), (df_val, 'val'), (df_test, 'test')):
+            df_sub.to_csv(outdir / f'{name}set.csv', index=False)
+            df_sub.to_pickle(outdir / f'{name}set.pkl')
+        # df_train.to_csv(outdir / 'trainset.csv', index=False)
+        # df_val.to_csv(outdir / 'valset.csv', index=False)
+        # df_test.to_csv(outdir / 'testset.csv', index=False)
 
 
 

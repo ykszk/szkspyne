@@ -37,6 +37,17 @@ def base_transform(x: np.ndarray, kps=None):
         return x, kps
 
 
+def base_kps_transform(
+        img, kps, flip_pairs) -> Tuple[np.ndarray, point_utils.PointsList]:
+    img, kps = base_transform(img, kps)
+    return img, kps
+
+
+def test_transform(img) -> np.ndarray:
+    img = base_transform(img)
+    assert isinstance(img, np.ndarray)
+    return img
+
 def invert_base(x):
     x = np.clip(x, 0, 1)
     x = np.round(x * 255, out=x)
@@ -80,8 +91,8 @@ class RandomClahe(ImageOnlyTransform):
 img_tfs = [
     A.HorizontalFlip(p=0.25),
     # RandomClahe(always_apply=True),
-    A.RandomBrightnessContrast(brightness_limit=0.4, contrast_limit=0.2,
-                               p=.25),
+    # A.RandomBrightnessContrast(brightness_limit=0.4, contrast_limit=0.2,
+    #                            p=.25),
     A.Affine(scale={
         'x': (.9, 1.1),
         'y': (.9, 1.1)
@@ -90,19 +101,22 @@ img_tfs = [
              shear=[-5, 5],
              p=.25),
     A.GaussNoise(var_limit=.02, p=.25),
-    A.Normalize(mean=0.485, std=0.229),
-    # ToTensorV2()
+    # A.Normalize(mean=0.485, std=0.229),
+    ToTensorV2()
 ]
+
+# Use `A.ReplayCompose` to retrospectively access to the `applied` boolean parameter
 album_transform = A.ReplayCompose(img_tfs,
                                   keypoint_params=A.KeypointParams(
                                       format='yx', remove_invisible=False))
 
-CROPPER = A.RandomResizedCrop(768, 512, [.9, 1.1], [.9, 1.1], p=1)
+CROP_HEIGHT, CROP_WIDTH = 512, 512
+CROPPER = A.RandomResizedCrop(CROP_HEIGHT, CROP_WIDTH, [.05, .20], [.8, 1.2], p=1)
 album_crop_transform = A.ReplayCompose([CROPPER] + img_tfs,
                                   keypoint_params=A.KeypointParams(
                                       format='yx', remove_invisible=False))
 
-album_base_crop_transform = A.ReplayCompose([CROPPER, A.Normalize(mean=0.485, std=0.229)],
+album_base_crop_transform = A.ReplayCompose([A.CenterCrop(CROP_HEIGHT, CROP_WIDTH, always_apply=True), A.Normalize(mean=0.485, std=0.229)],
                                   keypoint_params=A.KeypointParams(
                                       format='yx', remove_invisible=False))
 
@@ -111,6 +125,11 @@ import warnings
 
 def _random_transform(x: np.ndarray, keypoints, flip_pairs: List[Tuple[int,
                                                                       int]], tf_func):
+    # print(1, x.shape)
+    x, keypoints = base_transform(x, keypoints)
+    x = x[0] # remove channel dim
+    # print(2, x.shape)
+    # print(keypoints)
     sizes = [len(ps) for ps in keypoints]
     flat_points = point_utils.flatten_nest(keypoints)
     with warnings.catch_warnings():
@@ -123,7 +142,9 @@ def _random_transform(x: np.ndarray, keypoints, flip_pairs: List[Tuple[int,
             if tf['applied']:
                 for i, j in flip_pairs:
                     keypoints[i], keypoints[j] = keypoints[j], keypoints[i]
-    x = x[np.newaxis]
+    # x = x[np.newaxis]
+    # print('batch shape', x.shape)
+    # print(3, x.shape)
     return x, keypoints
 
 def random_transform(x: np.ndarray, keypoints, flip_pairs: List[Tuple[int,

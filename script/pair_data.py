@@ -6,6 +6,7 @@ from typing import List
 from pathlib import Path
 import json
 import argparse
+import sys
 
 parser = argparse.ArgumentParser(description='Pair pre-op left-right bend.')
 parser.add_argument(
@@ -21,7 +22,10 @@ exclude_flags = set(['除外', '側面右向き'])
 all_data = list(
     filter(lambda d: len(exclude_flags.intersection(d['flags'])) == 0,
            all_data))
-len(all_data)
+all_data = list(
+    filter(lambda d: (not d['filepath'].startswith('SSS')) and (not d['filepath'].startswith('CLO')),
+           all_data))
+print('all data', len(all_data))
 # %%
 ap_data = [d for d in all_data if d['image_type'] == 'ap_whole']
 for d in ap_data:
@@ -36,7 +40,7 @@ for d in ap_data:
     d.pop('rectangle', None)
     d.pop('imageWidth', None)
     d.pop('imageHeight', None)
-print(len(ap_data))
+print('ap data', len(ap_data))
 #%% flexion pairs
 df = pd.DataFrame(ap_data)
 df.sort_values('filepath',
@@ -74,7 +78,7 @@ df_complete.reset_index(drop=True, inplace=True)
 df_complete.drop_duplicates(['PatientID', 'StudyDate', 'pose_id'],
                             inplace=True)
 del df_complete['gai']
-print(len(complete_pids))
+print('complete pids', len(complete_pids))
 df_complete.to_csv(data_dir / 'ap_bend_completed_set.csv',
                    index=False,
                    encoding='utf8')
@@ -118,4 +122,5 @@ df_complete.sort_values(['PatientID', 'StudyDate'], inplace=True)
 df_complete.to_csv(data_dir / 'ap_op_completed_set.csv',
                    index=False,
                    encoding='utf8')
-df_complete.tail(40)
+
+sys.exit(0)

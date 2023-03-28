@@ -38,13 +38,17 @@ for old in tqdm(exp_data):
                     'shape_type': shape,
                     'flags': {}
                 })
-    stem = '_'.join(Path(old['filepath']).parts[1:])
+    filepath = Path(old['filepath'])
+    if filepath.parts[0] in ['SSS', 'CLO']:
+        stem = filepath.stem
+    else:
+        stem = '_'.join(filepath.with_suffix('').parts[1:])
     new = {
         "version": "4.5.7",
         'flags': {f: True
                   for f in flags},
         'shapes': new_shapes,
-        'imagePath': stem,
+        'imagePath': stem + '.jpg',
         'imageData': None,
         'imageHeight': old['imageHeight'],
         'imageWidth': old['imageWidth']

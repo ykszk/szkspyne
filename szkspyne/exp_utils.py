@@ -9,7 +9,11 @@ import numpy as np
 from typing import Sequence, Tuple, List, Set
 from pathlib import Path
 from PIL import Image
+from joblib import Parallel, delayed
+from tqdm import tqdm
+from logzero import logger
 
+import img_utils, transforms
 from settings import LABEL_NAMES
 
 
@@ -22,11 +26,10 @@ def plot_history(df):
     sns.lineplot(data=melted, x='step', y='loss', hue='subset')
 
 
-
 def load_data(
         row, data_root: Path,
         label_names: Sequence[str]) -> Tuple[np.ndarray, List[np.ndarray]]:
-    '''Load data from a row.
+    '''Load data from a row. Keypoints should be np.ndarray
     '''
     img_path = data_root / row.filepath
     x = np.array(Image.open(img_path))
@@ -59,7 +62,38 @@ def _load_data(
     return x, kp
 
 
-def ndjson2csv(filename: Union[str, Path], exclude_flags: Set[str]) -> pd.DataFrame:
+def load_dataset(df: pd.DataFrame, height: Union[int, None], data_root: Path,
+                 label_names: Sequence[str], num_workers: int,
+                 down_factor: int, clahe: bool):
+    '''
+    load images and keypoints
+    '''
+
+    def load(row):
+        x, kp = load_data(row, data_root, label_names)
+        assert kp[0].size != 0
+        if height is not None:
+            x, kp = img_utils.resize_height(height, x, kp)
+        if clahe:
+            x = transforms.apply_clahe(x)
+        return x, kp
+
+    data = Parallel(n_jobs=num_workers)(
+        delayed(load)(row) for _, row in tqdm(df.iterrows(), total=len(df)))
+    xs, kps = zip(*data)
+
+    shapes = [x.shape for x in xs]
+    max_shape = np.max(shapes, axis=0)
+
+    new_shape = (down_factor *
+                 np.ceil(np.array(max_shape) / down_factor)).astype(
+                     np.int64).tolist()
+    xs = [img_utils.pad_to_shape(x, new_shape, 0) for x in xs]
+    return xs, kps
+
+
+def ndjson2csv(filename: Union[str, Path],
+               exclude_flags: Set[str]) -> pd.DataFrame:
     with open(filename) as f:
         lines = f.readlines()
     rows = []
@@ -70,7 +104,7 @@ def ndjson2csv(filename: Union[str, Path], exclude_flags: Set[str]) -> pd.DataFr
         if len(intxn) > 0:
             print('Skip', data['filepath'], intxn)
             continue
-        if 'circle' in data:  # TODO: This is temporary. Circles should be handled properly in the future!
+        if 'circle' in data:  # TODO: This is temporary. Circles should be handled as circles in the future!
             data['point'].update(data['circle'])
         points = {
             k: np.array(p)[:, 0]
@@ -116,7 +150,7 @@ def main():
     def command_load_data(args):
         csv_filename, data_root, label_names = args.csv, args.data_root, args.label_names
         if csv_filename.endswith('.ndjson'):
-            df = ndjson2csv(csv_filename)
+            df = ndjson2csv(csv_filename, set())
         else:
             df = pd.read_csv(csv_filename)
         from img_utils import resize_height
@@ -160,7 +194,7 @@ def main():
         logger.info('Transform')
         csv_filename, data_root, label_names = args.csv, args.data_root, args.label_names
         if csv_filename.endswith('.ndjson'):
-            df = ndjson2csv(csv_filename)
+            df = ndjson2csv(csv_filename, set())
         else:
             df = pd.read_csv(csv_filename)
         from img_utils import resize_height
@@ -207,14 +241,26 @@ def main():
                           help='Sigma for heatmaps: %(default)d',
                           type=int,
                           default=5)
+    p_loader.add_argument('--transform',
+                          help='Transformation: %(default)s',
+                          choices=['random', 'base'],
+                          default='random')
     p_loader.add_argument('--output',
                           help='Optional output image. e.g. kp_dataset.svg')
+    p_loader.add_argument(
+        '--mhd_x',
+        help='Optional output mhd image for training input. e.g. kp_dataset.mhd'
+    )
+    p_loader.add_argument(
+        '--mhd_y',
+        help=
+        'Optional output mhd image for training output. e.g. kp_dataset.mhd')
 
     def command_loader(args):
         logger.info('Loader')
         csv_filename, data_root, label_names = args.csv, args.data_root, args.label_names
         if csv_filename.endswith('.ndjson'):
-            df = ndjson2csv(csv_filename)
+            df = ndjson2csv(csv_filename, set())
         else:
             df = pd.read_csv(csv_filename)
         from img_utils import resize_height, pad_to_shape
@@ -224,26 +270,17 @@ def main():
         from torch.utils.data import DataLoader
 
         flip_pairs = settings.FLIP_PAIRS
-        plt.figure(figsize=(7, 7))
-        xs, kps = [], []
-        for idx, row in df.sample(n=args.rows).iterrows():
-            logger.info('%s', idx)
-            x, kp = load_data(row, Path(data_root), label_names)
-            x, kp = resize_height(args.height, x, kp)
-            xs.append(x), kps.append(kp)
-        shapes = [x.shape for x in xs]
-        max_shape = np.max(shapes, axis=0)
         down_factor = 256
-        new_shape = (down_factor *
-                        np.ceil(np.array(max_shape) / down_factor)).astype(
-                            np.int64).tolist()
-        logger.info('Pad to %s', new_shape)
-        xs = [pad_to_shape(x, new_shape, 0) for x in xs]
+        xs, kps = load_dataset(df.sample(n=args.rows), args.height,
+                               Path(data_root), label_names, 4, down_factor,
+                               True)
+
+        tf = transforms.random_transform if args.transform == 'random' else transforms.base_kps_transform
         dataset = KeypointDataset(xs,
                                   kps,
                                   None,
                                   flip_pairs,
-                                  transforms.random_transform,
+                                  tf,
                                   sigma=args.sigma)
         loader = DataLoader(
             dataset,
@@ -251,18 +288,35 @@ def main():
             batch_size=args.rows,
             num_workers=4,
         )
+        plt.figure(figsize=(10, 10))
         for batch_xs, batch_ys in loader:
             for i_subplot, (x, y) in enumerate(zip(batch_xs, batch_ys)):
-                # import mhd
-                # mhd.write(f'{i_subplot}.mha', y.numpy())
-                plt.subplot(args.rows, len(y)+1, i_subplot*(len(y)+1)+1)
+                plt.subplot(args.rows,
+                            len(y) + 1,
+                            i_subplot * (len(y) + 1) + 1)
                 plt.imshow(x.squeeze(), 'gray')
                 plt.axis('off')
                 for i, hm in enumerate(y):
-                    u8img = np.round(np.clip(hm.numpy(), 0, 1)*255).astype(np.uint8)
-                    plt.subplot(args.rows, len(y)+1, i_subplot*(len(y)+1)+i+2)
+                    u8img = np.round(np.clip(hm.numpy(), 0, 1) * 255).astype(
+                        np.uint8)
+                    plt.subplot(args.rows,
+                                len(y) + 1,
+                                i_subplot * (len(y) + 1) + i + 2)
                     plt.imshow(u8img, 'gray')
                     plt.axis('off')
+            if args.mhd_x:
+                import mhd
+                logger.info('Save x batch')
+                print('batch shape in utils', batch_xs.shape)
+                batch_xs = batch_xs.squeeze()  # remove channel dim
+                mhd.write(args.mhd_x, batch_xs.cpu().numpy())
+            if args.mhd_y:
+                import mhd
+                logger.info('Save y batch')
+                batch_ys = batch_ys.reshape(
+                    (-1, batch_ys.shape[2],
+                     batch_ys.shape[3]))  # merge channel and batch dims
+                mhd.write(args.mhd_y, batch_ys.cpu().numpy())
         if args.output:
             plt.gcf().savefig(args.output,
                               transparent=True,
@@ -273,11 +327,6 @@ def main():
         return 0
 
     p_loader.set_defaults(handler=command_loader)
-
-    # parser.add_argument('-s',
-    #                     '--switch',
-    #                     help='Switch argument',
-    #                     action='store_true')
 
     args = parser.parse_args()
     if not hasattr(args, 'handler'):

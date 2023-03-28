@@ -30,7 +30,7 @@ from settings import LABEL_NAMES, FLIP_PAIRS
 
 import mhd
 
-torch.backends.cudnn.benchmark = True # due to random cropping
+torch.backends.cudnn.benchmark = True  # due to random cropping
 
 
 def main():
@@ -76,6 +76,10 @@ def main():
                         metavar='<value>',
                         type=float,
                         default=.2)
+    parser.add_argument('--max-epochs',
+                        help='Max epochs: %(default)s',
+                        type=int,
+                        default=128)
     parser.add_argument('--debug',
                         help='Run in debug mode',
                         action='store_true')
@@ -100,19 +104,17 @@ def main():
     NUM_WORKERS = len(
         os.sched_getaffinity(0)) - 1  #2 if os.name == 'nt' else 0
     NUM_WORKERS = min(NUM_WORKERS, 8)
-    # if NUM_WORKERS > 8:
-    #     NUM_WORKERS = max(10, NUM_WORKERS // 2)
     logger.info('workers %d', NUM_WORKERS)
-    EPOCHS = 1 if DEBUG else 128  # TODO:
+    EPOCHS = 1 if DEBUG else args.max_epochs
     if DEBUG:
         logger.warning('In debug mode')
     BATCH_SIZE = args.batch_size
     HEIGHT = args.height  # 256 * 5
     SIGMA = args.sigma
 
-    df_train = pd.read_csv(indir / 'trainset.csv')
-    df_val = pd.read_csv(indir / 'valset.csv')
-    df_test = pd.read_csv(indir / 'testset.csv')
+    df_train = pd.read_pickle(indir / 'trainset.pkl')
+    df_val = pd.read_pickle(indir / 'valset.pkl')
+    df_test = pd.read_pickle(indir / 'testset.pkl')
     outdir = indir
     logger.info('train, val, test = %d, %d, %d', len(df_train), len(df_val),
                 len(df_test))
@@ -129,42 +131,22 @@ def main():
         with open(outdir / 'model_hparams.pickle', 'wb') as f:
             pickle.dump(lit_model.hparams, f)
 
-    def load_dataset(df: pd.DataFrame, height: Union[int, None], clahe: bool):
-        '''
-        load images and keypoints
-        '''
-
-        def load(row):
-            x, kp = exp_utils.load_data(row, data_root, LABEL_NAMES)
-            if height is not None:
-                x, kp = img_utils.resize_height(height, x, kp)
-            if clahe:
-                x = transforms.apply_clahe(x)
-            return x, kp
-
-        data = Parallel(n_jobs=NUM_WORKERS)(
-            delayed(load)(row)
-            for _, row in tqdm(df.iterrows(), total=len(df)))
-        xs, kps = zip(*data)
-
-        shapes = [x.shape for x in xs]
-        max_shape = np.max(shapes, axis=0)
-
-        new_shape = (down_factor *
-                     np.ceil(np.array(max_shape) / down_factor)).astype(
-                         np.int64).tolist()
-        logger.info('Pad to %s', new_shape)
-        xs = [img_utils.pad_to_shape(x, new_shape, 0) for x in xs]
-        return xs, kps
-
     logger.info('load train set')
     height = None if args.train_cropped else HEIGHT
-    train_xs, train_kps = load_dataset(df_train, height, False)
+    train_xs, train_kps = exp_utils.load_dataset(df_train, height, data_root,
+                                                 LABEL_NAMES, NUM_WORKERS,
+                                                 down_factor, args.clahe)
+    logger.info('Pad to %s', train_xs[0].shape)
+
+    assert train_kps[0][0].size != 0, 'no points in the dataset'
     if not DEBUG:
         train_xs, train_kps = train_xs + train_xs, train_kps + train_kps  # TODO: remove
     logger.info('train size %d', len(train_xs))
     logger.info('load val set')
-    val_xs, val_kps = load_dataset(df_val, height, True)
+    val_xs, val_kps = exp_utils.load_dataset(df_val, height, data_root,
+                                             LABEL_NAMES, NUM_WORKERS,
+                                             down_factor, args.clahe)
+    logger.info('Pad to %s', val_xs[0].shape)
     logger.info('val size %d', len(val_xs))
     flip_pairs = FLIP_PAIRS
 
@@ -191,18 +173,13 @@ def main():
         **loader_kwargs,
     )
 
-    def base_kps_transform(
-            img, kps, flip_pairs) -> Tuple[np.ndarray, point_utils.PointsList]:
-        img, kps = transforms.base_transform(img, kps)
-        return img, kps
-
     dataset = point_utils.KeypointDataset(
         val_xs,
         val_kps,
         None,
         flip_pairs,
         transforms.base_crop_transform
-        if args.train_cropped else base_kps_transform,
+        if args.train_cropped else transforms.base_kps_transform,
         sigma=SIGMA)
     val_loader = DataLoader(dataset,
                             shuffle=False,
@@ -252,24 +229,22 @@ def main():
     except Exception as e:
         logger.error('Failed to plot history: %s', e)
 
-    test_xs, test_kps = load_dataset(df_test, HEIGHT, True)
+    test_xs, test_kps = exp_utils.load_dataset(df_test, height, data_root,
+                                               LABEL_NAMES, NUM_WORKERS,
+                                               down_factor, args.clahe)
     logger.info('test size %d', len(test_xs))
 
-    def test_transform(img) -> np.ndarray:
-        img = transforms.base_transform(img)
-        assert isinstance(img, np.ndarray)
-        return img
-
-    dataset = point_utils.ImageDataset(test_xs, test_transform)
+    dataset = point_utils.ImageDataset(test_xs, transforms.test_transform)
     test_loader = DataLoader(dataset,
                              shuffle=False,
                              drop_last=False,
                              **loader_kwargs)
-
-    logger.info('Start test')
-    # trainer.predict(ckpt_path='best') # reload best weight
+    # xs = next(iter(test_loader))
+    # mhd.write('tmp_test_xs.mha', xs.cpu().numpy())
     logger.info('Load weight:%s', mc.best_model_path)
     lit_model.load_from_checkpoint(mc.best_model_path)
+    logger.info('Start test')
+
     # create new trainer with `devices=1`
     trainer = pl.Trainer(
         accelerator=args.accelerator,
@@ -285,12 +260,15 @@ def main():
     # with torch.no_grad():
     #     y_preds.append(trainer.predict(dataloaders=test_loader, ckpt_path=None))
     assert y_preds is not None
+    print('minmax', y_preds[0].min(), y_preds[1].max())
     from szkspyne.apply_model import PROB_MAX
     # to channel last
     y_preds = [
-        (PROB_MAX * y_pred).permute((0,2,3,1)).type(torch.HalfTensor)  # type: ignore
+        (PROB_MAX * y_pred).permute(
+            (0, 2, 3, 1)).type(torch.ShortTensor)  # type: ignore
         for y_pred in y_preds
     ]
+    print('minmax after prob_max', y_preds[0].min(), y_preds[1].max())
     y_preds = torch.cat(y_preds, 0).cpu().numpy().astype(np.int16)
     # y_preds = np.concatenate(y_preds, axis=0)
     logger.info('End test')
