@@ -22,7 +22,7 @@ done
 wait
 echo 'end applying and fitting:' "$(date)"
 mkdir -p "$result_dir"/{auto,reference}{,/keypoints}/{ap_whole,lateral_whole}
-echo 'copy'
+echo 'collect json files from all folds'
 for image_type in ap_whole lateral_whole; do
     cp "$result_dir"/?/auto/$image_type/*.json "$result_dir"/auto/keypoints/$image_type/
 done
@@ -33,8 +33,8 @@ for image_type in ap lateral; do
     # create reference
     grep ${image_type}_whole "$result_dir"/manual_annotation.ndjson | python3 "$SCRIPT_DIR"/../script/exp2lmjson.py - "$result_dir"/reference/keypoints/${image_type}_whole
     for subdir in auto reference; do
-        echo $image_type $subdir
-        python3 "$SCRIPT_DIR"/measure_and_draw.py --hide $HIDE --height 1200 --points --image_type $image_type --parent_dir "$SCRIPT_DIR"/../../data/annotation/images/${image_type}_whole --config "$SCRIPT_DIR"/../../data/annotation/config.yaml batch "$result_dir"/$subdir/keypoints/${image_type}_whole "$result_dir"/$subdir/${image_type}_whole/ --html --image .svg --measure
+        echo measure and draw $image_type $subdir
+        python3 "$SCRIPT_DIR"/measure_and_draw.py --hide $HIDE --height 1200 --points --image_type $image_type --parent_dir "$SCRIPT_DIR"/../../data/annotation/images/all --config "$SCRIPT_DIR"/../../data/annotation/config.yaml batch "$result_dir"/$subdir/keypoints/${image_type}_whole "$result_dir"/$subdir/${image_type}_whole/ --html --image .svg --measure
         python3 "$SCRIPT_DIR"/create_svg_catalog.py --title AI "$result_dir"/$subdir/${image_type}_whole/ "$result_dir"/$subdir/catalog_${image_type}_whole.html
     done
 done
