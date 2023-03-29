@@ -53,8 +53,10 @@ def measure_json(json_fn: Path, height: int, config_filename: str,
         grp = dwg.add(dwg.g(id='Points', stroke_width=LINE_WIDTH, fill='none'))
         for label, pts in points.items():
             if label not in label_colors:
-                logger.warning('No label `%s` found in defined colors in `%s`. Using black', label, json_fn)
-                color = '#000000' # default to black
+                logger.warning(
+                    'No label `%s` found in defined colors in `%s`. Using black',
+                    label, json_fn)
+                color = '#000000'  # default to black
             else:
                 color = '#' + ''.join(
                     ['{:02x}'.format(c) for c in label_colors[label]])
@@ -69,15 +71,19 @@ def measure_json(json_fn: Path, height: int, config_filename: str,
     if len(kps['TL']) != len(kps['TR']) or len(kps['BL']) != len(kps['BR']):
         raise NotImplementedError
     else:
-        for l in LABEL_NAMES:  # remove C7
-            kps[l] = np.delete(kps[l], 0, axis=0)
         sacrum_tltr, vert_corners, disc_corners = utils.get_vert_and_disc_corners(
             kps)
+        vert_corners_w_c7 = vert_corners.copy()
+        c7_corners = vert_corners[0].copy()
+        # remove C7
+        vert_corners = np.delete(vert_corners, 0, axis=0)
+        disc_corners = np.delete(disc_corners, 0, axis=0)
         vert_corners = vert_corners.astype(np.float64)
 
         logger.debug('Compute centroids')
         sacrum_center = sacrum_tltr.mean(axis=0)
         vert_centroids = np.array([calc_centroid(c) for c in vert_corners])
+        c7_centroid = calc_centroid(c7_corners)
         logger.debug('Compute vecs')
         vert_sup_cnrs = vert_corners[:, :2]
         vert_sup_vecs = vert_sup_cnrs[:, 1] - vert_sup_cnrs[:, 0]
@@ -270,7 +276,6 @@ def measure_json(json_fn: Path, height: int, config_filename: str,
                       stroke_width=LINE_WIDTH,
                       fill='none',
                       visibility=visibility))
-            c7_centroid = vert_centroids[0]
 
             def lerp(a, b, t):
                 assert 0 <= t <= 1
@@ -314,7 +319,7 @@ def measure_json(json_fn: Path, height: int, config_filename: str,
                       stroke_width=LINE_WIDTH,
                       fill='none',
                       visibility=visibility))
-            c7_centroid = vert_centroids[0]
+
             c7pl = np.array((c7_centroid, (c7_centroid[0], img.size[1])))
             t1_corners = vert_corners[0]
             t1_sup_vec = vert_sup_vecs[0]
@@ -362,16 +367,19 @@ def measure_json(json_fn: Path, height: int, config_filename: str,
                 grp.add(
                     dwg.path((['M'] + [0, clavicle_kps[:, 1].min()] +
                               [img.size[0], clavicle_kps[:, 1].min()])))
-                if clavicle_kps[0, 1] != clavicle_kps[1, 1]: # TODO: somehow chrl.intersect_line(line_clavicle) raises ValueError of parallel
+                if clavicle_kps[0, 1] != clavicle_kps[
+                        1,
+                        1]:  # TODO: somehow chrl.intersect_line(line_clavicle) raises ValueError of parallel
                     clavicle_kps = np.array(
                         sorted(clavicle_kps, key=lambda e: e[0]))  # sort by x
 
                     try:
-                        clavicle_intersection = chrl.intersect_line(line_clavicle)
+                        clavicle_intersection = chrl.intersect_line(
+                            line_clavicle)
                         angle = calc_angle(
                             ([0, 0], [10, 0]),  # horizontal line
                             clavicle_kps)
-                    except ValueError as e: # parallel lines
+                    except ValueError as e:  # parallel lines
                         angle = 0
                         clavicle_intersection = clavicle_kps[1]
 
@@ -605,6 +613,48 @@ def measure_json(json_fn: Path, height: int, config_filename: str,
             grp.add(dwg.text(txt_angle, insert=sacrum_center, **text_attrs))
             measures['SacralSlope'] = angle_deg
 
+            # C7-SVA
+            gid = 'C7SVA'
+            logger.debug(gid)
+            drawings.append((gid, 'Sagittal Balance (p.67)'))
+            color = 'red'
+            grp = dwg.add(
+                dwg.g(id=gid,
+                      stroke=color,
+                      visibility='hidden' if gid in hide else 'visible'))
+
+            def lerp(a, b, t):
+                assert 0 <= t <= 1
+                return t * a + (1 - t) * b
+
+            sacrum_tr = sacrum_tltr[1]
+            grp.add(
+                dwg.path((['M'] + sacrum_tr.tolist() + [sacrum_tr[0]] +
+                          [lerp(sacrum_tr[1], c7_centroid[1], .7)])))
+            grp.add(
+                dwg.path((['M'] + c7_centroid.tolist() + [c7_centroid[0]] +
+                          [lerp(sacrum_tr[1], c7_centroid[1], .9)])))
+            grp.add(
+                dwg.circle(center=sacrum_tr.tolist(),
+                           r=POINT_RADIUS,
+                           stroke=color,
+                           fill=color))
+            grp.add(
+                dwg.circle(center=c7_centroid.tolist(),
+                           r=POINT_RADIUS,
+                           stroke=color,
+                           fill=color))
+            y_cb = lerp(sacrum_tr[1], c7_centroid[1], .8)
+            balance = sacrum_tr[0] - c7_centroid[0]
+            grp.add(
+                dwg.path(
+                    (['M'] + [c7_centroid[0], y_cb] + [sacrum_tr[0], y_cb])))
+            grp.add(
+                dwg.text('{:.1f} pixels'.format(balance),
+                         insert=[max(c7_centroid[0], sacrum_tr[0]), y_cb],
+                         **text_attrs))
+            measures[gid] = balance
+
             # Pelvic Incidence
             circles = get_circle_dict(lm_data)
             if 'FemoralHead' in circles and len(circles['FemoralHead']) == 2:
@@ -732,7 +782,7 @@ def measure_json(json_fn: Path, height: int, config_filename: str,
                           visibility='hidden' if gid in hide else 'visible'))
                 grps[gid] = grp
                 drawings.append((gid, name))
-            for i, corners in enumerate(vert_corners, 1):
+            for i, corners in enumerate(vert_corners_w_c7, 1):
                 for pair, ul, color in ((corners[:2], 'upper', 'red'),
                                         (corners[2:], 'lower', 'blue')):
                     name = f'V{i}_{ul}_slope'
@@ -896,14 +946,15 @@ def main():
             html = (outdir /
                     fn.name).with_suffix('.html') if args.html else None
             return measure_json(fn, args.height, args.config, args.points,
-                         args.numbers, args.image_type, image, html, measure,
-                         args.template, '{} - {}'.format(fn.stem, args.title),
-                         args.hide, not args.external_svg, args.parent_dir,
-                         args.slopes)
+                                args.numbers, args.image_type, image, html,
+                                measure, args.template,
+                                '{} - {}'.format(fn.stem, args.title),
+                                args.hide, not args.external_svg,
+                                args.parent_dir, args.slopes)
+
         json_filenames = sorted(Path(args.input).glob('*.json'))
         all_measures = Parallel(n_jobs=args.workers)(
-            delayed(do)(fn)
-            for fn in tqdm.tqdm(json_filenames))
+            delayed(do)(fn) for fn in tqdm.tqdm(json_filenames))
         assert all_measures is not None
         if args.ndjson:
             with open(args.ndjson, 'w') as f:
@@ -924,10 +975,6 @@ def main():
     if not hasattr(args, 'handler'):
         print('No command was specified.')
         parser.print_help()
-        sys.exit(1)
-
-    if args.slopes and (not args.measure):
-        print('`--slopes` option has no effect without `--measure` option')
         sys.exit(1)
 
     return (args.handler(args))
