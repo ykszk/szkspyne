@@ -54,7 +54,7 @@ def measure_json(json_fn: Path, height: int, config_filename: str,
         for label, pts in points.items():
             if label not in label_colors:
                 logger.warning('No label `%s` found in defined colors in `%s`. Using black', label, json_fn)
-                color = '#black'
+                color = '#000000' # default to black
             else:
                 color = '#' + ''.join(
                     ['{:02x}'.format(c) for c in label_colors[label]])
@@ -794,6 +794,7 @@ def measure_json(json_fn: Path, height: int, config_filename: str,
                     'document.getElementById("svgfile").contentDocument',
                     checkboxes='\n'.join(cbs),
                     title=html_title))
+    return measures
 
 
 def main():
@@ -863,6 +864,8 @@ def main():
     sub_batch.add_argument('--measure',
                            help='Save measurements json',
                            action='store_true')
+    sub_batch.add_argument('--ndjson',
+                           help='Save all measurements as a ndjson file')
     sub_batch.add_argument('--html', help='Save html', action='store_true')
     sub_batch.add_argument('--image',
                            help='Save image',
@@ -892,16 +895,23 @@ def main():
                      fn.name).with_suffix(args.image) if args.image else None
             html = (outdir /
                     fn.name).with_suffix('.html') if args.html else None
-            measure_json(fn, args.height, args.config, args.points,
+            return measure_json(fn, args.height, args.config, args.points,
                          args.numbers, args.image_type, image, html, measure,
                          args.template, '{} - {}'.format(fn.stem, args.title),
                          args.hide, not args.external_svg, args.parent_dir,
                          args.slopes)
-
-        Parallel(n_jobs=args.workers)(
+        json_filenames = sorted(Path(args.input).glob('*.json'))
+        all_measures = Parallel(n_jobs=args.workers)(
             delayed(do)(fn)
-            for fn in tqdm.tqdm(sorted(Path(args.input).glob('*.json'))))
-        return 1
+            for fn in tqdm.tqdm(json_filenames))
+        assert all_measures is not None
+        if args.ndjson:
+            with open(args.ndjson, 'w') as f:
+                for fn, ms in zip(json_filenames, all_measures):
+                    ms['filename'] = fn.stem
+                    f.write(json.dumps(ms, ensure_ascii=False))
+                    f.write('\n')
+        return 0
 
     sub_batch.set_defaults(handler=command_batch)
 
