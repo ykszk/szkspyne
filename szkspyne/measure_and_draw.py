@@ -362,14 +362,19 @@ def measure_json(json_fn: Path, height: int, config_filename: str,
                 grp.add(
                     dwg.path((['M'] + [0, clavicle_kps[:, 1].min()] +
                               [img.size[0], clavicle_kps[:, 1].min()])))
-                if clavicle_kps[0, 1] != clavicle_kps[1, 1]:
+                if clavicle_kps[0, 1] != clavicle_kps[1, 1]: # TODO: somehow chrl.intersect_line(line_clavicle) raises ValueError of parallel
                     clavicle_kps = np.array(
                         sorted(clavicle_kps, key=lambda e: e[0]))  # sort by x
-                    clavicle_intersection = chrl.intersect_line(line_clavicle)
 
-                    angle = calc_angle(
-                        ([0, 0], [10, 0]),  # horizontal line
-                        clavicle_kps)
+                    try:
+                        clavicle_intersection = chrl.intersect_line(line_clavicle)
+                        angle = calc_angle(
+                            ([0, 0], [10, 0]),  # horizontal line
+                            clavicle_kps)
+                    except ValueError as e: # parallel lines
+                        angle = 0
+                        clavicle_intersection = clavicle_kps[1]
+
                     angle = -angle
                     angle_deg = np.rad2deg(angle)
                     txt_angle = '{:.1f}°'.format(angle_deg)
