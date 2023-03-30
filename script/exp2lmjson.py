@@ -3,6 +3,7 @@ import sys
 import argparse
 import json
 from pathlib import Path
+from tqdm import tqdm
 
 parser = argparse.ArgumentParser(
     description='From ndjson for exp to ndjson of labelme.')
@@ -19,7 +20,11 @@ else:
     with open(args.input) as f:
         exp_data = [json.loads(l) for l in f]
 
-from tqdm import tqdm
+if outdir.suffix=='.ndjson':
+    # empty the file
+    with open(outdir, 'w'):
+        pass
+
 for old in tqdm(exp_data):
     image_type = old.pop('image_type')
     flags = old.pop('flags')
@@ -54,6 +59,12 @@ for old in tqdm(exp_data):
         'imageWidth': old['imageWidth']
     }
 
-    filename = (outdir / stem).with_suffix('.json')
-    with open(filename, 'w') as f:
-        json.dump(new, f, indent=2, ensure_ascii=False)
+    if outdir.suffix=='.ndjson':
+        new['filename'] = stem
+        with open(outdir, 'a') as f:
+            f.write(json.dumps(new))
+            f.write('\n')
+    else:
+        filename = (outdir / stem).with_suffix('.json')
+        with open(filename, 'w') as f:
+            json.dump(new, f, indent=2, ensure_ascii=False)

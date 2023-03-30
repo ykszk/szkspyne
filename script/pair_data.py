@@ -79,7 +79,7 @@ df_complete.drop_duplicates(['PatientID', 'StudyDate', 'pose_id'],
                             inplace=True)
 del df_complete['gai']
 print('complete pids', len(complete_pids))
-df_complete.to_csv(data_dir / 'ap_bend_completed_set.csv',
+df_complete.to_csv(data_dir / 'ap_flex_completed_set.csv',
                    index=False,
                    encoding='utf8')
 df_complete.head(10)

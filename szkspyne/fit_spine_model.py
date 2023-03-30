@@ -148,12 +148,13 @@ if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(
         description='Fit PCA point model to the given heatmap.')
-    parser.add_argument('input',
-                        help='Input data directory',
-                        metavar='<input>',
-                        nargs='?',
-                        default=Path('../../data/annotation/images') /
-                        image_type)
+    parser.add_argument(
+        'input',
+        help=
+        'Either (1) an input data directory containing json and mha pairs or (2) an input njson and a mha',
+        metavar='<input>',
+        nargs='+',
+        default=Path('../../data/annotation/images') / image_type)
     parser.add_argument(
         '--output', help='Output directory. Use input directory by default.')
     parser.add_argument(
@@ -216,18 +217,16 @@ if __name__ == '__main__':
         device = args.device
 
     logger.info('Device:%s', device)
-    data_dir = Path(args.input)
-    outdir = data_dir
-    if args.output:
-        outidr = Path(args.output)
-    skipped = []
+
     channel_first = args.channel_first
     pca_models = [TorchPCA(fn) for fn in args.model]
-    for fn in tqdm(sorted((data_dir).glob('*.json'))):
-        file_id = fn.stem
-        heatmaps, h = mhd.read(str(data_dir / f'{file_id}.mha'))
+    h_flip = False
+
+    def do(original_json: dict, heatmaps: np.ndarray):
         if not channel_first:
             heatmaps = heatmaps.transpose(2, 0, 1)
+        if h_flip:  # horizontal flip
+            heatmaps = np.flip(heatmaps, axis=2)
         anchor_maps = [heatmaps[i] for i in ANCHOR_INDICES]
         # heatmaps = heatmaps[:4]
 
@@ -300,10 +299,8 @@ if __name__ == '__main__':
             plt.clf()
 
         if len(results) == 0:
-            skipped.append(file_id)
-            continue
-        with open(str(data_dir / f'{file_id}.json')) as f:
-            original_json = json.load(f)
+            # skipped.append(file_id)
+            return None
         result_json = original_json.copy()
         results.sort(key=lambda e: e[1])  # sort results by loss
         best_name, best_loss, best_coefs, best_pca = results[0]
@@ -314,6 +311,10 @@ if __name__ == '__main__':
         s = original_json['imageHeight'] / IMG_HEIGHT
         scaled_warped = [(s * w.detach().cpu().numpy()).tolist()
                          for w in warped]
+        # if h_flip:
+        #     scaled_warped = [[(e[0], original_json['imageWidth']-e[1]) for e in sw] for sw in scaled_warped]
+        # for sw in scaled_warped:
+        #     sw[:, 1] = original_json['imageWidth'] - sw[:, 1]
 
         original_shapes = result_json['shapes']
         for l in pca.labels + settings.ANCHOR_LABEL_NAMES:
@@ -325,8 +326,60 @@ if __name__ == '__main__':
         result_shapes.extend(original_shapes)
         result_json['shapes'] = result_shapes
         result_json['flags'] = {best_name: True}
-        with open(outdir / f'{file_id}.json', 'w') as f:
-            json.dump(result_json, f, indent=2)
+        return result_json
+
+    skipped = []
+
+    if len(args.input)==1:
+        print('Directory input')
+        data_dir = Path(args.input[0])
+        outdir = data_dir
+        if args.output:
+            outidr = Path(args.output)
+        for fn in tqdm(sorted((data_dir).glob('*.json'))):
+            # logger.warning('FN: %s', fn)
+            file_id = fn.stem
+            heatmaps, h = mhd.read(str(data_dir / f'{file_id}.mha'))
+            with open(str(data_dir / f'{file_id}.json')) as f:
+                original_json = json.load(f)
+            result_json = do(original_json, heatmaps)
+            if result_json is None:
+                skipped.append(file_id)
+            else:
+                with open(outdir / f'{file_id}.json', 'w') as f:
+                    json.dump(result_json, f, indent=2)
+    elif len(args.input)==2:
+        import sys
+        ndjson_fn = Path(args.input[0])
+        hm_filename = Path(args.input[1])
+        if args.output is None or not args.output.endswith('.ndjson'):
+            print('Output ndjson should be specified for ndjson input')
+        if ndjson_fn.suffix!='.ndjson':
+            print('Invalid input ndjson filename', ndjson_fn.name)
+        all_heatmaps, h = mhd.read(hm_filename)
+        ndjson = []
+        with open(ndjson_fn) as f:
+            for line in f:
+                ndjson.append(json.loads(line))
+        results = []
+        for original_json, heatmaps in tqdm(zip(ndjson, all_heatmaps), total=len(ndjson)):
+            file_id = original_json['filename']
+            result_json = do(original_json, heatmaps)
+            if result_json is None:
+                skipped.append(file_id)
+            else:
+                results.append(result_json)
+        with open(args.output, 'w') as f:
+            for r in results:
+                f.write(json.dumps(r, ensure_ascii=False))
+                f.write('\n')
+    else:
+        print('Invalid input')
+
+
     if len(skipped) > 0:
+        print(f'Save skipped {len(skipped)} files', args.skipped)
         with open(args.skipped, 'w') as f:
             f.write('\n'.join(skipped))
+    else:
+        print('No skipped files')

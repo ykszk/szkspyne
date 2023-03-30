@@ -2,7 +2,7 @@
 from pathlib import Path
 import json
 import sys
-from typing import List, Union, Tuple
+from typing import List, Union, Any
 import numpy as np
 import logzero
 from logzero import logger
@@ -20,25 +20,24 @@ POINT_RADIUS = 2.0
 PERP_BOX_SIZE = (20, 20)  # perpendicular sign
 
 
-def measure_json(json_fn: Path, height: int, config_filename: str,
+def measure_json(lm_data: Any, height: int, config_filename: str,
                  draw_points: bool, draw_vertebral_number: bool,
-                 image_type: Union[str, None], image_filename: Union[str,
+                 image_type: Union[str, None], image_filename: Union[Path,
                                                                      None],
-                 html_filename: Union[str,
-                                      None], measure_filename: Union[str,
+                 html_filename: Union[Path,
+                                      None], measure_filename: Union[Path,
                                                                      None],
                  template_directory: str, html_title: str, hide: List[str],
-                 embed_svg: bool, image_dir: Union[str,
-                                                   None], calc_slopes: bool):
-    with open(json_fn, encoding='utf8') as f:
-        lm_data = json.load(f)
+                 embed_svg: bool, image_dir: Path, calc_slopes: bool):
+    # with open(json_fn, encoding='utf8') as f:
+    #     lm_data = json.load(f)
 
     if not embed_svg and not str(image_filename).endswith('.svg'):
         raise RuntimeError('.svg output is required to link external svg')
 
-    if not image_dir:
-        image_dir = str(json_fn.parent)
-    dwg = Canvas(lm_data, Path(image_dir), height)
+    # if not image_dir:
+    #     image_dir = str(json_fn.parent)
+    dwg = Canvas(lm_data, image_dir, height)
     points, kps, text_attrs, img = dwg.points, dwg.kps, dwg.text_attrs, dwg.img
 
     with open(config_filename) as f:
@@ -55,7 +54,7 @@ def measure_json(json_fn: Path, height: int, config_filename: str,
             if label not in label_colors:
                 logger.warning(
                     'No label `%s` found in defined colors in `%s`. Using black',
-                    label, json_fn)
+                    label, lm_data['filename'])
                 color = '#000000'  # default to black
             else:
                 color = '#' + ''.join(
@@ -900,10 +899,16 @@ def main():
     sub_single.add_argument('--image', help='Save image (svg or png)')
 
     def command_single(args):
-        measure_json(args.input, args.height, args.config, args.points,
+        if args.parent_dir:
+            image_dir = Path(args.parent_dir)
+        else:
+            image_dir = Path(args.input).parent
+        with open(args.input) as f:
+            lm_data = json.load(f)
+        measure_json(lm_data, args.height, args.config, args.points,
                      args.numbers, args.image_type, args.image, args.html,
                      args.measure, args.template, args.title, args.hide,
-                     not args.external_svg, args.parent_dir, args.slopes)
+                     not args.external_svg, image_dir, args.slopes)
 
     sub_single.set_defaults(handler=command_single)
 
@@ -937,24 +942,57 @@ def main():
         from joblib import Parallel, delayed
         import tqdm
 
-        def do(fn):
-            logger.info(str(fn))
+        def do(fn: Path):
             measure = (outdir /
                        fn.name).with_suffix('.json') if args.measure else None
             image = (outdir /
                      fn.name).with_suffix(args.image) if args.image else None
             html = (outdir /
                     fn.name).with_suffix('.html') if args.html else None
-            return measure_json(fn, args.height, args.config, args.points,
+            if args.parent_dir:
+                image_dir = Path(args.parent_dir)
+            else:
+                image_dir = fn.parent
+            with open(fn) as f:
+                lm_data = json.load(f)
+                lm_data['filename'] = fn.stem
+            return measure_json(lm_data, args.height, args.config, args.points,
                                 args.numbers, args.image_type, image, html,
                                 measure, args.template,
-                                '{} - {}'.format(fn.stem, args.title),
-                                args.hide, not args.external_svg,
-                                args.parent_dir, args.slopes)
+                                '{} - {}'.format(fn.stem,
+                                                 args.title), args.hide,
+                                not args.external_svg, image_dir, args.slopes)
 
-        json_filenames = sorted(Path(args.input).glob('*.json'))
-        all_measures = Parallel(n_jobs=args.workers)(
-            delayed(do)(fn) for fn in tqdm.tqdm(json_filenames))
+        def do_ndjson(fn: Path, lm_data):
+            measure = (outdir /
+                       lm_data['filename']).with_suffix('.json') if args.measure else None
+            image = (outdir /
+                     lm_data['filename']).with_suffix(args.image) if args.image else None
+            html = (outdir /
+                    lm_data['filename']).with_suffix('.html') if args.html else None
+            if args.parent_dir:
+                image_dir = Path(args.parent_dir)
+            else:
+                image_dir = fn.parent
+            return measure_json(lm_data, args.height, args.config, args.points,
+                                args.numbers, args.image_type, image, html,
+                                measure, args.template,
+                                '{} - {}'.format(fn.stem,
+                                                 args.title), args.hide,
+                                not args.external_svg, image_dir, args.slopes)
+
+        if Path(args.input).is_dir():
+            json_filenames = sorted(Path(args.input).glob('*.json'))
+            all_measures = Parallel(n_jobs=args.workers)(
+                delayed(do)(fn) for fn in tqdm.tqdm(json_filenames))
+        else:
+            with open(args.input) as f:
+                ndjson = [json.loads(line) for line in f]
+            indir = Path(args.input).parent
+            json_filenames = [indir / data['filename'] for data in ndjson]
+            all_measures = Parallel(n_jobs=args.workers)(
+                delayed(do_ndjson)(Path(args.input), data)
+                for data in tqdm.tqdm(ndjson))
         assert all_measures is not None
         if args.ndjson:
             with open(args.ndjson, 'w') as f:

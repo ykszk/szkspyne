@@ -17,18 +17,27 @@ for image_type in IMAGE_TYPES:
     dfs = []
     for prefix, subdir in [('true ', 'reference'), ('pred ', 'auto')]:
         indir = data_root / subdir
-        rows = []
-        for fn in (indir / image_type).glob('*.json'):
-            data = {'filename': fn.stem}
-            with open(fn) as f:
-                json_data = json.load(f)
-                set_flags = json_data.pop('flags', {})
+        ndjson_fn = indir/f'measures_{image_type}.ndjson'
+        if (ndjson_fn).exists():
+            print('Use ndjson', ndjson_fn)
+            with open(ndjson_fn) as f:
+                rows = [json.loads(line) for line in f]
+        else:
+            rows = []
+            for fn in (indir / image_type).glob('*.json'):
+                with open(fn) as f:
+                    json_data = json.load(f)
+                    json_data['filename'] = fn.stem
+                    rows.append(json_data)
+        for i, json_data in enumerate(rows):
+            data = {'filename': json_data.pop('filename')}
+            set_flags = json_data.pop('flags', {})
+            if subdir == 'reference':
                 set_flags = set([k for k, v in set_flags.items() if v])
                 flags = {f: f in set_flags for f in flags_required}
-                if subdir == 'reference':
-                    data.update(flags)
-                data.update({prefix + k: v for k, v in json_data.items()})
-            rows.append(data)
+                data.update(flags)
+            data.update({prefix + k: v for k, v in json_data.items()})
+            rows[i] = data # update
         df = pd.DataFrame(rows)
         df.set_index('filename', drop=True, inplace=True)
         dfs.append(df)

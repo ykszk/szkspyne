@@ -11,6 +11,7 @@ from logzero import logger
 from sklearn.model_selection import KFold
 import exp_utils
 
+
 def main():
     parser = argparse.ArgumentParser(description='Train and Test.')
     parser.add_argument('--output',
@@ -25,6 +26,9 @@ def main():
     parser.add_argument('--debug',
                         help='Run in debug mode',
                         action='store_true')
+    parser.add_argument('--ndjson',
+                        help='Specify input ndjson',
+                        default='script/manual_annotation.ndjson')
     parser.add_argument(
         '--holdout',
         help=
@@ -46,11 +50,12 @@ def main():
     with open(outroot / 'args.json', 'w') as f:
         json.dump(args.__dict__, f, indent=2)
 
-    NDJSON_FILENAME = 'script/manual_annotation.ndjson'
-    shutil.copy(NDJSON_FILENAME, outroot)
+    NDJSON_FILENAME = outroot / 'manual_annotation.ndjson'
+    shutil.copy(args.ndjson, NDJSON_FILENAME)
     exclude_flags = set(['除外', '側面右向き'])
     df = exp_utils.ndjson2csv(NDJSON_FILENAME, exclude_flags)
     RANDOM_STATE = 2022
+
     def extract_pid(filepath: str):
         fp = Path(filepath)
         if filepath.startswith('SSS'):
@@ -59,6 +64,7 @@ def main():
             return 'CLO' + fp.stem.split('_')[0]
         else:
             return Path(filepath).parts[1]
+
     df['pid'] = df['filepath'].map(lambda pid: extract_pid(pid))
     # if True: # TODO: remove after debugging
     #     df = df[df['pid'].map(lambda e:e.startswith('OSC'))]
@@ -68,16 +74,14 @@ def main():
     logger.info('Unique pid count %d', len(pids))
     K_FOLD = args.fold
     df_all['set_id'] = -1
-    kfold = KFold(n_splits=K_FOLD,
-                  shuffle=True,
-                  random_state=RANDOM_STATE)#None if args.debug else 2022)
+    kfold = KFold(n_splits=K_FOLD, shuffle=True,
+                  random_state=RANDOM_STATE)  #None if args.debug else 2022)
     for set_id, (_, test_index) in enumerate(kfold.split(pids)):
         idset = set(pids[test_index])
         df_all.loc[df_all['pid'].map(lambda e: e in idset), 'set_id'] = set_id
     df_all.to_csv(outroot / f'dataset.csv', index=False)
 
     USE_TEST_AS_VAL = args.holdout
-
 
     def train_test(test_id):
         logger.info('test set: %d', test_id)
@@ -95,10 +99,11 @@ def main():
             rng = np.random.RandomState(RANDOM_STATE)
             val_pids = set(
                 rng.choice(non_test_pids,
-                                 size=int(0.1 * len(non_test_pids)),
-                                 replace=False))
+                           size=int(0.1 * len(non_test_pids)),
+                           replace=False))
             train_pids = set(pids) - val_pids
-            print('sizes pids, train_pids, val_pids', len(pids), len(train_pids), len(val_pids))
+            print('sizes pids, train_pids, val_pids', len(pids),
+                  len(train_pids), len(val_pids))
             df_val = df_train[df_train['pid'].map(lambda e: e in val_pids)]
             df_train = df_train[df_train['pid'].map(lambda e: e in train_pids)]
         if True:  # create ndjson files for post processing
@@ -110,8 +115,7 @@ def main():
             valid_imgs = set(df_all['filepath'])
             print('all raw data', len(all_data))
             all_data = list(
-                filter(
-                    lambda d: d['filepath'] in valid_imgs, all_data))
+                filter(lambda d: d['filepath'] in valid_imgs, all_data))
             print('all filtered data', len(all_data))
             # all_data = list(
             #     filter(
@@ -137,19 +141,20 @@ def main():
             save_ndjson(set(non_test_pids), outdir / 'train_val.ndjson')
             save_ndjson(test_pids, outdir / 'test.ndjson')
         df_test = df_all[df_all['set_id'] == test_id]
-        assert df_test['pid'].nunique() == len(test_pids), f'Size mismatch {df_test["pid"].nunique()} vs {len(test_pids)}'
+        assert df_test['pid'].nunique() == len(
+            test_pids
+        ), f'Size mismatch {df_test["pid"].nunique()} vs {len(test_pids)}'
         assert isinstance(df_train, pd.DataFrame) and isinstance(
             df_val, pd.DataFrame) and isinstance(df_test, pd.DataFrame)
         logger.info('train, val, test = %d, %d, %d', len(df_train),
                     len(df_val), len(df_test))
-        for df_sub, name in ((df_train, 'train'), (df_val, 'val'), (df_test, 'test')):
+        for df_sub, name in ((df_train, 'train'), (df_val, 'val'), (df_test,
+                                                                    'test')):
             df_sub.to_csv(outdir / f'{name}set.csv', index=False)
             df_sub.to_pickle(outdir / f'{name}set.pkl')
         # df_train.to_csv(outdir / 'trainset.csv', index=False)
         # df_val.to_csv(outdir / 'valset.csv', index=False)
         # df_test.to_csv(outdir / 'testset.csv', index=False)
-
-
 
     for test_id in range(K_FOLD):
         train_test(test_id)
