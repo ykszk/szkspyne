@@ -36,7 +36,8 @@ def save_ndjson(filename: Union[Path, str], json_list: List[dict]):
             f.write('\n')
 
 
-IGNORES = ['除外', 'L4', 'L5', 'L6', '先天性側彎']
+# IGNORES = ['除外', 'L4', 'L5', 'L6', '先天性側彎']
+IGNORES = ['L4', 'L5', 'L6', '先天性側彎']
 
 
 def load_rule_file(filename):
