@@ -4,12 +4,19 @@ import numpy as np
 import torch
 from torch.optim import Adam
 from logzero import logger
+import logzero
+log_format = '%(color)s[%(levelname)1.1s %(asctime)s.%(msecs)d %(module)s:%(lineno)d]%(end_color)s %(message)s'
+formatter = logzero.LogFormatter(fmt=log_format)
+logzero.setup_default_logger(formatter=formatter)
 import matplotlib.pyplot as plt
 from scipy.ndimage import gaussian_filter
 import json
 from PIL import Image
 from tqdm import tqdm
 import pandas as pd
+from joblib import Parallel, delayed
+import sys
+from typing import Union, Tuple
 
 import mhd
 from szkspyne import labelme_utils, settings
@@ -29,7 +36,9 @@ class TorchPCA(nn.Module):
 
     def __init__(self, filename):
         super().__init__()
-        pca = np.load(filename)
+        with np.load(filename) as a:
+            pca = {k:a[k] for k in a.keys()}
+
         self.pca = pca
         self.labels = [str(l) for l in pca['labels']]
         self.model_name = str(pca['model_name'])
@@ -141,10 +150,9 @@ def calculate_anchors(anchor_maps):
 
     return anchors
 
-
 image_type = 'lateral_whole'
 # image_type = 'ap_whole'
-if __name__ == '__main__':
+def main():
     import argparse
     parser = argparse.ArgumentParser(
         description='Fit PCA point model to the given heatmap.')
@@ -204,6 +212,18 @@ if __name__ == '__main__':
     parser.add_argument('--history',
                         help='Save optimization history',
                         action='store_true')
+    parser.add_argument(
+        '--threads',
+        help=
+        'Integer value for torch.set_num_threads(). default: %(default)d',
+        type=int,
+        default=2)
+    parser.add_argument(
+        '--jobs',
+        help=
+        'The number of jobs. default: %(default)d',
+        type=int,
+        default=2)
 
     args, unknown = parser.parse_known_args()
     if unknown:
@@ -212,7 +232,7 @@ if __name__ == '__main__':
     # The operator 'aten::index.Tensor' is not current implemented for the MPS device.
     # device = torch.device('mps' if torch.backends.mps.is_available() else 'cpu')
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-    torch.set_num_threads(4)
+    torch.set_num_threads(args.threads)
     if args.device:
         device = args.device
 
@@ -222,10 +242,10 @@ if __name__ == '__main__':
     pca_models = [TorchPCA(fn) for fn in args.model]
     h_flip = False
 
-    def do(original_json: dict, heatmaps: np.ndarray):
+    def fit(original_json: dict, heatmaps: np.ndarray):
         if not channel_first:
             heatmaps = heatmaps.transpose(2, 0, 1)
-        if h_flip:  # horizontal flip
+        if h_flip: #h_flip:  # horizontal flip
             heatmaps = np.flip(heatmaps, axis=2)
         anchor_maps = [heatmaps[i] for i in ANCHOR_INDICES]
         # heatmaps = heatmaps[:4]
@@ -328,58 +348,80 @@ if __name__ == '__main__':
         result_json['flags'] = {best_name: True}
         return result_json
 
+    n_jobs = args.jobs
     skipped = []
 
     if len(args.input)==1:
-        print('Directory input')
+        logger.info('Directory input')
         data_dir = Path(args.input[0])
         outdir = data_dir
         if args.output:
-            outidr = Path(args.output)
-        for fn in tqdm(sorted((data_dir).glob('*.json'))):
-            # logger.warning('FN: %s', fn)
+            outdir = Path(args.output)
+        def do_dirin(fn: Path):
             file_id = fn.stem
             heatmaps, h = mhd.read(str(data_dir / f'{file_id}.mha'))
             with open(str(data_dir / f'{file_id}.json')) as f:
                 original_json = json.load(f)
-            result_json = do(original_json, heatmaps)
+            result_json = fit(original_json, heatmaps)
             if result_json is None:
-                skipped.append(file_id)
+                return file_id
             else:
                 with open(outdir / f'{file_id}.json', 'w') as f:
                     json.dump(result_json, f, indent=2)
+                return None
+        fns = sorted((data_dir).glob('*.json'))
+        logger.info('Fit')
+        # from concurrent import futures
+        # with futures.ThreadPoolExecutor(n_jobs) as executor:
+        #     skipped = executor.map(do1, fns)
+        ddo1 = delayed(do_dirin)
+        skipped = Parallel(n_jobs=n_jobs)(ddo1(fn)
+                                for fn in tqdm(fns))
+        logger.info('Done')
+            
     elif len(args.input)==2:
-        import sys
         ndjson_fn = Path(args.input[0])
         hm_filename = Path(args.input[1])
         if args.output is None or not args.output.endswith('.ndjson'):
-            print('Output ndjson should be specified for ndjson input')
+            logger.error('Output ndjson should be specified for ndjson input')
         if ndjson_fn.suffix!='.ndjson':
-            print('Invalid input ndjson filename', ndjson_fn.name)
+            logger.error('Invalid input ndjson filename', ndjson_fn.name)
         all_heatmaps, h = mhd.read(hm_filename)
         ndjson = []
         with open(ndjson_fn) as f:
             for line in f:
                 ndjson.append(json.loads(line))
-        results = []
-        for original_json, heatmaps in tqdm(zip(ndjson, all_heatmaps), total=len(ndjson)):
+        def do(original_json, heatmaps) -> Tuple[Union[dict, None], Union[str, None]]:
             file_id = original_json['filename']
-            result_json = do(original_json, heatmaps)
+            result_json = fit(original_json, heatmaps)
             if result_json is None:
-                skipped.append(file_id)
+                return None, file_id
             else:
-                results.append(result_json)
+                return result_json, None
+        logger.info('Fit')
+        result_skipped = Parallel(n_jobs=n_jobs)(delayed(do)(*args)
+                                for args in tqdm(zip(ndjson, all_heatmaps), total=len(ndjson)))
+        assert result_skipped is not None
+        results, skipped = zip(*result_skipped)
+        results = [r for r in results if r]
+        logger.info('Save ndjson')
         with open(args.output, 'w') as f:
             for r in results:
                 f.write(json.dumps(r, ensure_ascii=False))
                 f.write('\n')
+        logger.info('Done')
     else:
         print('Invalid input')
+        return 1
 
-
+    skipped = [s for s in skipped if s]
     if len(skipped) > 0:
         print(f'Save skipped {len(skipped)} files', args.skipped)
         with open(args.skipped, 'w') as f:
             f.write('\n'.join(skipped))
     else:
         print('No skipped files')
+    return 0
+
+if __name__ == '__main__':
+    sys.exit(main())
