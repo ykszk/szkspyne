@@ -134,9 +134,16 @@ def main():
     p_hm2lm.set_defaults(mode='hm2lm')
 
     args = parser.parse_args()
+
     # lazy import
-    from pathlib import Path
     from logzero import logger
+    import logzero
+    log_format = '%(color)s[%(levelname)1.1s %(asctime)s.%(msecs)d %(module)s:%(lineno)d]%(end_color)s %(message)s'
+    formatter = logzero.LogFormatter(fmt=log_format)
+    logzero.setup_default_logger(formatter=formatter)
+    logger.info('Load modules')
+
+    from pathlib import Path
     import pretrained_models
     import transforms
     import img_utils
@@ -146,15 +153,19 @@ def main():
     import cv2
     from PIL import Image
     import json
+    import pydicom
     DOWN_FACTOR = 256
 
-    def load(filename, height, pad: bool):
+    def load(filename: Union[str, Path], height, pad: bool):
         # x, _ = mhd.read(filename)
-        img = Image.open(filename)
-        x = np.array(img)
+        if str(filename).endswith('.dcm') or str(filename).endswith('.dicom'):
+            x = pydicom.dcmread(filename).pixel_array
+        else:
+            img = Image.open(filename)
+            x = np.array(img)
+            if img.mode == 'I':
+                x = x.astype(np.uint16)
         original_shape = x.shape
-        if img.mode == 'I':
-            x = x.astype(np.uint16)
         # assert x.dtype == np.uint16, 'np.uint16 is expected'
         x = img_utils.resize_height(height, x)
         assert isinstance(x, np.ndarray)
@@ -191,6 +202,11 @@ def main():
         return lit_model
 
     def apply_single(args):
+        # device = 'cpu'
+        torch.set_num_threads(8)
+        device = torch.device(
+            'cuda:0') if torch.cuda.is_available() else torch.device('cpu')
+        logger.info('Use %s', device)
         logger.info('load model')
         lit_model = load_model(args)
         lit_model.eval()
@@ -201,10 +217,16 @@ def main():
         assert isinstance(x, np.ndarray)
         if x.ndim == 2:
             x = x[np.newaxis]
-        x = torch.from_numpy(x[np.newaxis])
+        # x = torch.from_numpy(x[np.newaxis], )
+        # x = torch.tensor(x, pin_memory=True)
+        logger.info('Apply model')
+        x = torch.as_tensor(x[np.newaxis], device=device)
+        # x = x.to(device)
+        lit_model.to(device)
         with torch.no_grad():
             pred = torch.sigmoid(lit_model(x))
             # pred = lit_model(x)
+        logger.info('Done')
         pred = pred.to('cpu').detach().numpy().copy()[0]
         logger.info('Pred min: %s, Pred max: %s', pred.min(), pred.max())
         if args.labelme:
