@@ -86,6 +86,9 @@ def main():
     parser.add_argument('--train_cropped',
                         help='Train for cropped images',
                         action='store_true')
+    parser.add_argument('--save_best',
+                        help='Save best weights',
+                        action='store_true')
     parser.add_argument('--clahe',
                         help='Use CLAHE for image normalization',
                         action='store_true')
@@ -189,19 +192,21 @@ def main():
     import pytorch_lightning as pl
     from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
     from pytorch_lightning.loggers import CSVLogger
+    from pytorch_lightning.loggers import WandbLogger
     early_stop_callback = EarlyStopping(monitor='val_loss',
                                         patience=args.patience,
                                         verbose=False,
                                         mode='min')
     mc = ModelCheckpoint(monitor='val_loss', dirpath=outdir / 'checkpoint')
     csv_logger = CSVLogger(str(outdir), name='logs')
+    wandb_logger = WandbLogger(project='scoliosis', name=outdir.parent.parent.name, config=args)
     precision = 16 if args.accelerator != 'cpu' else 32
     trainer = pl.Trainer(accelerator=args.accelerator,
                          devices=args.devices,
                          precision=precision,
                          strategy=args.strategy,
                          max_epochs=EPOCHS,
-                         logger=csv_logger,
+                         logger=[wandb_logger, csv_logger],
                          log_every_n_steps=len(train_loader) // 8,
                          callbacks=[early_stop_callback, mc])
 
@@ -272,10 +277,10 @@ def main():
     y_preds = torch.cat(y_preds, 0).cpu().numpy().astype(np.int16)
     # y_preds = np.concatenate(y_preds, axis=0)
     logger.info('End test')
-    # if USE_TEST_AS_VAL:
-    #     torch.save(
-    #         lit_model.model.to('cpu').state_dict(),
-    #         outdir / 'best_weights.pth')
+    if args.save_best:
+        torch.save(
+            lit_model.model.to('cpu').state_dict(),
+            outdir / 'best_weights.pth')
     # y_preds = np.moveaxis(y_preds, 1, -1).copy()  # to channel last
     with open(outdir / 'test.ndjson') as f:
         test_data = [json.loads(l) for l in f.readlines()]
