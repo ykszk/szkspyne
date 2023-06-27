@@ -797,10 +797,14 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
                     grp.add(dwg.path((['M'] + pair.ravel().tolist())))
                     grp.add(dwg.text(txt_angle, insert=pair[0], **text_attrs))
                 name = f'V{i}_center'
-                center = corners.mean(axis=1)
+                center = corners.mean(axis=0)
                 measures[name + '_x'] = center[0]
                 measures[name + '_y'] = center[1]
             circles = get_circle_dict(lm_data)
+            measures['sacral_tl_x'] = sacrum_tltr[0][0]
+            measures['sacral_tl_y'] = sacrum_tltr[0][1]
+            measures['sacral_tr_x'] = sacrum_tltr[1][0]
+            measures['sacral_tr_y'] = sacrum_tltr[1][1]
             for i, pts in enumerate(circles.get('FemoralHead', []), 1):
                 name = f'femoral_head_{i}'
                 measures[name + '_x'] = pts[0][0]

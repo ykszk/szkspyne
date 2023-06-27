@@ -199,7 +199,7 @@ def main():
                                         mode='min')
     mc = ModelCheckpoint(monitor='val_loss', dirpath=outdir / 'checkpoint')
     csv_logger = CSVLogger(str(outdir), name='logs')
-    wandb_logger = WandbLogger(project='scoliosis', name=outdir.parent.parent.name, config=args)
+    wandb_logger = WandbLogger(project='scoliosis', name='/'.join(outdir.parts[-2:]), config=args)
     precision = 16 if args.accelerator != 'cpu' else 32
     trainer = pl.Trainer(accelerator=args.accelerator,
                          devices=args.devices,

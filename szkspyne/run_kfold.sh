@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-if [ "$#" -lt 2 ]; then
+if [ "$#" -lt 1 ]; then
     echo "Usage" "$0" "<result_dir> [--holdout]"
     exit
 fi

@@ -358,6 +358,7 @@ def main():
         if args.output:
             outdir = Path(args.output)
         def do_dirin(fn: Path):
+            torch.set_num_threads(args.threads)
             file_id = fn.stem
             heatmaps, h = mhd.read(str(data_dir / f'{file_id}.mha'))
             with open(str(data_dir / f'{file_id}.json')) as f:
@@ -374,8 +375,7 @@ def main():
         # from concurrent import futures
         # with futures.ThreadPoolExecutor(n_jobs) as executor:
         #     skipped = executor.map(do1, fns)
-        ddo1 = delayed(do_dirin)
-        skipped = Parallel(n_jobs=n_jobs)(ddo1(fn)
+        skipped = Parallel(n_jobs=n_jobs)(delayed(do_dirin)(fn)
                                 for fn in tqdm(fns))
         logger.info('Done')
             
@@ -392,6 +392,7 @@ def main():
             for line in f:
                 ndjson.append(json.loads(line))
         def do(original_json, heatmaps) -> Tuple[Union[dict, None], Union[str, None]]:
+            torch.set_num_threads(args.threads)
             file_id = original_json['filename']
             result_json = fit(original_json, heatmaps)
             if result_json is None:
