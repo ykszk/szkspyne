@@ -5,6 +5,7 @@ import torch
 from torch.optim import Adam
 from logzero import logger
 import logzero
+
 log_format = '%(color)s[%(levelname)1.1s %(asctime)s.%(msecs)d %(module)s:%(lineno)d]%(end_color)s %(message)s'
 formatter = logzero.LogFormatter(fmt=log_format)
 logzero.setup_default_logger(formatter=formatter)
@@ -17,6 +18,7 @@ import pandas as pd
 from joblib import Parallel, delayed
 import sys
 from typing import Union, Tuple
+import seaborn as sns
 
 import mhd
 from szkspyne import labelme_utils, settings
@@ -37,7 +39,7 @@ class TorchPCA(nn.Module):
     def __init__(self, filename):
         super().__init__()
         with np.load(filename) as a:
-            pca = {k:a[k] for k in a.keys()}
+            pca = {k: a[k] for k in a.keys()}
 
         self.pca = pca
         self.labels = [str(l) for l in pca['labels']]
@@ -150,8 +152,7 @@ def calculate_anchors(anchor_maps):
 
     return anchors
 
-image_type = 'lateral_whole'
-# image_type = 'ap_whole'
+
 def main():
     import argparse
     parser = argparse.ArgumentParser(
@@ -161,16 +162,13 @@ def main():
         help=
         'Either (1) an input data directory containing json and mha pairs or (2) an input njson and a mha',
         metavar='<input>',
-        nargs='+',
-        default=Path('../../data/annotation/images') / image_type)
+        nargs='+')
     parser.add_argument(
         '--output', help='Output directory. Use input directory by default.')
-    parser.add_argument(
-        '-m',
-        '--model',
-        help='PCA model filename(s).',
-        nargs='+',
-        default=[f'pca_{image_type}_L4.npz', f'pca_{image_type}_L5.npz'])
+    parser.add_argument('-m',
+                        '--model',
+                        help='PCA model filename(s).',
+                        nargs='+')
     parser.add_argument('--sigma',
                         help='Sigma value(s) for heatmap blurring.',
                         nargs='+',
@@ -204,7 +202,7 @@ def main():
     parser.add_argument('--skipped',
                         help='Optional argument. default: %(default)s',
                         metavar='<name>',
-                        default=f'skipped_{image_type}.txt')
+                        default=f'skipped.txt')
     parser.add_argument('--device', help='Device for pytorch')
     parser.add_argument('--channel_first',
                         help='Heatmap is in channel-first format',
@@ -214,16 +212,13 @@ def main():
                         action='store_true')
     parser.add_argument(
         '--threads',
-        help=
-        'Integer value for torch.set_num_threads(). default: %(default)d',
+        help='Integer value for torch.set_num_threads(). default: %(default)d',
         type=int,
         default=2)
-    parser.add_argument(
-        '--jobs',
-        help=
-        'The number of jobs. default: %(default)d',
-        type=int,
-        default=2)
+    parser.add_argument('--jobs',
+                        help='The number of jobs. default: %(default)d',
+                        type=int,
+                        default=2)
 
     args, unknown = parser.parse_known_args()
     if unknown:
@@ -245,7 +240,7 @@ def main():
     def fit(original_json: dict, heatmaps: np.ndarray):
         if not channel_first:
             heatmaps = heatmaps.transpose(2, 0, 1)
-        if h_flip: #h_flip:  # horizontal flip
+        if h_flip:  #h_flip:  # horizontal flip
             heatmaps = np.flip(heatmaps, axis=2)
         anchor_maps = [heatmaps[i] for i in ANCHOR_INDICES]
         # heatmaps = heatmaps[:4]
@@ -298,7 +293,7 @@ def main():
                         optimizer.zero_grad()
                         loss.backward()
                         optimizer.step()
-                    if args.history:
+                    if True:  # save history
                         history = pd.DataFrame(history, columns=['loss'])
                         history['x'] = np.arange(len(history))
                         history['name'] = name
@@ -308,23 +303,13 @@ def main():
             except IndexError:  # updated coefs become really big when warped points completely miss the heatmaps
                 continue
             results.append((name, best_loss, best_coefs, best_pca))
-        if args.history:
-            import seaborn as sns
-            df_history = pd.concat(histories, ignore_index=True)
-            sns.set(context='notebook', style='whitegrid', font='serif')
-            sns.lineplot(data=df_history, x='x', y='loss', hue='model')
-            plt.gcf().savefig(str(outdir / f'{file_id}.png'),
-                              transparent=False,
-                              bbox_inches='tight')
-            plt.clf()
 
         if len(results) == 0:
-            # skipped.append(file_id)
             return None
         result_json = original_json.copy()
         results.sort(key=lambda e: e[1])  # sort results by loss
         best_name, best_loss, best_coefs, best_pca = results[0]
-        pca = best_pca  #TorchPCA(f'pca_{image_type}_{best_name}.npz')
+        pca = best_pca
         pt_pca = PointAlignModel(pca, pca.calc_n_comps(args.contr_rate),
                                  top_anchor, bottom_anchor).to(device)
         warped = pca.unravel(pt_pca.ref2pt(pca.warp(best_coefs.to(device))))
@@ -346,62 +331,80 @@ def main():
         result_shapes.extend(original_shapes)
         result_json['shapes'] = result_shapes
         result_json['flags'] = {best_name: True}
-        return result_json
+        return result_json, histories
 
     n_jobs = args.jobs
     skipped = []
 
-    if len(args.input)==1:
+    if len(args.input) == 1:
         logger.info('Directory input')
         data_dir = Path(args.input[0])
         outdir = data_dir
         if args.output:
             outdir = Path(args.output)
+
         def do_dirin(fn: Path):
             torch.set_num_threads(args.threads)
             file_id = fn.stem
             heatmaps, h = mhd.read(str(data_dir / f'{file_id}.mha'))
             with open(str(data_dir / f'{file_id}.json')) as f:
                 original_json = json.load(f)
-            result_json = fit(original_json, heatmaps)
-            if result_json is None:
+            result = fit(original_json, heatmaps)
+            if result is None:
                 return file_id
             else:
+                result_json, histories = result
                 with open(outdir / f'{file_id}.json', 'w') as f:
                     json.dump(result_json, f, indent=2)
+                if args.history:
+                    df_history = pd.concat(histories, ignore_index=True)
+                    sns.set(context='notebook',
+                            style='whitegrid',
+                            font='serif')
+                    sns.lineplot(data=df_history, x='x', y='loss', hue='model')
+                    plt.gcf().savefig(str(outdir / f'{file_id}.png'),
+                                      transparent=False,
+                                      bbox_inches='tight')
+                    plt.clf()
                 return None
+
         fns = sorted((data_dir).glob('*.json'))
         logger.info('Fit')
-        # from concurrent import futures
-        # with futures.ThreadPoolExecutor(n_jobs) as executor:
-        #     skipped = executor.map(do1, fns)
         skipped = Parallel(n_jobs=n_jobs)(delayed(do_dirin)(fn)
-                                for fn in tqdm(fns))
+                                          for fn in tqdm(fns))
         logger.info('Done')
-            
-    elif len(args.input)==2:
+
+    elif len(args.input) == 2:
+        logger.info('Ndjson input')
+        if args.history:
+            raise RuntimeError('History option is invalid for ndjson input')
         ndjson_fn = Path(args.input[0])
         hm_filename = Path(args.input[1])
         if args.output is None or not args.output.endswith('.ndjson'):
             logger.error('Output ndjson should be specified for ndjson input')
-        if ndjson_fn.suffix!='.ndjson':
+        if ndjson_fn.suffix != '.ndjson':
             logger.error('Invalid input ndjson filename', ndjson_fn.name)
         all_heatmaps, h = mhd.read(hm_filename)
         ndjson = []
         with open(ndjson_fn) as f:
             for line in f:
                 ndjson.append(json.loads(line))
-        def do(original_json, heatmaps) -> Tuple[Union[dict, None], Union[str, None]]:
+
+        def do(original_json,
+               heatmaps) -> Tuple[Union[dict, None], Union[str, None]]:
             torch.set_num_threads(args.threads)
             file_id = original_json['filename']
-            result_json = fit(original_json, heatmaps)
-            if result_json is None:
+            result = fit(original_json, heatmaps)
+            if result is None:
                 return None, file_id
             else:
+                result_json, _histories = result
                 return result_json, None
+
         logger.info('Fit')
-        result_skipped = Parallel(n_jobs=n_jobs)(delayed(do)(*args)
-                                for args in tqdm(zip(ndjson, all_heatmaps), total=len(ndjson)))
+        result_skipped = Parallel(n_jobs=n_jobs)(
+            delayed(do)(*args)
+            for args in tqdm(zip(ndjson, all_heatmaps), total=len(ndjson)))
         assert result_skipped is not None
         results, skipped = zip(*result_skipped)
         results = [r for r in results if r]
@@ -415,6 +418,7 @@ def main():
         print('Invalid input')
         return 1
 
+    assert skipped is not None
     skipped = [s for s in skipped if s]
     if len(skipped) > 0:
         print(f'Save skipped {len(skipped)} files', args.skipped)
@@ -423,6 +427,7 @@ def main():
     else:
         print('No skipped files')
     return 0
+
 
 if __name__ == '__main__':
     sys.exit(main())
