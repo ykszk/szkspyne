@@ -1,4 +1,5 @@
 *.csv
+!szkspyne/default_line_colors.csv
 *.svg
 *.ndjson
 *.jsonl
