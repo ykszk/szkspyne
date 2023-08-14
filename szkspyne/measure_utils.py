@@ -59,6 +59,9 @@ def corners2midpoints(corners: np.ndarray) -> np.ndarray:
 
 
 def perp(a: np.ndarray) -> np.ndarray:
+    '''
+    perpendicular unit vector
+    '''
     b = np.empty_like(a)
     b[0] = -a[1]
     b[1] = a[0]
@@ -298,12 +301,12 @@ class SpinalDrawing(svgwrite.Drawing):
         xmax = np.array([xrange[1], f1])
         f0 = (yrange[0] - y0) / slope
         f1 = (yrange[1] - y0) / slope
-        ymin = [f0, yrange[0]]
-        ymax = [f1, yrange[1]]
+        ymin = np.array([f0, yrange[0]])
+        ymax = np.array([f1, yrange[1]])
         combos = list(itertools.combinations([xmin, xmax, ymin, ymax], 2))
-        ds = [np.linalg.norm(np.array(c[1]) - np.array(c[0])) for c in combos]
+        ds = [np.linalg.norm(c[1] - c[0]) for c in combos]
         p0, p1 = combos[np.argmin(ds)]
-        grp.add(self.path((['M'] + p0 + p1)))
+        grp.add(self.path((['M'] + p0.tolist() + p1.tolist())))
         return p0, p1
 
     def draw_cobb(self,

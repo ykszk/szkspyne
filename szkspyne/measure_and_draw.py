@@ -33,7 +33,7 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
                                       None], measure_filename: Union[Path,
                                                                      None],
                  template_directory: str, html_title: str, hide: List[str],
-                 embed_svg: bool, image_dir: Path, calc_slopes: bool):
+                 embed_svg: bool, image_dir: Path, calc_slopes: bool, curve_algo: str):
 
     if not embed_svg and not str(image_filename).endswith('.svg'):
         raise RuntimeError('.svg output is required to link external svg')
@@ -103,46 +103,78 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
         best_score = 0
         MT_MARGIN = 3
 
-        for mt_sup in range(MT_MARGIN, 7):
-            for mt_inf in range(9, len(vert_sup_cnrs) - MT_MARGIN):
-                if mt_inf - mt_sup >= 10:
-                    continue
-                mt_angle = calc_angle(vert_sup_cnrs[mt_sup],
-                                        vert_inf_cnrs[mt_inf])
-                # pt
-                best_pt_score = 0
-                best_pt = None
-                pt_inf = mt_sup
-                for pt_sup in range(0, mt_sup - 1):
-                    pt_angle = calc_angle(vert_sup_cnrs[pt_sup],
-                                            vert_inf_cnrs[pt_inf])
-                    score = np.abs(pt_angle - mt_angle)
-                    if score > best_pt_score:
-                        best_pt = (pt_sup, pt_inf)
-                        best_pt_score = score
+        if curve_algo=='max_diffs':
+            for mt_sup in range(MT_MARGIN, 7):
+                for mt_inf in range(9, len(vert_sup_cnrs) - MT_MARGIN):
+                    if mt_inf - mt_sup >= 10:
+                        continue
+                    mt_angle = calc_angle(vert_sup_cnrs[mt_sup],
+                                            vert_inf_cnrs[mt_inf])
+                    # pt
+                    best_pt_score = 0
+                    best_pt = None
+                    pt_inf = mt_sup
+                    for pt_sup in range(0, mt_sup - 1):
+                        pt_angle = calc_angle(vert_sup_cnrs[pt_sup],
+                                                vert_inf_cnrs[pt_inf])
+                        score = np.abs(pt_angle - mt_angle)
+                        if score > best_pt_score:
+                            best_pt = (pt_sup, pt_inf)
+                            best_pt_score = score
 
-                # lt
-                lt_sup = mt_inf
-                lt_infs = np.arange(mt_inf, len(vert_inf_cnrs))
-                best_lt_score = 0
-                best_lt = None
-                lt_sup = mt_inf
-                for lt_inf in range(lt_sup + 1, len(vert_inf_cnrs)):
-                    lt_angle = calc_angle(vert_sup_cnrs[lt_sup],
+                    # lt
+                    lt_sup = mt_inf
+                    lt_infs = np.arange(mt_inf, len(vert_inf_cnrs))
+                    best_lt_score = 0
+                    best_lt = None
+                    lt_sup = mt_inf
+                    for lt_inf in range(lt_sup + 1, len(vert_inf_cnrs)):
+                        lt_angle = calc_angle(vert_sup_cnrs[lt_sup],
+                                                vert_inf_cnrs[lt_inf])
+                        score = np.abs(lt_angle - mt_angle)
+                        if score > best_lt_score:
+                            best_lt = (lt_sup, lt_inf)
+                            best_lt_score = score
+                    score = best_pt_score + best_lt_score
+                    assert best_pt is not None and best_lt is not None
+                    if score > best_score:
+                        best_score = score
+                        best_set = (mt_sup, mt_inf), best_pt, best_lt
+            assert best_set is not None
+            (mt_sup, mt_inf), (pt_sup, pt_inf), (lt_sup, lt_inf) = best_set
+            apexes = [np.abs(
+            coronal_translation[MT_MARGIN:-MT_MARGIN]).argmax() + MT_MARGIN]
+        elif curve_algo=='fujimori':
+            APEX_MARGIN=2
+            diff_mat = coronal_translation[APEX_MARGIN:-APEX_MARGIN, np.newaxis] - coronal_translation[np.newaxis, APEX_MARGIN:-APEX_MARGIN]
+            max_pair = np.unravel_index(diff_mat.argmax(), diff_mat.shape)
+            upper_apex = int(min(*max_pair) + APEX_MARGIN)
+            lower_apex = int(max(*max_pair) + APEX_MARGIN)
+            if vert_centroids[upper_apex][0] > vert_centroids[lower_apex][0]:
+                upper_arg, lower_arg = np.argmin, np.argmax
+            else:
+                upper_arg, lower_arg = np.argmax, np.argmin
+            mt_angles = []
+            for mt_sup in range(upper_apex-1):
+                for mt_inf in range(upper_apex+1, lower_apex-1):
+                    mt_angle = calc_angle(vert_sup_cnrs[mt_sup],
+                                                vert_inf_cnrs[mt_inf])
+                    mt_angles.append((mt_sup, mt_inf, mt_angle))
+            mt_set = mt_angles[upper_arg([e[-1] for e in mt_angles])]
+            mt_sup, mt_inf = mt_set[0], mt_set[1]
+
+            lt_sup = mt_inf
+            lt_angles = []
+            for lt_inf in range(lower_apex+1, len(vert_corners)):
+                lt_angle = calc_angle(vert_sup_cnrs[lt_sup],
                                             vert_inf_cnrs[lt_inf])
-                    score = np.abs(lt_angle - mt_angle)
-                    if score > best_lt_score:
-                        best_lt = (lt_sup, lt_inf)
-                        best_lt_score = score
-                score = best_pt_score + best_lt_score
-                assert best_pt is not None and best_lt is not None
-                if score > best_score:
-                    best_score = score
-                    best_set = (mt_sup, mt_inf), best_pt, best_lt
-        i_apex = np.abs(
-            coronal_translation[MT_MARGIN:-MT_MARGIN]).argmax() + MT_MARGIN
-        assert best_set is not None
-        (mt_sup, mt_inf), (pt_sup, pt_inf), (lt_sup, lt_inf) = best_set
+                lt_angles.append((lt_sup, lt_inf, lt_angle))
+            lt_set = lt_angles[lower_arg([e[-1] for e in lt_angles])]
+            lt_sup, lt_inf = lt_set[0], lt_set[1]
+            pt_sup, pt_inf = None, None
+            apexes = [upper_apex, lower_apex]
+        else:
+            raise NotImplementedError
         measures['curve_indices'] = {
             'MT': (mt_sup, mt_inf),
             'PT': (pt_sup, pt_inf),
@@ -151,20 +183,22 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
 
         # cobb angles
         logger.debug('Cobb angles')
-        drawings += [('PT', 'PT Cobb (p.49)'), ('MT', 'MT Cobb (p.49)'),
+        if pt_sup is not None:
+            drawings += [('PT', 'PT Cobb (p.49)')]
+            gid = 'PT'
+            visibility = 'hidden' if gid in hide else 'visible'
+            grp = dwg.add(
+                dwg.g(id=gid,
+                        stroke='red',
+                        stroke_width=LINE_WIDTH,
+                        fill='none',
+                        visibility=visibility))
+            measures[gid] = dwg.draw_cobb(vert_sup_cnrs[pt_sup],
+                                            vert_inf_cnrs[pt_inf],
+                                            grp,
+                                            text_attrs=text_attrs)
+        drawings += [('MT', 'MT Cobb (p.49)'),
                         ('LT', 'LT Cobb (p.49)')]
-        gid = 'PT'
-        visibility = 'hidden' if gid in hide else 'visible'
-        grp = dwg.add(
-            dwg.g(id=gid,
-                    stroke=line_colors[gid],
-                    stroke_width=LINE_WIDTH,
-                    fill='none',
-                    visibility=visibility))
-        measures[gid] = dwg.draw_cobb(vert_sup_cnrs[pt_sup],
-                                        vert_inf_cnrs[pt_inf],
-                                        grp,
-                                        text_attrs=text_attrs)
         gid = 'MT'
         visibility = 'hidden' if gid in hide else 'visible'
         grp = dwg.add(
@@ -191,26 +225,29 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
                                             grp,
                                             text_attrs=text_attrs)
         # Major apex
-        gid = 'MajorApex'
-        visibility = 'hidden' if gid in hide else 'visible'
-        drawings.append((gid, 'Major Apex'))
-        color = line_colors[gid]
-        grp = dwg.add(
-            dwg.g(id=gid,
-                    stroke=color,
-                    stroke_width=LINE_WIDTH,
-                    fill='none',
-                    visibility=visibility))
-        vert_apex = vert_corners[i_apex]
-        grp.add(
-            dwg.path((['M'] + [
-                vc.tolist() for vc in [
-                    vert_apex[0], vert_apex[1], vert_apex[3], vert_apex[2],
-                    vert_apex[0]
-                ]
-            ])))
-        for v in vert_centroids:
-            grp.add(dwg.circle(center=v, r=POINT_RADIUS, fill=color))
+        if apexes:
+            gid = 'MajorApex'
+            visibility = 'hidden' if gid in hide else 'visible'
+            drawings.append((gid, 'Major Apex'))
+            color = 'orange'
+            grp = dwg.add(
+                dwg.g(id=gid,
+                        stroke=color,
+                        stroke_width=LINE_WIDTH,
+                        fill='none',
+                        visibility=visibility))
+            for i_apex in apexes:
+                vert_apex = vert_corners[i_apex]
+                grp.add(
+                    dwg.path((['M'] + [
+                        vc.tolist() for vc in [
+                            vert_apex[0], vert_apex[1], vert_apex[3], vert_apex[2],
+                            vert_apex[0]
+                        ]
+                    ])))
+                for v in vert_centroids:
+                    grp.add(dwg.circle(center=v, r=POINT_RADIUS, fill=color))
+
         # apical translation
         gid = 'APT'
         visibility = 'hidden' if gid in hide else 'visible'
@@ -848,6 +885,10 @@ def main():
                         help='Image type',
                         choices=['ap', 'lateral'],
                         default='ap')
+    parser.add_argument('--algo',
+                        help='Algorithm to determine curves',
+                        choices=['max_diffs', 'fujimori'],
+                        default='max_diffs')
     parser.add_argument('--hide',
                         help='Hide specified drawings',
                         nargs='*',
@@ -892,7 +933,7 @@ def main():
         measure_json(lm_data, args.height, args.config, args.points,
                      args.numbers, args.image_type, args.image, args.html,
                      args.measure, args.template, args.title, args.hide,
-                     not args.external_svg, image_dir, args.slopes)
+                     not args.external_svg, image_dir, args.slopes, args.algo)
 
     sub_single.set_defaults(handler=command_single)
 
@@ -945,7 +986,7 @@ def main():
                                 measure, args.template,
                                 '{} - {}'.format(fn.stem,
                                                  args.title), args.hide,
-                                not args.external_svg, image_dir, args.slopes)
+                                not args.external_svg, image_dir, args.slopes, args.algo)
 
         def do_ndjson(fn: Path, lm_data):
             measure = (outdir /
@@ -963,7 +1004,7 @@ def main():
                                 measure, args.template,
                                 '{} - {}'.format(fn.stem,
                                                  args.title), args.hide,
-                                not args.external_svg, image_dir, args.slopes)
+                                not args.external_svg, image_dir, args.slopes, args.algo)
 
         if Path(args.input).is_dir():
             json_filenames = sorted(Path(args.input).glob('*.json'))
