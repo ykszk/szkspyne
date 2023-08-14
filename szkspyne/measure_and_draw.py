@@ -13,7 +13,8 @@ import svgwrite
 from jinja2 import Environment, FileSystemLoader
 import argparse
 from szkspyne import measure_utils as utils
-from szkspyne.measure_utils import calc_centroid, perp, get_circle_dict, calc_angle, Canvas
+from szkspyne.measure_utils import calc_centroid, perp, get_circle_dict, calc_angle, SpinalDrawing
+from collections import defaultdict
 
 LINE_WIDTH = 2.0
 POINT_RADIUS = 2.0
@@ -37,12 +38,14 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
     if not embed_svg and not str(image_filename).endswith('.svg'):
         raise RuntimeError('.svg output is required to link external svg')
 
-    dwg = Canvas(lm_data, image_dir, height)
+    dwg = SpinalDrawing(lm_data, image_dir, height)
     kps, text_attrs, img = dwg.kps, dwg.text_attrs, dwg.img
 
     with open(config_filename) as f:
         color_data = yaml.safe_load(f)
     label_colors = color_data['label_colors']
+
+    line_colors = utils.read_default_line_colors()
 
     drawings = []
 
@@ -67,27 +70,12 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
 
     measures = {'flags': lm_data['flags']}
     if len(kps['TL']) != len(kps['TR']) or len(kps['BL']) != len(kps['BR']):
-        raise NotImplementedError
-    sacrum_tltr, vert_corners, disc_corners = utils.get_vert_and_disc_corners(
-        kps)
-    vert_corners_w_c7 = vert_corners.copy()
-    c7_corners = vert_corners[0].copy()
-    # remove C7
-    vert_corners = np.delete(vert_corners, 0, axis=0)
-    disc_corners = np.delete(disc_corners, 0, axis=0)
-    vert_corners = vert_corners.astype(np.float64)
+        raise ValueError('Invalid set of number of points for TL, TR, BL and BR')
+    sacrum_tltr, vert_corners, disc_corners = dwg.sacrum_tltr, dwg.vert_corners, dwg.disc_corners
+    vert_corners_w_c7, c7_corners, c7_centroid = dwg.vert_corners_w_c7, dwg.c7_corners, dwg.c7_centroid
 
-    logger.debug('Compute centroids')
-    sacrum_center = sacrum_tltr.mean(axis=0)
-    vert_centroids = np.array([calc_centroid(c) for c in vert_corners])
-    c7_centroid = calc_centroid(c7_corners)
-    logger.debug('Compute vecs')
-    vert_sup_cnrs = vert_corners[:, :2]
-    vert_sup_vecs = vert_sup_cnrs[:, 1] - vert_sup_cnrs[:, 0]
-    vert_sup_vecs /= np.linalg.norm(vert_sup_vecs, axis=1, keepdims=True)
-    vert_inf_cnrs = vert_corners[:, 2:]
-    vert_inf_vecs = vert_inf_cnrs[:, 1] - vert_inf_cnrs[:, 0]
-    vert_inf_vecs /= np.linalg.norm(vert_inf_vecs, axis=1, keepdims=True)
+    sacrum_center, vert_centroids = dwg.sacrum_center, dwg.vert_centroids
+    vert_sup_cnrs, vert_sup_vecs, vert_sup_vecs, vert_inf_cnrs = dwg.vert_sup_cnrs, dwg.vert_sup_vecs, dwg.vert_sup_vecs, dwg.vert_inf_cnrs
 
     if draw_vertebral_number:
         gid = 'VertebralNumber'
@@ -169,7 +157,7 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
         visibility = 'hidden' if gid in hide else 'visible'
         grp = dwg.add(
             dwg.g(id=gid,
-                    stroke='red',
+                    stroke=line_colors[gid],
                     stroke_width=LINE_WIDTH,
                     fill='none',
                     visibility=visibility))
@@ -181,7 +169,7 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
         visibility = 'hidden' if gid in hide else 'visible'
         grp = dwg.add(
             dwg.g(id=gid,
-                    stroke='green',
+                    stroke=line_colors[gid],
                     stroke_width=LINE_WIDTH,
                     fill='none',
                     visibility=visibility))
@@ -194,7 +182,7 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
             visibility = 'hidden' if gid in hide else 'visible'
             grp = dwg.add(
                 dwg.g(id=gid,
-                        stroke='blue',
+                        stroke=line_colors[gid],
                         stroke_width=LINE_WIDTH,
                         fill='none',
                         visibility=visibility))
@@ -206,7 +194,7 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
         gid = 'MajorApex'
         visibility = 'hidden' if gid in hide else 'visible'
         drawings.append((gid, 'Major Apex'))
-        color = 'orange'
+        color = line_colors[gid]
         grp = dwg.add(
             dwg.g(id=gid,
                     stroke=color,
@@ -229,7 +217,7 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
         drawings.append((gid, 'Apical Translation (p.53)'))
         logger.debug(drawings[-1][1])
         vert_apex = vert_centroids[i_apex]
-        color = 'green'
+        color = line_colors[gid]
         grp = dwg.add(
             dwg.g(id=gid,
                     stroke=color,
@@ -266,7 +254,7 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
         visibility = 'hidden' if gid in hide else 'visible'
         drawings.append((gid, 'Coronal Balance (p.54)'))
         logger.debug(drawings[-1][1])
-        color = 'blue'
+        color = line_colors[gid]
         grp = dwg.add(
             dwg.g(id=gid,
                     stroke=color,
@@ -306,7 +294,7 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
         visibility = 'hidden' if gid in hide else 'visible'
         drawings.append((gid, 'T1 Tilt Angle (p.55)'))
         logger.debug(drawings[-1][1])
-        color = 'blue'
+        color = line_colors[gid]
         grp = dwg.add(
             dwg.g(id=gid,
                     stroke=color,
@@ -343,7 +331,7 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
             gid = 'ClavicleAngle'
             drawings.append((gid, 'Clavicle Angle (p.56)'))
             logger.debug(drawings[-1][1])
-            color = 'green'
+            color = line_colors[gid]
             grp = dwg.add(
                 dwg.g(id=gid,
                         stroke=color,
@@ -397,7 +385,7 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
             gid = 'ShoulderHeight'
             drawings.append((gid, 'Shoulder Height (p.57)'))
             logger.debug(drawings[-1][1])
-            color = 'magenta'
+            color = line_colors[gid]
             grp = dwg.add(
                 dwg.g(id=gid,
                         stroke=color,
@@ -422,7 +410,7 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
             gid = 'PelvicObliquity'
             drawings.append((gid, 'Pelvic Obliquity (p.93)'))
             logger.debug(drawings[-1][1])
-            color = 'cyan'
+            color = line_colors[gid]
             grp = dwg.add(
                 dwg.g(id=gid,
                         stroke=color,
@@ -467,7 +455,7 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
             gid = 'LegLength'
             drawings.append((gid, 'Leg Length Discrepancy (p.93)'))
             logger.debug(drawings[-1][1])
-            color = 'lime'
+            color = line_colors[gid]
             grp = dwg.add(
                 dwg.g(id=gid,
                         stroke=color,
@@ -492,7 +480,7 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
             gid = 'SacralObliquity'
             drawings.append((gid, 'Sacral Obliquity (p.94)'))
             logger.debug(drawings[-1][1])
-            color = 'hotpink'
+            color = line_colors[gid]
             x_pos1, x_pos2 = femoral_kps[:, 0]
             grp = dwg.add(
                 dwg.g(id=gid,
@@ -520,7 +508,7 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
         # Thoracic kyphosis
         gid = 'ThoracicKyphosis'
         drawings.append((gid, 'Thoracic kyphosis (p.87)'))
-        color = 'red'
+        color = line_colors[gid]
         visibility = 'hidden' if gid in hide else 'visible'
         grp = dwg.add(
             dwg.g(id=gid,
@@ -536,7 +524,7 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
         # Mid/Lower thoracic kyphosis
         gid = 'Mid/LowerThoracicKyphosis'
         drawings.append((gid, 'Mid/Lower thoracic kyphosis (p.87)'))
-        color = 'green'
+        color = line_colors[gid]
         visibility = 'hidden' if gid in hide else 'visible'
         grp = dwg.add(
             dwg.g(id=gid,
@@ -553,7 +541,7 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
         # Proximal thoracic kyphosis
         gid = 'ProximalThoracicKyphosis'
         drawings.append((gid, 'Proximal thoracic kyphosis (p.87)'))
-        color = 'blue'
+        color = line_colors[gid]
         visibility = 'hidden' if gid in hide else 'visible'
         grp = dwg.add(
             dwg.g(id=gid,
@@ -570,7 +558,7 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
         # Lumbar lordosis (T12/S)
         gid = 'LumbarLordosis'
         drawings.append((gid, 'Lumbar lordosis (T12/S) '))
-        color = 'blue'
+        color = line_colors[gid]
         visibility = 'hidden' if gid in hide else 'visible'
         grp = dwg.add(
             dwg.g(id=gid,
@@ -588,7 +576,7 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
         gid = 'SacralSlope'
         logger.debug(gid)
         drawings.append((gid, 'Sacral Slope (p.99)'))
-        color = 'magenta'
+        color = line_colors[gid]
         grp = dwg.add(
             dwg.g(id=gid,
                     stroke=color,
@@ -611,7 +599,7 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
         gid = 'C7SVA'
         logger.debug(gid)
         drawings.append((gid, 'Sagittal Balance (p.67)'))
-        color = 'red'
+        color = line_colors[gid]
         grp = dwg.add(
             dwg.g(id=gid,
                     stroke=color,
@@ -651,7 +639,7 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
             gid = 'PelvicIncidence'
             logger.debug(gid)
             drawings.append((gid, 'Pelvic Incidence (p.97)'))
-            color = 'cyan'
+            color = line_colors[gid]
             grp = dwg.add(
                 dwg.g(id=gid,
                         stroke=color,
@@ -700,7 +688,7 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
             gid = 'PelvicRadiusAngle'
             logger.debug(gid)
             drawings.append((gid, 'Pelvic Radius Angle (p.101)'))
-            color = 'blue'
+            color = line_colors[gid]
             grp = dwg.add(
                 dwg.g(id=gid,
                         stroke=color,
@@ -720,7 +708,7 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
             gid = 'L5IncidenceAngle'
             logger.debug(gid)
             drawings.append((gid, 'L5 Incidence Angle (p.102)'))
-            color = 'red'
+            color = line_colors[gid]
             grp = dwg.add(
                 dwg.g(id=gid,
                         stroke=color,
@@ -747,7 +735,7 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
             gid = 'LumbosacralAngle'
             logger.debug(gid)
             drawings.append((gid, 'Lumbosacral Angle (p.105)'))
-            color = 'green'
+            color = line_colors[gid]
             visibility = 'hidden' if gid in hide else 'visible'
             grp = dwg.add(
                 dwg.g(id=gid,
@@ -763,9 +751,10 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
 
     if calc_slopes:
         grps = {}
-        for ul, name, color in [('upper', 'Upper slope', 'red'),
-                                ('lower', 'Lower slope', 'blue')]:
+        for ul, name  in [('upper', 'Upper slope'),
+                                ('lower', 'Lower slope')]:
             gid = f'{ul}_slope'
+            color = line_colors[gid]
             grp = dwg.add(
                 dwg.g(id=gid,
                         stroke=color,
@@ -773,8 +762,8 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
             grps[gid] = grp
             drawings.append((gid, name))
         for i, corners in enumerate(vert_corners_w_c7, 1):
-            for pair, ul, color in ((corners[:2], 'upper', 'red'),
-                                    (corners[2:], 'lower', 'blue')):
+            for pair, ul in ((corners[:2], 'upper'),
+                                    (corners[2:], 'lower')):
                 name = f'V{i}_{ul}_slope'
                 gid = f'{ul}_slope'
                 v = pair[1] - pair[0]

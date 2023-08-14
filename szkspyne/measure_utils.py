@@ -10,6 +10,7 @@ from szkspyne import settings
 from pathlib import Path
 from PIL import Image
 import itertools
+import csv
 
 
 def pearsonr_ci(x, y, alpha=0.05):
@@ -186,7 +187,16 @@ def get_vert_and_disc_corners(kps):
     return sacrum_tltr, vert_corners, disc_corners
 
 
-class Canvas(svgwrite.Drawing):
+def read_default_line_colors() -> Dict[str, str]:
+    color_filename = Path(__file__).parent / 'default_line_colors.csv'
+    color_dict = {}
+    with open(color_filename) as f:
+        reader = csv.DictReader(f)
+        for r in reader:
+            color_dict[r['name']] = r['color']
+    return color_dict
+
+class SpinalDrawing(svgwrite.Drawing):
 
     def __init__(self, lm_data, image_dir: Path, height: int):
         lm_data = lm_data.copy()
@@ -199,7 +209,7 @@ class Canvas(svgwrite.Drawing):
         img = Image.open(img_fn)
         original_image_shape = img.size
 
-        img.thumbnail((100000, height))
+        img.thumbnail((100000, height)) # specify height. width argument is just a big number
         scale = height / original_image_shape[1]
 
         for shape in lm_data['shapes']:
@@ -227,6 +237,41 @@ class Canvas(svgwrite.Drawing):
         self.points = points
         self.kps = kps
         self.img = img
+
+        if len(kps['TL']) != len(kps['TR']) or len(kps['BL']) != len(kps['BR']):
+            raise ValueError('Invalid set of number of points for TL, TR, BL and BR')
+        sacrum_tltr, vert_corners, disc_corners = get_vert_and_disc_corners(
+            kps)
+        vert_corners_w_c7 = vert_corners.copy()
+        c7_corners = vert_corners[0].copy()
+        c7_centroid = calc_centroid(c7_corners)
+        self.sacrum_tltr = sacrum_tltr
+        self.vert_corners_w_c7 = vert_corners_w_c7
+        self.c7_corners = c7_corners
+        self.c7_centroid = c7_centroid
+
+        # remove C7
+        vert_corners = np.delete(vert_corners, 0, axis=0)
+        vert_corners = vert_corners.astype(np.float64)
+        disc_corners = np.delete(disc_corners, 0, axis=0)
+
+        self.disc_corners = disc_corners
+        self.vert_corners = vert_corners
+
+        sacrum_center = sacrum_tltr.mean(axis=0)
+        vert_centroids = np.array([calc_centroid(c) for c in vert_corners])
+        self.sacrum_center = sacrum_center
+        self.vert_centroids = vert_centroids
+
+
+        vert_sup_cnrs = vert_corners[:, :2]
+        vert_sup_vecs = vert_sup_cnrs[:, 1] - vert_sup_cnrs[:, 0]
+        vert_sup_vecs /= np.linalg.norm(vert_sup_vecs, axis=1, keepdims=True)
+        vert_inf_cnrs = vert_corners[:, 2:]
+
+        self.vert_sup_cnrs = vert_sup_cnrs
+        self.vert_sup_vecs = vert_sup_vecs
+        self.vert_inf_cnrs = vert_inf_cnrs
 
     def draw_line(self, a, b, grp, xrange=None, yrange=None):
         d = b - a
