@@ -126,28 +126,28 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
                     # pt
                     best_pt_score = 0
                     best_pt = None
+                    pt_inf = mt_sup
                     for pt_sup in range(0, mt_sup - 1):
-                        for pt_inf in range(pt_sup + 1, mt_sup + 1):
-                            pt_angle = calc_angle(vert_sup_cnrs[pt_sup],
-                                                  vert_inf_cnrs[pt_inf])
-                            score = np.abs(pt_angle - mt_angle)
-                            if score > best_pt_score:
-                                best_pt = (pt_sup, pt_inf)
-                                best_pt_score = score
+                        pt_angle = calc_angle(vert_sup_cnrs[pt_sup],
+                                                vert_inf_cnrs[pt_inf])
+                        score = np.abs(pt_angle - mt_angle)
+                        if score > best_pt_score:
+                            best_pt = (pt_sup, pt_inf)
+                            best_pt_score = score
 
                     # lt
                     lt_sup = mt_inf
                     lt_infs = np.arange(mt_inf, len(vert_inf_cnrs))
                     best_lt_score = 0
                     best_lt = None
-                    for lt_sup in range(mt_inf, len(vert_inf_cnrs) - 2):
-                        for lt_inf in range(lt_sup + 1, len(vert_inf_cnrs)):
-                            lt_angle = calc_angle(vert_sup_cnrs[lt_sup],
-                                                  vert_inf_cnrs[lt_inf])
-                            score = np.abs(lt_angle - mt_angle)
-                            if score > best_lt_score:
-                                best_lt = (lt_sup, lt_inf)
-                                best_lt_score = score
+                    lt_sup = mt_inf
+                    for lt_inf in range(lt_sup + 1, len(vert_inf_cnrs)):
+                        lt_angle = calc_angle(vert_sup_cnrs[lt_sup],
+                                                vert_inf_cnrs[lt_inf])
+                        score = np.abs(lt_angle - mt_angle)
+                        if score > best_lt_score:
+                            best_lt = (lt_sup, lt_inf)
+                            best_lt_score = score
                     score = best_pt_score + best_lt_score
                     assert best_pt is not None and best_lt is not None
                     if score > best_score:
