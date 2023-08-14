@@ -1,4 +1,4 @@
-#%%
+from typing import Dict, List, Any
 import numpy as np
 import io
 from base64 import b64encode
@@ -120,25 +120,30 @@ def calc_intersection(A: np.ndarray, B: np.ndarray, C: np.ndarray,
 
 
 def calc_centroid(corners: np.ndarray) -> np.ndarray:
+    '''
+    Intersection of the midpoints
+    '''
     midpoints = corners2midpoints(corners)
     return calc_intersection(*midpoints)
 
 
-def _get_shape_dict(json_data, shape_type):
-    points = defaultdict(list)
+def _get_shape_dict(json_data, shape_type) -> Dict[str, List[List[List[float]]]]:
+    shapes = defaultdict(list)
     for shape in json_data['shapes']:
         label = shape['label']
         if shape['shape_type'] == shape_type:
-            points[label].append(shape['points'])
-    return points
+            shapes[label].append(shape['points'])
+    return dict(shapes)
 
 
-def get_point_dict(json_data):
-    points = defaultdict(list)
-    for shape in json_data['shapes']:
-        label = shape['label']
-        if shape['shape_type'] == 'point':
-            points[label].append(shape['points'][0])
+def get_point_dict(json_data) -> Dict[str, List[List[float]]]:
+    '''
+    return Dict[label, points]
+    '''
+    shapes = _get_shape_dict(json_data, 'point')
+    points = {}
+    for key in shapes.keys():
+        points[key] = [s[0] for s in shapes[key]]
     return points
 
 
@@ -146,7 +151,12 @@ def get_circle_dict(json_data):
     return _get_shape_dict(json_data, 'circle')
 
 
-def sort_kps(points):
+def sort_kps(points) -> Dict[str, np.ndarray]:
+    '''
+    Sort keypoints by y position
+
+    returns Dict[str, np.ndarray]
+    '''
     kps = {
         k: np.array(sorted(v, key=lambda e: e[1]))
         for k, v in points.items()

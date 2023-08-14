@@ -29,28 +29,23 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
                                                                      None],
                  template_directory: str, html_title: str, hide: List[str],
                  embed_svg: bool, image_dir: Path, calc_slopes: bool):
-    # with open(json_fn, encoding='utf8') as f:
-    #     lm_data = json.load(f)
 
     if not embed_svg and not str(image_filename).endswith('.svg'):
         raise RuntimeError('.svg output is required to link external svg')
 
-    # if not image_dir:
-    #     image_dir = str(json_fn.parent)
     dwg = Canvas(lm_data, image_dir, height)
-    points, kps, text_attrs, img = dwg.points, dwg.kps, dwg.text_attrs, dwg.img
+    kps, text_attrs, img = dwg.kps, dwg.text_attrs, dwg.img
 
     with open(config_filename) as f:
         color_data = yaml.safe_load(f)
     label_colors = color_data['label_colors']
-    LABEL_NAMES = settings.VERTEBRA_LABEL_NAMES
 
     drawings = []
 
     if draw_points:
         drawings.append(('Points', 'Points'))
         grp = dwg.add(dwg.g(id='Points', stroke_width=LINE_WIDTH, fill='none'))
-        for label, pts in points.items():
+        for label, pts in kps.items():
             if label not in label_colors:
                 logger.warning(
                     'No label `%s` found in defined colors in `%s`. Using black',
