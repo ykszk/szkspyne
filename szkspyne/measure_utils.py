@@ -1,4 +1,4 @@
-from typing import Dict, List, Any
+from typing import Dict, List, Tuple, Union
 import numpy as np
 import io
 from base64 import b64encode
@@ -273,7 +273,7 @@ class SpinalDrawing(svgwrite.Drawing):
         self.vert_sup_vecs = vert_sup_vecs
         self.vert_inf_cnrs = vert_inf_cnrs
 
-    def draw_line(self, a, b, grp, xrange=None, yrange=None):
+    def draw_line(self, a: np.ndarray, b: np.ndarray, grp, xrange: Union[Tuple[float, float], None] = None, yrange: Union[Tuple[float, float], None] = None):
         d = b - a
         if d[1] == 0:
             p0 = [0, a[1]]
@@ -294,8 +294,8 @@ class SpinalDrawing(svgwrite.Drawing):
         y0 = a[1] + t0 * d[1]
         f0 = slope * xrange[0] + y0
         f1 = slope * xrange[1] + y0
-        xmin = [xrange[0], f0]
-        xmax = [xrange[1], f1]
+        xmin = np.array([xrange[0], f0])
+        xmax = np.array([xrange[1], f1])
         f0 = (yrange[0] - y0) / slope
         f1 = (yrange[1] - y0) / slope
         ymin = [f0, yrange[0]]
