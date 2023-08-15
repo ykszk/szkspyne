@@ -6,7 +6,7 @@ from typing import List, Union, Any
 import numpy as np
 import logzero
 from logzero import logger
-from skspatial.objects import Line, Point
+from skspatial.objects import Line, LineSegment, Point
 from szkspyne import settings
 import yaml
 import svgwrite
@@ -74,7 +74,7 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
     sacrum_tltr, vert_corners, disc_corners = dwg.sacrum_tltr, dwg.vert_corners, dwg.disc_corners
     vert_corners_w_c7, c7_corners, c7_centroid = dwg.vert_corners_w_c7, dwg.c7_corners, dwg.c7_centroid
 
-    sacrum_center, vert_centroids = dwg.sacrum_center, dwg.vert_centroids
+    sacrum_center, vert_centroids, disc_centroids = dwg.sacrum_center, dwg.vert_centroids, dwg.disc_centroids
     vert_sup_cnrs, vert_sup_vecs, vert_sup_vecs, vert_inf_cnrs = dwg.vert_sup_cnrs, dwg.vert_sup_vecs, dwg.vert_sup_vecs, dwg.vert_inf_cnrs
 
     if draw_vertebral_number:
@@ -144,6 +144,7 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
             (mt_sup, mt_inf), (pt_sup, pt_inf), (lt_sup, lt_inf) = best_set
             apexes = [np.abs(
             coronal_translation[MT_MARGIN:-MT_MARGIN]).argmax() + MT_MARGIN]
+            apex_corners = [vert_corners[a] for a in apexes]
         elif curve_algo=='fujimori':
             APEX_MARGIN=2
             diff_mat = coronal_translation[APEX_MARGIN:-APEX_MARGIN, np.newaxis] - coronal_translation[np.newaxis, APEX_MARGIN:-APEX_MARGIN]
@@ -172,9 +173,102 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
             lt_set = lt_angles[lower_arg([e[-1] for e in lt_angles])]
             lt_sup, lt_inf = lt_set[0], lt_set[1]
             pt_sup, pt_inf = None, None
-            apexes = [upper_apex, lower_apex]
+            apex_corners = [vert_corners[upper_apex], vert_corners[lower_apex]]
         else:
-            raise NotImplementedError
+            # no-cross: max diff with constraint
+            # No PT
+            n_verts = len(vert_corners)
+            candidates = []
+
+            def is_crossing(l1: LineSegment, l2: LineSegment) -> bool:
+                try:
+                    l1.intersect_line_segment(l2)
+                    return True
+                except ValueError:
+                    return False
+
+            for mt_sup in range(n_verts):
+                for mt_inf in range(mt_sup + 2, 13):  #n_verts-2):
+                    # check curve
+                    sup2inf = LineSegment(vert_centroids[mt_inf],
+                                          vert_centroids[mt_sup])
+                    prev2inf = LineSegment(vert_centroids[mt_inf - 1],
+                                           vert_centroids[mt_inf - 2])
+                    if mt_inf - mt_sup > 3 and is_crossing(sup2inf, prev2inf):
+                        break
+                    lt_sup = mt_inf
+                    mt_angle = calc_angle(vert_sup_cnrs[mt_sup],
+                                          vert_inf_cnrs[mt_inf])
+                    vert_disc_corners = np.concatenate([
+                        vert_corners[mt_sup:(mt_inf + 1)],
+                        disc_corners[mt_sup:mt_inf]
+                    ],
+                                                       axis=0)
+                    vert_disc_centroids = np.concatenate([
+                        vert_centroids[mt_sup:(mt_inf + 1)],
+                        disc_centroids[mt_sup:mt_inf]
+                    ],
+                                                         axis=0)
+                    line_sup2inf = Line.from_points(vert_centroids[mt_inf],
+                                                    vert_centroids[mt_sup])
+                    mt_apex, _ = max(
+                        [(i, abs(line_sup2inf.distance_point(c)))
+                         for i, c in enumerate(vert_disc_centroids)],
+                        key=lambda e: e[1])
+                    mt_apex_corner = vert_disc_corners[mt_apex]
+                    for lt_inf in range(lt_sup + 2, n_verts):
+                        # check curve
+                        sup2inf = LineSegment(vert_centroids[lt_inf],
+                                              vert_centroids[lt_sup])
+                        prev2inf = LineSegment(vert_centroids[lt_inf - 1],
+                                               vert_centroids[lt_inf - 2])
+                        if lt_inf - lt_sup > 3 and is_crossing(
+                                sup2inf, prev2inf):
+                            break
+                        lt_angle = calc_angle(vert_sup_cnrs[lt_sup],
+                                              vert_inf_cnrs[lt_inf])
+                        score = mt_angle - lt_angle
+                        vert_disc_corners = np.concatenate([
+                            vert_corners[lt_sup:(lt_inf + 1)],
+                            disc_corners[lt_sup:lt_inf]
+                        ],
+                                                           axis=0)
+                        vert_disc_centroids = np.concatenate([
+                            vert_centroids[lt_sup:(lt_inf + 1)],
+                            disc_centroids[lt_sup:lt_inf]
+                        ],
+                                                             axis=0)
+                        line_sup2inf = Line.from_points(
+                            vert_centroids[lt_inf], vert_centroids[lt_sup])
+                        lt_apex, _ = max(
+                            [(i, abs(line_sup2inf.distance_point(c)))
+                             for i, c in enumerate(vert_disc_centroids)],
+                            key=lambda e: e[1])
+                        lt_apex_corner = vert_disc_corners[lt_apex]
+                        apex_corners = [mt_apex_corner, lt_apex_corner]
+                        candidates.append((score, mt_sup, mt_inf, lt_sup,
+                                           lt_inf, apex_corners))
+            if len(candidates) == 0:
+                raise RuntimeError('No candidate was found for %s',
+                                   lm_data['imagePath'])
+            scores = np.array([e[0] for e in candidates])
+            abs_scores = np.abs(scores)
+            best_set = candidates[np.argmax(abs_scores)]
+            score, mt_sup, mt_inf, lt_sup, lt_inf, apex_corners = best_set
+            pt_sup, pt_inf = None, None
+            if mt_sup >= 2:
+                mt_angle = calc_angle(vert_sup_cnrs[mt_sup],
+                                      vert_inf_cnrs[mt_inf])
+                inf = mt_sup
+                candidates = []
+                for sup in range(0, inf - 1):
+                    angle = calc_angle(vert_sup_cnrs[sup], vert_inf_cnrs[inf])
+                    if angle * mt_angle < 0:
+                        candidates.append((sup, abs(angle)))
+                if candidates:
+                    pt_sup, _ = max(candidates, key=lambda e: e[1])
+                    pt_inf = inf
+
         measures['curve_indices'] = {
             'MT': (mt_sup, mt_inf),
             'PT': (pt_sup, pt_inf),
@@ -225,7 +319,7 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
                                             grp,
                                             text_attrs=text_attrs)
         # Major apex
-        if apexes:
+        if apex_corners:
             gid = 'MajorApex'
             visibility = 'hidden' if gid in hide else 'visible'
             drawings.append((gid, 'Major Apex'))
@@ -236,8 +330,7 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
                         stroke_width=LINE_WIDTH,
                         fill='none',
                         visibility=visibility))
-            for i_apex in apexes:
-                vert_apex = vert_corners[i_apex]
+            for vert_apex in apex_corners:
                 grp.add(
                     dwg.path((['M'] + [
                         vc.tolist() for vc in [
@@ -249,42 +342,43 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
                     grp.add(dwg.circle(center=v, r=POINT_RADIUS, fill=color))
 
         # apical translation
-        gid = 'APT'
-        visibility = 'hidden' if gid in hide else 'visible'
-        drawings.append((gid, 'Apical Translation (p.53)'))
-        logger.debug(drawings[-1][1])
-        vert_apex = vert_centroids[i_apex]
-        color = line_colors[gid]
-        grp = dwg.add(
-            dwg.g(id=gid,
-                    stroke=color,
-                    stroke_width=LINE_WIDTH,
-                    fill='none',
-                    visibility=visibility))
-        grp.add(
-            dwg.path((['M'] + sacrum_center.tolist() + [sacrum_center[0]] +
-                        [vert_corners[:, :, 1].min()])))
-        grp.add(
-            dwg.path((['M'] + vert_apex.tolist() + [sacrum_center[0]] +
-                        [vert_centroids[i_apex, 1]])))
-        grp.add(
-            dwg.circle(center=vert_apex.tolist(),
-                        r=POINT_RADIUS,
-                        stroke=color,
-                        fill=color))
-        grp.add(
-            dwg.text('{:.1f} pixels'.format(vert_apex[0] -
-                                            sacrum_center[0]),
-                        insert=vert_apex,
-                        **text_attrs))
-        grp.add(dwg.path((['M'] + sacrum_tltr.ravel().tolist())))
-        for pos in np.concatenate((sacrum_tltr, sacrum_center[np.newaxis]),
-                                    axis=0):
+        if False:
+            gid = 'APT'
+            visibility = 'hidden' if gid in hide else 'visible'
+            drawings.append((gid, 'Apical Translation (p.53)'))
+            logger.debug(drawings[-1][1])
+            vert_apex = vert_centroids[i_apex]
+            color = line_colors[gid]
+            grp = dwg.add(
+                dwg.g(id=gid,
+                      stroke=color,
+                      stroke_width=LINE_WIDTH,
+                      fill='none',
+                      visibility=visibility))
             grp.add(
-                dwg.circle(center=pos.tolist(),
-                            r=POINT_RADIUS,
-                            stroke=color,
-                            fill=color))
+                dwg.path((['M'] + sacrum_center.tolist() + [sacrum_center[0]] +
+                          [vert_corners[:, :, 1].min()])))
+            grp.add(
+                dwg.path((['M'] + vert_apex.tolist() + [sacrum_center[0]] +
+                          [vert_centroids[i_apex, 1]])))
+            grp.add(
+                dwg.circle(center=vert_apex.tolist(),
+                           r=POINT_RADIUS,
+                           stroke=color,
+                           fill=color))
+            grp.add(
+                dwg.text('{:.1f} pixels'.format(vert_apex[0] -
+                                                sacrum_center[0]),
+                         insert=vert_apex,
+                         **text_attrs))
+            grp.add(dwg.path((['M'] + sacrum_tltr.ravel().tolist())))
+            for pos in np.concatenate((sacrum_tltr, sacrum_center[np.newaxis]),
+                                      axis=0):
+                grp.add(
+                    dwg.circle(center=pos.tolist(),
+                               r=POINT_RADIUS,
+                               stroke=color,
+                               fill=color))
 
         # coronal balance
         gid = 'CoronalBalance'
@@ -887,7 +981,7 @@ def main():
                         default='ap')
     parser.add_argument('--algo',
                         help='Algorithm to determine curves',
-                        choices=['max_diffs', 'fujimori'],
+                        choices=['max_diffs', 'fujimori', 'no-cross'],
                         default='max_diffs')
     parser.add_argument('--hide',
                         help='Hide specified drawings',

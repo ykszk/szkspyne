@@ -263,8 +263,10 @@ class SpinalDrawing(svgwrite.Drawing):
 
         sacrum_center = sacrum_tltr.mean(axis=0)
         vert_centroids = np.array([calc_centroid(c) for c in vert_corners])
+        disc_centroids = np.array([calc_centroid(c) for c in disc_corners])
         self.sacrum_center = sacrum_center
         self.vert_centroids = vert_centroids
+        self.disc_centroids = disc_centroids
 
 
         vert_sup_cnrs = vert_corners[:, :2]
