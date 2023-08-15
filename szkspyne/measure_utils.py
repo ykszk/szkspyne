@@ -1,16 +1,18 @@
-from typing import Dict, List, Tuple, Union
-import numpy as np
-import io
-from base64 import b64encode
-import svgwrite
-from collections import defaultdict
-from skspatial.objects import Line, Point
-from scipy import stats
-from szkspyne import settings
-from pathlib import Path
-from PIL import Image
-import itertools
 import csv
+import io
+import itertools
+from base64 import b64encode
+from collections import defaultdict
+from pathlib import Path
+from typing import Dict, List, Tuple, Union
+
+import numpy as np
+import svgwrite
+from PIL import Image
+from scipy import stats
+from skspatial.objects import Line, Point
+
+from szkspyne import settings
 
 
 def pearsonr_ci(x, y, alpha=0.05):

@@ -1,16 +1,17 @@
 #%%
-import os
-import pandas as pd
-import numpy as np
-import mhd
-from tqdm import tqdm
-from pathlib import Path
-import cv2
-import itertools
 import argparse
+import itertools
+import os
+from pathlib import Path
+
+import cv2
+import mhd
+import numpy as np
+import pandas as pd
+import point_utils
 from joblib import Parallel, delayed
 from logzero import logger
-import point_utils
+from tqdm import tqdm
 
 
 def h2p_affinity(heatmap):

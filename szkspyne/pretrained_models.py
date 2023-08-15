@@ -1,11 +1,11 @@
-from ast import ListComp
-import segmentation_models_pytorch as smp
-import torch
-from torch import nn
-import torch.optim as optim
 import math
+from ast import ListComp
 
 import pytorch_lightning as pl
+import segmentation_models_pytorch as smp
+import torch
+import torch.optim as optim
+from torch import nn
 
 
 class LitSMP(pl.LightningModule):

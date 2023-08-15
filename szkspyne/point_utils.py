@@ -2,8 +2,8 @@
 Utility functions for point manipulation
 '''
 
-from typing import Sequence, Callable, Tuple, Optional, TypeVar, Iterable, List
 import itertools
+from typing import Callable, Iterable, List, Optional, Sequence, Tuple, TypeVar
 
 import numpy as np
 import numpy.typing as npt
@@ -12,9 +12,10 @@ import scipy.stats
 import torch
 import torch.utils.data
 from numba import njit
-from scipy.ndimage.measurements import center_of_mass
 from scipy.ndimage import distance_transform_edt
+from scipy.ndimage.measurements import center_of_mass
 from skimage import measure
+
 
 PointType = np.ndarray  # Tuple[float, float]
 PointsType = Sequence[PointType]

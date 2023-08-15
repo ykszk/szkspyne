@@ -1,14 +1,16 @@
-from pathlib import Path
-import pydicom
-import zipfile
-import pandas as pd
-from io import BytesIO
-from joblib import Parallel, delayed
-from logzero import logger
-import tqdm
+import argparse
 import itertools
 import sys
-import argparse
+import zipfile
+from io import BytesIO
+from pathlib import Path
+
+import pandas as pd
+import pydicom
+import tqdm
+from joblib import Parallel, delayed
+from logzero import logger
+
 
 meta_list = [
     'StudyInstanceUID',

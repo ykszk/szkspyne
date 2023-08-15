@@ -1,17 +1,18 @@
-from pathlib import Path
-import pandas as pd
-import pydicom
-from PIL import Image
-import numpy as np
-from typing import Tuple, List
-from joblib import Parallel, delayed
-import tqdm
-import sys
 import argparse
-import boundingbox as bb
-import piexif
-from piexif import helper
 import json
+import sys
+from pathlib import Path
+from typing import List, Tuple
+
+import boundingbox as bb
+import numpy as np
+import pandas as pd
+import piexif
+import pydicom
+import tqdm
+from joblib import Parallel, delayed
+from piexif import helper
+from PIL import Image
 
 
 def normalize(x, percentile):

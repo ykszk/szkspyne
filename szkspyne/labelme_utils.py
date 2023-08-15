@@ -1,13 +1,15 @@
 #%%
+import json
 import os
 import sys
-from pathlib import Path
-import json
-from typing import List
-import numpy as np
-from tqdm import tqdm
-from joblib import Parallel, delayed
 from collections import defaultdict
+from pathlib import Path
+from typing import List
+
+import numpy as np
+from joblib import Parallel, delayed
+from tqdm import tqdm
+
 
 def conv2shape_dict(json_data: dict) -> dict:
     '''Convert labelme dict to shape_type oriented dict

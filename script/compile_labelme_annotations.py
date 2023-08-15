@@ -1,10 +1,12 @@
 # %%
-from pathlib import Path
 import json
-from logzero import logger
+from pathlib import Path
+
 import numpy as np
+from logzero import logger
 
 from szkspyne import labelme_utils
+
 
 data_root = Path('../../data')
 indir = data_root / 'annotation/annotated/'

@@ -1,12 +1,15 @@
 # %%
-from pathlib import Path
+import argparse
 import json
 from collections import defaultdict
+from pathlib import Path
 from typing import List, Union
+
+import lmrspy
 import numpy as np
 import tqdm
-import argparse
-import lmrspy
+
+
 # https://github.com/ykszk/labelme-rs
 
 parser = argparse.ArgumentParser(

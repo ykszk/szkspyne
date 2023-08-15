@@ -1,14 +1,15 @@
-import sys
 import argparse
 import random
-from typing import List, Dict, Tuple
+import sys
+from typing import Dict, List, Tuple
 
 import albumentations as A
-from albumentations.pytorch import ToTensorV2
-from albumentations.core.transforms_interface import ImageOnlyTransform
-import numpy as np
 import cv2
+import numpy as np
 import point_utils
+from albumentations.core.transforms_interface import ImageOnlyTransform
+from albumentations.pytorch import ToTensorV2
+
 
 cv2.setNumThreads(0)
 cv2.ocl.setUseOpenCL(False)
@@ -122,6 +123,7 @@ album_base_crop_transform = A.ReplayCompose([A.CenterCrop(CROP_HEIGHT, CROP_WIDT
 
 
 import warnings
+
 
 def _random_transform(x: np.ndarray, keypoints, flip_pairs: List[Tuple[int,
                                                                       int]], tf_func):

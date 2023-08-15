@@ -1,14 +1,16 @@
 #%%
-from pathlib import Path
+import argparse
 import json
-from logzero import logger
+from pathlib import Path
 from typing import Any
 
-from szkspyne import labelme_utils, img_utils
-from scipy.spatial.distance import cdist
 import numpy as np
+from logzero import logger
+from scipy.spatial.distance import cdist
 from tqdm import tqdm
-import argparse
+
+from szkspyne import img_utils, labelme_utils
+
 
 parser = argparse.ArgumentParser(description='Modify AI annotation.')
 parser.add_argument('image_type',

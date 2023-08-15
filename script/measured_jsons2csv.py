@@ -1,8 +1,11 @@
 #%%
+import argparse
 import json
 from pathlib import Path
+
 import pandas as pd
-import argparse
+
+
 parser = argparse.ArgumentParser(description='Exp output to csv.')
 parser.add_argument(
     'root',

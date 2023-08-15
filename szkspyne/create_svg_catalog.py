@@ -1,6 +1,7 @@
-from pathlib import Path
-import sys
 import argparse
+import sys
+from pathlib import Path
+
 
 parser = argparse.ArgumentParser(
     description='Create catalog from measure_and_draw output.')

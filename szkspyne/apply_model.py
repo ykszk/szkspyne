@@ -1,14 +1,16 @@
-import sys
 import argparse
+import sys
+
 
 PROB_MAX = 4000
 
 # Cannot lazy load for pickling
 import json
-import numpy as np
-import point_utils
+
 import labelme_utils
 import mhd
+import numpy as np
+import point_utils
 import settings
 
 
@@ -136,24 +138,24 @@ def main():
     args = parser.parse_args()
 
     # lazy import
-    from logzero import logger
     import logzero
+    from logzero import logger
     log_format = '%(color)s[%(levelname)1.1s %(asctime)s.%(msecs)d %(module)s:%(lineno)d]%(end_color)s %(message)s'
     formatter = logzero.LogFormatter(fmt=log_format)
     logzero.setup_default_logger(formatter=formatter)
     logger.info('Load modules')
 
+    import json
     from pathlib import Path
-    import pretrained_models
-    import transforms
-    import img_utils
     from typing import Union
 
-    import torch
     import cv2
-    from PIL import Image
-    import json
+    import img_utils
+    import pretrained_models
     import pydicom
+    import torch
+    import transforms
+    from PIL import Image
     DOWN_FACTOR = 256
 
     def load(filename: Union[str, Path], height, pad: bool):
@@ -240,8 +242,8 @@ def main():
                       {'ElementNumberOfChannels': pred.shape[-1]})
 
     def apply_batch(args):
-        from joblib import Parallel, delayed
         import tqdm
+        from joblib import Parallel, delayed
         logger.info('load images')
         indir = Path(args.input)
         n_jobs = args.workers
@@ -256,7 +258,7 @@ def main():
                          np.int64).tolist()
         logger.info('Pad to %s', new_shape)
         xs = [img_utils.pad_to_shape(x, new_shape, 0)[np.newaxis] for x in xs]
-        from torch.utils.data import Dataset, DataLoader
+        from torch.utils.data import DataLoader, Dataset
 
         class NDArray(Dataset):
 
@@ -323,8 +325,8 @@ def main():
     def heatmap2labelme(heatmap_filename: str, ndjson_filename: str,
                         outdir: Union[str, Path], save_heatmap: bool,
                         save_ndjson: Union[str, None], n_jobs: int):
-        from joblib import Parallel, delayed
         import mhd
+        from joblib import Parallel, delayed
         outdir = Path(outdir)
         heatmaps, _ = mhd.read(heatmap_filename)
         heatmaps = heatmaps.transpose(

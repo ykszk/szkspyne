@@ -1,32 +1,34 @@
-# %%
+import json
+import sys
 from pathlib import Path
-import numpy as np
-import torch
-from torch.optim import Adam
-from logzero import logger
+from typing import Tuple, Union
+
 import logzero
+import matplotlib.pyplot as plt
+import mhd
+import numpy as np
+import pandas as pd
+import point_utils
+import seaborn as sns
+import settings
+import torch
+from joblib import Parallel, delayed
+from logzero import logger
+from pca_spine import PointsPCA
+from PIL import Image
+from scipy.ndimage import gaussian_filter
+from torch import nn
+from torch.optim import Adam
+from torch_utils import lerp2d
+from tqdm import tqdm
+
+from szkspyne import labelme_utils, settings
+
 
 log_format = '%(color)s[%(levelname)1.1s %(asctime)s.%(msecs)d %(module)s:%(lineno)d]%(end_color)s %(message)s'
 formatter = logzero.LogFormatter(fmt=log_format)
 logzero.setup_default_logger(formatter=formatter)
-import matplotlib.pyplot as plt
-from scipy.ndimage import gaussian_filter
-import json
-from PIL import Image
-from tqdm import tqdm
-import pandas as pd
-from joblib import Parallel, delayed
-import sys
-from typing import Union, Tuple
-import seaborn as sns
 
-import mhd
-from szkspyne import labelme_utils, settings
-from pca_spine import PointsPCA
-import point_utils
-import settings
-from torch_utils import lerp2d
-from torch import nn
 
 ANCHOR_LABELS = ['C7-TL', 'S-TL']
 ANCHOR_INDICES = [settings.LABEL_NAMES.index(l) for l in ANCHOR_LABELS]

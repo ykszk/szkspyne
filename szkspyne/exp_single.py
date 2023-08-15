@@ -1,34 +1,41 @@
 import os
 import sys
+
+
 if os.name == 'posix':
     import matplotlib
     matplotlib.use('Agg')
-import matplotlib.pyplot as plt
-import shutil
-from pathlib import Path
 import argparse
 import json
+import shutil
+from pathlib import Path
 from typing import Tuple, Union
+
+import matplotlib.pyplot as plt
 import torch
+
 
 torch.set_num_threads(1)
 # import multiprocessing as mp
 # mp.set_start_method('spawn')
 
-import pandas as pd
-import numpy as np
-import torch
-from torch.utils.data import DataLoader
+import exp_utils
+import img_utils
 import logzero
-from logzero import logger
-from sklearn.model_selection import KFold
+import mhd
+import numpy as np
+import pandas as pd
+import point_utils
+import pretrained_models
+import torch
+import transforms
 from joblib import Parallel, delayed
+from logzero import logger
+from settings import FLIP_PAIRS, LABEL_NAMES
+from sklearn.model_selection import KFold
+from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-import pretrained_models, transforms, point_utils, img_utils, exp_utils
-from settings import LABEL_NAMES, FLIP_PAIRS
-
-import mhd
 
 torch.backends.cudnn.benchmark = True  # due to random cropping
 
@@ -191,8 +198,7 @@ def main():
 
     import pytorch_lightning as pl
     from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
-    from pytorch_lightning.loggers import CSVLogger
-    from pytorch_lightning.loggers import WandbLogger
+    from pytorch_lightning.loggers import CSVLogger, WandbLogger
     early_stop_callback = EarlyStopping(monitor='val_loss',
                                         patience=args.patience,
                                         verbose=False,
@@ -267,6 +273,7 @@ def main():
     assert y_preds is not None
     print('minmax', y_preds[0].min(), y_preds[1].max())
     from szkspyne.apply_model import PROB_MAX
+
     # to channel last
     y_preds = [
         (PROB_MAX * y_pred).permute(

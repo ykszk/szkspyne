@@ -1,20 +1,19 @@
-import sys
 import json
-from typing import Union
-
-import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
-import numpy as np
-from typing import Sequence, Tuple, List, Set
+import sys
 from pathlib import Path
-from PIL import Image
-from joblib import Parallel, delayed
-from tqdm import tqdm
-from logzero import logger
+from typing import List, Sequence, Set, Tuple, Union
 
-import img_utils, transforms
+import img_utils
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import seaborn as sns
+import transforms
+from joblib import Parallel, delayed
+from logzero import logger
+from PIL import Image
 from settings import LABEL_NAMES
+from tqdm import tqdm
 
 
 def plot_history(df):
@@ -121,8 +120,9 @@ def ndjson2csv(filename: Union[str, Path],
 
 
 def main():
-    from logzero import logger
     import argparse
+
+    from logzero import logger
     parser = argparse.ArgumentParser(
         description='Try utility functions for debugging.')
     parser.add_argument('csv',
@@ -197,10 +197,10 @@ def main():
             df = ndjson2csv(csv_filename, set())
         else:
             df = pd.read_csv(csv_filename)
+        import settings
+        import transforms
         from img_utils import resize_height
         from point_utils import flatten_nest, partition
-        import transforms
-        import settings
         flip_pairs = settings.FLIP_PAIRS
         plt.figure(figsize=(7, 7))
         i_subplot = 1
@@ -263,10 +263,10 @@ def main():
             df = ndjson2csv(csv_filename, set())
         else:
             df = pd.read_csv(csv_filename)
-        from img_utils import resize_height, pad_to_shape
-        from point_utils import flatten_nest, partition, KeypointDataset
-        import transforms
         import settings
+        import transforms
+        from img_utils import pad_to_shape, resize_height
+        from point_utils import KeypointDataset, flatten_nest, partition
         from torch.utils.data import DataLoader
 
         flip_pairs = settings.FLIP_PAIRS

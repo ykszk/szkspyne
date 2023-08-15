@@ -1,10 +1,12 @@
 #%%
 import json
-import numpy as np
-from sklearn.decomposition import PCA
-from logzero import logger
 from pathlib import Path
-from typing import NamedTuple, List, Union
+from typing import List, NamedTuple, Union
+
+import numpy as np
+from logzero import logger
+from sklearn.decomposition import PCA
+
 from szkspyne import settings
 
 

@@ -1,13 +1,17 @@
 #%%
 from pathlib import Path
-import pandas as pd
-import numpy as np
+
 import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+
 
 data_dir = Path('../../data')
 label_names = ['TL', 'TR', 'BL', 'BR']
 #%%
 from PIL import Image
+
+
 for dataset_name in ['spineweb', 'verse']:
     df = pd.read_csv(dataset_name + '.csv')
     for _, row in df.iterrows():

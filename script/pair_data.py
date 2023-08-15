@@ -1,12 +1,14 @@
 #%%
-import numpy as np
-from datetime import datetime
-import pandas as pd
-from typing import List
-from pathlib import Path
-import json
 import argparse
+import json
 import sys
+from datetime import datetime
+from pathlib import Path
+from typing import List
+
+import numpy as np
+import pandas as pd
+
 
 parser = argparse.ArgumentParser(description='Pair pre-op left-right bend.')
 parser.add_argument(
@@ -91,6 +93,8 @@ required_flags = set(['術前', '術後'])
 complete_pids = []
 completes = []
 import itertools
+
+
 for pid, df_pid in df.groupby('PatientID'):
     if len(df_pid) < 2:
         continue

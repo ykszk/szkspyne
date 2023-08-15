@@ -1,8 +1,10 @@
 #%%
 from pathlib import Path
-import pandas as pd
+
 import numpy as np
+import pandas as pd
 import scipy.io
+
 
 data_dir = Path('../../data')
 sw_dir = data_dir / 'spineweb'
@@ -29,13 +31,17 @@ df.to_csv('spineweb.csv', index=False)
 df.head()
 # %% labelme
 import json
-import tqdm
 import sys
+
+import tqdm
+
 
 sys.path.append('..')
 sys.path.append('../szkspyne')
-from szkspyne import labelme_utils
 import shutil
+
+from szkspyne import labelme_utils
+
 
 outdir = sw_dir / 'labelme'
 for _, row in tqdm.tqdm(df.iterrows(), total=len(df)):

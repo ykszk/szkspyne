@@ -1,20 +1,29 @@
 #%%
-from pathlib import Path
+import argparse
 import json
 import sys
-from typing import List, Union, Any
-import numpy as np
+from collections import defaultdict
+from pathlib import Path
+from typing import Any, List, Union
+
 import logzero
+import numpy as np
+import svgwrite
+import yaml
+from jinja2 import Environment, FileSystemLoader
 from logzero import logger
 from skspatial.objects import Line, LineSegment, Point
-from szkspyne import settings
-import yaml
-import svgwrite
-from jinja2 import Environment, FileSystemLoader
-import argparse
+
 from szkspyne import measure_utils as utils
-from szkspyne.measure_utils import calc_centroid, perp, get_circle_dict, calc_angle, SpinalDrawing
-from collections import defaultdict
+from szkspyne import settings
+from szkspyne.measure_utils import (
+    SpinalDrawing,
+    calc_angle,
+    calc_centroid,
+    get_circle_dict,
+    perp,
+)
+
 
 LINE_WIDTH = 2.0
 POINT_RADIUS = 2.0
@@ -1058,8 +1067,8 @@ def main():
             )
             sys.exit(1)
         outdir = Path(args.output)
-        from joblib import Parallel, delayed
         import tqdm
+        from joblib import Parallel, delayed
 
         def do(fn: Path):
             measure = (outdir /
