@@ -195,6 +195,26 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
                     return True
                 except ValueError:
                     return False
+                
+            def find_apex(sup, inf):
+                vert_disc_corners = np.concatenate([
+                    vert_corners[sup:(inf + 1)],
+                    disc_corners[sup:inf]
+                ],
+                                                    axis=0)
+                vert_disc_centroids = np.concatenate([
+                    vert_centroids[sup:(inf + 1)],
+                    disc_centroids[sup:inf]
+                ],
+                                                        axis=0)
+                line_sup2inf = Line.from_points(vert_centroids[inf],
+                                                vert_centroids[sup])
+                apex, _ = max(
+                    [(i, abs(line_sup2inf.distance_point(c)))
+                        for i, c in enumerate(vert_disc_centroids)],
+                    key=lambda e: e[1])
+                apex_corner = vert_disc_corners[apex]
+                return apex_corner
 
             for mt_sup in range(n_verts):
                 for mt_inf in range(mt_sup + 2, 13):  #n_verts-2):
@@ -208,23 +228,7 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
                     lt_sup = mt_inf
                     mt_angle = calc_angle(vert_sup_cnrs[mt_sup],
                                           vert_inf_cnrs[mt_inf])
-                    vert_disc_corners = np.concatenate([
-                        vert_corners[mt_sup:(mt_inf + 1)],
-                        disc_corners[mt_sup:mt_inf]
-                    ],
-                                                       axis=0)
-                    vert_disc_centroids = np.concatenate([
-                        vert_centroids[mt_sup:(mt_inf + 1)],
-                        disc_centroids[mt_sup:mt_inf]
-                    ],
-                                                         axis=0)
-                    line_sup2inf = Line.from_points(vert_centroids[mt_inf],
-                                                    vert_centroids[mt_sup])
-                    mt_apex, _ = max(
-                        [(i, abs(line_sup2inf.distance_point(c)))
-                         for i, c in enumerate(vert_disc_centroids)],
-                        key=lambda e: e[1])
-                    mt_apex_corner = vert_disc_corners[mt_apex]
+                    mt_apex_corner = find_apex(mt_sup, mt_inf)
                     for lt_inf in range(lt_sup + 2, n_verts):
                         # check curve
                         sup2inf = LineSegment(vert_centroids[lt_inf],
@@ -237,23 +241,7 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
                         lt_angle = calc_angle(vert_sup_cnrs[lt_sup],
                                               vert_inf_cnrs[lt_inf])
                         score = mt_angle - lt_angle
-                        vert_disc_corners = np.concatenate([
-                            vert_corners[lt_sup:(lt_inf + 1)],
-                            disc_corners[lt_sup:lt_inf]
-                        ],
-                                                           axis=0)
-                        vert_disc_centroids = np.concatenate([
-                            vert_centroids[lt_sup:(lt_inf + 1)],
-                            disc_centroids[lt_sup:lt_inf]
-                        ],
-                                                             axis=0)
-                        line_sup2inf = Line.from_points(
-                            vert_centroids[lt_inf], vert_centroids[lt_sup])
-                        lt_apex, _ = max(
-                            [(i, abs(line_sup2inf.distance_point(c)))
-                             for i, c in enumerate(vert_disc_centroids)],
-                            key=lambda e: e[1])
-                        lt_apex_corner = vert_disc_corners[lt_apex]
+                        lt_apex_corner = find_apex(lt_sup, lt_inf)
                         apex_corners = [mt_apex_corner, lt_apex_corner]
                         candidates.append((score, mt_sup, mt_inf, lt_sup,
                                            lt_inf, apex_corners))
