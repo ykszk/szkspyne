@@ -2,27 +2,18 @@
 import argparse
 import json
 import sys
-from collections import defaultdict
 from pathlib import Path
-from typing import Any, List, Union
+from typing import Any, List, Tuple, Union
 
 import logzero
 import numpy as np
-import svgwrite
 import yaml
 from jinja2 import Environment, FileSystemLoader
 from logzero import logger
-from skspatial.objects import Line, LineSegment, Point
+from skspatial.objects import Line, LineSegment
 
 from szkspyne import measure_utils as utils
-from szkspyne import settings
-from szkspyne.measure_utils import (
-    SpinalDrawing,
-    calc_angle,
-    calc_centroid,
-    get_circle_dict,
-    perp,
-)
+from szkspyne.measure_utils import SpinalDrawing, calc_angle, get_circle_dict, perp
 
 
 LINE_WIDTH = 2.0
@@ -157,7 +148,7 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
         elif curve_algo=='fujimori':
             APEX_MARGIN=2
             diff_mat = coronal_translation[APEX_MARGIN:-APEX_MARGIN, np.newaxis] - coronal_translation[np.newaxis, APEX_MARGIN:-APEX_MARGIN]
-            max_pair = np.unravel_index(diff_mat.argmax(), diff_mat.shape)
+            max_pair: Tuple[int] = np.unravel_index(diff_mat.argmax(), diff_mat.shape)
             upper_apex = int(min(*max_pair) + APEX_MARGIN)
             lower_apex = int(max(*max_pair) + APEX_MARGIN)
             if vert_centroids[upper_apex][0] > vert_centroids[lower_apex][0]:
@@ -196,17 +187,21 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
                 except ValueError:
                     return False
                 
-            def find_apex(sup, inf):
-                vert_disc_corners = np.concatenate([
-                    vert_corners[sup:(inf + 1)],
-                    disc_corners[sup:inf]
-                ],
-                                                    axis=0)
-                vert_disc_centroids = np.concatenate([
-                    vert_centroids[sup:(inf + 1)],
-                    disc_centroids[sup:inf]
-                ],
+            def find_apex(sup, inf, include_discs=False):
+                if include_discs:
+                    vert_disc_corners = np.concatenate([
+                        vert_corners[sup:(inf + 1)],
+                        disc_corners[sup:inf]
+                    ],
                                                         axis=0)
+                    vert_disc_centroids = np.concatenate([
+                        vert_centroids[sup:(inf + 1)],
+                        disc_centroids[sup:inf]
+                    ],
+                                                            axis=0)
+                else:
+                    vert_disc_corners = vert_corners[sup:(inf + 1)]
+                    vert_disc_centroids = vert_centroids[sup:(inf + 1)]
                 line_sup2inf = Line.from_points(vert_centroids[inf],
                                                 vert_centroids[sup])
                 apex, _ = max(
@@ -228,7 +223,6 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
                     lt_sup = mt_inf
                     mt_angle = calc_angle(vert_sup_cnrs[mt_sup],
                                           vert_inf_cnrs[mt_inf])
-                    mt_apex_corner = find_apex(mt_sup, mt_inf)
                     for lt_inf in range(lt_sup + 2, n_verts):
                         # check curve
                         sup2inf = LineSegment(vert_centroids[lt_inf],
@@ -241,17 +235,15 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
                         lt_angle = calc_angle(vert_sup_cnrs[lt_sup],
                                               vert_inf_cnrs[lt_inf])
                         score = mt_angle - lt_angle
-                        lt_apex_corner = find_apex(lt_sup, lt_inf)
-                        apex_corners = [mt_apex_corner, lt_apex_corner]
                         candidates.append((score, mt_sup, mt_inf, lt_sup,
-                                           lt_inf, apex_corners))
+                                           lt_inf))
             if len(candidates) == 0:
                 raise RuntimeError('No candidate was found for %s',
                                    lm_data['imagePath'])
             scores = np.array([e[0] for e in candidates])
             abs_scores = np.abs(scores)
             best_set = candidates[np.argmax(abs_scores)]
-            score, mt_sup, mt_inf, lt_sup, lt_inf, apex_corners = best_set
+            score, mt_sup, mt_inf, lt_sup, lt_inf = best_set
             pt_sup, pt_inf = None, None
             if mt_sup >= 2:
                 mt_angle = calc_angle(vert_sup_cnrs[mt_sup],
@@ -265,6 +257,26 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
                 if candidates:
                     pt_sup, _ = max(candidates, key=lambda e: e[1])
                     pt_inf = inf
+            if pt_sup is None and lt_inf <= 12:
+                lt_angle = calc_angle(vert_sup_cnrs[lt_sup],
+                                      vert_inf_cnrs[lt_inf])
+                sup = lt_inf
+                candidates = []
+                for inf in range(sup+2, n_verts):
+                    angle = calc_angle(vert_sup_cnrs[sup], vert_inf_cnrs[inf])
+                    if angle * lt_angle < 0:
+                        candidates.append((inf, abs(angle)))
+                if candidates:
+                    pt_sup, pt_inf = mt_sup, mt_inf
+                    mt_sup, mt_inf = lt_sup, lt_inf
+                    lt_sup = mt_inf
+                    lt_inf, _ = max(candidates, key=lambda e: e[1])
+            mt_apex_corner = find_apex(mt_sup, mt_inf)
+            lt_apex_corner = find_apex(lt_sup, lt_inf)
+            apex_corners = [mt_apex_corner, lt_apex_corner]
+            if pt_sup is not None:
+                pt_apex_corner = find_apex(pt_sup, pt_inf)
+                apex_corners = [pt_apex_corner] + apex_corners
 
         measures['curve_indices'] = {
             'MT': (mt_sup, mt_inf),
