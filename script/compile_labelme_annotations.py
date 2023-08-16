@@ -1,5 +1,8 @@
 # %%
+import argparse
 import json
+import os
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -8,56 +11,35 @@ from logzero import logger
 from szkspyne import labelme_utils
 
 
-data_root = Path('../../data')
-indir = data_root / 'annotation/annotated/'
-sorted_fns = sorted(indir.glob('**/valid*.ndjson'))
-logger.info('file list done')
-logger.info(sorted_fns)
-# %%
-ADD_C7S = True
-logger.info('start')
+parser = argparse.ArgumentParser(
+    description='Convert labelme jsonl to exp format. Input is read from stdin')
+# parser.add_argument('input', help='Input filename', metavar='<input>')
+# parser.add_argument('output', help='Output filename', metavar='<output>')
+# parser.add_argument('-o',
+#                     '--option',
+#                     help='Optional argument. default: %(default)s',
+#                     metavar='<name>',
+#                     default='default')
+# parser.add_argument('-s',
+#                     '--switch',
+#                     help='Switch argument',
+#                     action='store_true')
+
+args = parser.parse_args()
+
+
 dataset = {}
-for fn in sorted_fns:
-    with open(str(fn)) as f:
-        lines = f.readlines()
-    image_type = '_'.join(fn.stem.split('_')[1:])
-    for line in lines:
-        data = json.loads(line)
-        if fn.parent.name.startswith('CO'):
-            last2 = Path(data['filepath']).with_suffix('.jpg').parts[-2:]
-            filepath = data_root / 'CLO/jpg' / last2[0] / last2[1]
-        elif fn.parent.name.startswith('SSS'):
-            last2 = Path(data['filepath']).with_suffix('.jpg').parts[-2:]
-            filepath = data_root / 'SSS/images/PREop/sorted' / last2[0] / last2[1]
-        else:
-            filename = '/'.join(
-                Path(data['filepath']).with_suffix('.jpg').name.split('_'))
-            filepath = data_root / 'jpg_half' / filename
-        if not filepath.exists():
-            logger.warning('Skip entry with no image: %s', filepath)
-            continue
-        filepath = str(filepath.relative_to(data_root)).replace('\\', '/')
-        shape_data = labelme_utils.conv2shape_dict(data)
-        if ADD_C7S:
-            d_points = shape_data['point']
-            tl = np.array(sorted(d_points['TL'], key=lambda e: e[0][1]))[:, 0]
-            tr = np.array(sorted(d_points['TR'], key=lambda e: e[0][1]))[:, 0]
-            d_points['C7-TL'] = [[tl[0].tolist()]]
-            d_points['C7-TR'] = [[tr[0].tolist()]]
-            d_points['S-TL'] = [[tl[-1].tolist()]]
-            d_points['S-TR'] = [[tr[-1].tolist()]]
-        shape_data['filepath'] = filepath
-        shape_data['image_type'] = image_type
-        shape_data['flags'] = [k for k, v in data['flags'].items() if v]
-        for t_copy in ['imageHeight', 'imageWidth']:
-            shape_data[t_copy] = data[t_copy]
-        dataset[filepath] = shape_data
-logger.info('done processing')
-print(len(dataset))
-# %%
-outname = 'manual_annotation.ndjson'
-with open(outname, 'w') as f:
-    for data in dataset.values():
-        json.dump(data, f, ensure_ascii=False)
-        f.write('\n')
-# %%
+for line in sys.stdin:
+    data = json.loads(line)
+    shape_data = labelme_utils.conv2shape_dict(data)
+    shape_data['filepath'] = data['filepath']
+    shape_data['flags'] = [k for k, v in data['flags'].items() if v]
+    if not os.path.exists(data['filepath']):
+        logger.warning('Skip entry with no image: %s', data['filepath'])
+        continue
+    for t_copy in ['imageHeight', 'imageWidth']:
+        shape_data[t_copy] = data[t_copy]
+    dataset[data['filepath']] = shape_data
+
+for data in dataset.values():
+    print(json.dumps(data, ensure_ascii=False))

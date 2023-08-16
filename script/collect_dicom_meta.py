@@ -73,7 +73,8 @@ def main():
     rows = Parallel(n_jobs=8)(
         delayed(extract_metadata)(arg)
         for arg in tqdm.tqdm(sorted(Path(args.input).glob('*.zip'))))
-    rows = itertools.chain.from_iterable(rows)
+    if rows is not None:
+        rows = itertools.chain.from_iterable(rows)
     logger.info('Saving dataframe')
     df = pd.DataFrame(rows)
     df.to_csv(args.output, index=False, encoding='utf8')

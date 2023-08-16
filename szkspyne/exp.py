@@ -42,6 +42,9 @@ from tqdm import tqdm
 
 def main():
     parser = argparse.ArgumentParser(description='Train and Test.')
+    parser.add_argument('--input',
+                        help='Input ndjson filename: %(default)s',
+                        default='script/manual_annotation.ndjson')
     parser.add_argument('--output',
                         help='Output directory: %(default)s',
                         metavar='<dirname>',
@@ -120,7 +123,7 @@ def main():
     with open(outroot / 'args.json', 'w') as f:
         json.dump(args.__dict__, f, indent=2)
 
-    NDJSON_FILENAME = 'script/manual_annotation.ndjson'
+    NDJSON_FILENAME = args.input
     shutil.copy(NDJSON_FILENAME, outroot)
     exclude_flags = set(['除外', '側面右向き'])
     df = exp_utils.ndjson2csv(NDJSON_FILENAME, exclude_flags)

@@ -8,7 +8,7 @@ SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
 
 N_SPLIT=5
 
-python3 "$SCRIPT_DIR"/preexp.py --fold 5 --output $result_dir $2 --ndjson "$SCRIPT_DIR"/../script/manual_annotation_wo_CLO.ndjson
+python3 "$SCRIPT_DIR"/preexp.py --fold 5 --output $result_dir $2 --ndjson "$SCRIPT_DIR"/../script/neck_manual_annotation.ndjson
 
 for fold_dir in "$result_dir"/?; do
     echo "$fold_dir"

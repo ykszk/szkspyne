@@ -24,6 +24,12 @@ class PointsPCA(PCA):
         self.ref_height = ref_height
 
     def to_ref_mat(self, top, bottom):
+        '''
+        Return transformation matrix that:
+        1) Scales points so that |top - bottom| becomes 1
+        2) Rotates points so that (top - bottom) becomes vertical
+        3) Translates points so that top becomes the origin
+        '''
         top, bottom = np.array(top), np.array(bottom)
         v = bottom - top  # type: ignore
         s = self.ref_height / np.linalg.norm(v)
