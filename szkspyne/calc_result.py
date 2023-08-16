@@ -5,12 +5,12 @@ import os
 from pathlib import Path
 
 import cv2
-import mhd
 import numpy as np
 import pandas as pd
 import point_utils
 from joblib import Parallel, delayed
 from logzero import logger
+from szkmipy import mhd
 from tqdm import tqdm
 
 

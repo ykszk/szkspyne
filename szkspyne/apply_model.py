@@ -8,10 +8,10 @@ PROB_MAX = 4000
 import json
 
 import labelme_utils
-import mhd
 import numpy as np
 import point_utils
 import settings
+from szkmipy import mhd
 
 
 def hm2labelme(pred,
@@ -325,8 +325,8 @@ def main():
     def heatmap2labelme(heatmap_filename: str, ndjson_filename: str,
                         outdir: Union[str, Path], save_heatmap: bool,
                         save_ndjson: Union[str, None], n_jobs: int):
-        import mhd
         from joblib import Parallel, delayed
+        from szkmipy import mhd
         outdir = Path(outdir)
         heatmaps, _ = mhd.read(heatmap_filename)
         heatmaps = heatmaps.transpose(

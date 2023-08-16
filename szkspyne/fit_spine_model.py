@@ -5,7 +5,6 @@ from typing import Tuple, Union
 
 import logzero
 import matplotlib.pyplot as plt
-import mhd
 import numpy as np
 import pandas as pd
 import point_utils
@@ -17,6 +16,7 @@ from logzero import logger
 from pca_spine import PointsPCA
 from PIL import Image
 from scipy.ndimage import gaussian_filter
+from szkmipy import mhd
 from torch import nn
 from torch.optim import Adam
 from torch_utils import lerp2d

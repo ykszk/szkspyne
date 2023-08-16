@@ -22,7 +22,6 @@ torch.set_num_threads(1)
 import exp_utils
 import img_utils
 import logzero
-import mhd
 import numpy as np
 import pandas as pd
 import point_utils
@@ -33,6 +32,7 @@ from joblib import Parallel, delayed
 from logzero import logger
 from settings import FLIP_PAIRS, LABEL_NAMES
 from sklearn.model_selection import KFold
+from szkmipy import mhd
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 

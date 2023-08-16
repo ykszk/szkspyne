@@ -305,13 +305,13 @@ def main():
                     plt.imshow(u8img, 'gray')
                     plt.axis('off')
             if args.mhd_x:
-                import mhd
+                from szkmipy import mhd
                 logger.info('Save x batch')
                 print('batch shape in utils', batch_xs.shape)
                 batch_xs = batch_xs.squeeze()  # remove channel dim
                 mhd.write(args.mhd_x, batch_xs.cpu().numpy())
             if args.mhd_y:
-                import mhd
+                from szkmipy import mhd
                 logger.info('Save y batch')
                 batch_ys = batch_ys.reshape(
                     (-1, batch_ys.shape[2],
