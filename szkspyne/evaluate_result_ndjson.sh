@@ -30,12 +30,13 @@ for image_type in ap_whole lateral_whole; do
 done
 
 HIDE="MajorApex APT CoronalBalance T1Tilt ClavicleAngle ShoulderHeight Pelvis FemoralHead PelvicObliquity LegLength SacralObliquity Mid/LowerThoracicKyphosis ProximalThoracicKyphosis SacralSlope PelvicIncidence PelvicRadiusAngle L5IncidenceAngle LumbosacralAngle"
+algo="no-cross"
 for image_type in ap lateral; do
     # create reference
     grep ${image_type}_whole "$result_dir"/manual_annotation.ndjson | python3 "$SCRIPT_DIR"/../script/exp2lmjson.py - "$result_dir"/reference/keypoints/${image_type}_whole/all_final_keypoints.ndjson
     for subdir in auto reference; do
         echo measure and draw $image_type $subdir
-        python3 "$SCRIPT_DIR"/measure_and_draw.py --hide $HIDE --height 1200 --points --numbers --image_type $image_type --parent_dir "$SCRIPT_DIR"/../../data/annotation/images/all --config "$SCRIPT_DIR"/../../data/annotation/config.yaml batch "$result_dir"/$subdir/keypoints/${image_type}_whole/all_final_keypoints.ndjson "$result_dir"/$subdir/${image_type}_whole/ --html --image .svg --ndjson "$result_dir"/$subdir/measures_${image_type}_whole.ndjson
+        python3 "$SCRIPT_DIR"/measure_and_draw.py --hide $HIDE --height 1200 --points --numbers --image_type $image_type --parent_dir "$SCRIPT_DIR"/../../data/annotation/images/all --config "$SCRIPT_DIR"/../../data/annotation/config.yaml --algo "$algo" batch "$result_dir"/$subdir/keypoints/${image_type}_whole/all_final_keypoints.ndjson "$result_dir"/$subdir/${image_type}_whole/ --html --image .svg --ndjson "$result_dir"/$subdir/measures_${image_type}_whole.ndjson
         python3 "$SCRIPT_DIR"/create_svg_catalog.py --title AI "$result_dir"/$subdir/${image_type}_whole/ "$result_dir"/$subdir/catalog_${image_type}_whole.html
     done
 done
