@@ -3,10 +3,10 @@ Utility functions for image manipulation
 '''
 from typing import List, Sequence, Tuple, Union
 
-import boundingbox as bb
 import numpy as np
 import skimage.transform
 import torch
+from szkmipy import boundingbox as bb
 
 
 def pad_to_shape(x: np.ndarray, shape: Sequence[int],

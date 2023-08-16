@@ -4,7 +4,6 @@ import sys
 from pathlib import Path
 from typing import List, Tuple
 
-import boundingbox as bb
 import numpy as np
 import pandas as pd
 import piexif
@@ -13,6 +12,7 @@ import tqdm
 from joblib import Parallel, delayed
 from piexif import helper
 from PIL import Image
+from szkmipy import boundingbox as bb
 
 
 def normalize(x, percentile):
