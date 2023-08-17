@@ -4,6 +4,7 @@ import json
 import sys
 from pathlib import Path
 from typing import Any, List, Tuple, Union
+import re
 
 import logzero
 import numpy as np
@@ -187,29 +188,40 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
                 except ValueError:
                     return False
                 
-            def find_apex(sup, inf, include_discs=False):
-                if include_discs:
-                    vert_disc_corners = np.concatenate([
-                        vert_corners[sup:(inf + 1)],
-                        disc_corners[sup:inf]
-                    ],
-                                                        axis=0)
-                    vert_disc_centroids = np.concatenate([
-                        vert_centroids[sup:(inf + 1)],
-                        disc_centroids[sup:inf]
-                    ],
-                                                            axis=0)
-                else:
+            def find_apex(sup, inf):
+                # if include_discs:
+                #     vert_disc_corners = np.concatenate([
+                #         vert_corners[sup:(inf + 1)],
+                #         disc_corners[sup:inf]
+                #     ],
+                #                                         axis=0)
+                #     vert_disc_centroids = np.concatenate([
+                #         vert_centroids[sup:(inf + 1)],
+                #         disc_centroids[sup:inf]
+                #     ],
+                #                                             axis=0)
+                # else:
+
+                # maximum translation
+                sup_line = Line.from_points(vert_corners[sup][0], vert_corners[sup][1])
+                inf_line = Line.from_points(vert_corners[inf][0], vert_corners[inf][1])
+                p_intersect = sup_line.intersect_line(inf_line)
+
+                if True:
                     vert_disc_corners = vert_corners[sup:(inf + 1)]
                     vert_disc_centroids = vert_centroids[sup:(inf + 1)]
                 line_sup2inf = Line.from_points(vert_centroids[inf],
                                                 vert_centroids[sup])
+                # apex, _ = max(
+                #     [(i, abs(line_sup2inf.distance_point(c)))
+                #         for i, c in enumerate(vert_disc_centroids)],
+                #     key=lambda e: e[1])
                 apex, _ = max(
-                    [(i, abs(line_sup2inf.distance_point(c)))
+                    [(i, abs(p_intersect[0]-c[0]))
                         for i, c in enumerate(vert_disc_centroids)],
                     key=lambda e: e[1])
                 apex_corner = vert_disc_corners[apex]
-                return apex_corner
+                return sup+apex, apex_corner
 
             for mt_sup in range(n_verts):
                 for mt_inf in range(mt_sup + 2, 13):  #n_verts-2):
@@ -245,7 +257,24 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
             best_set = candidates[np.argmax(abs_scores)]
             score, mt_sup, mt_inf, lt_sup, lt_inf = best_set
             pt_sup, pt_inf = None, None
-            if mt_sup >= 2:
+            mt_apex, mt_apex_corner = find_apex(mt_sup, mt_inf)
+            lt_apex, lt_apex_corner = find_apex(lt_sup, lt_inf)
+            if n_verts - lt_inf >= 2 and lt_apex < 11:
+                lt_angle = calc_angle(vert_sup_cnrs[lt_sup],
+                                      vert_inf_cnrs[lt_inf])
+                sup = lt_inf
+                candidates = []
+                for inf in range(sup+2, n_verts):
+                    angle = calc_angle(vert_sup_cnrs[sup], vert_inf_cnrs[inf])
+                    if angle * lt_angle < 0:
+                        candidates.append((inf, abs(angle)))
+                if candidates:
+                    inf, angle = max(candidates, key=lambda e: e[1])
+                    pt_sup, pt_inf = mt_sup, mt_inf
+                    mt_sup, mt_inf = lt_sup, lt_inf
+                    lt_sup = mt_inf
+                    lt_inf = inf
+            if pt_sup is None and mt_sup >= 2:
                 mt_angle = calc_angle(vert_sup_cnrs[mt_sup],
                                       vert_inf_cnrs[mt_inf])
                 inf = mt_sup
@@ -257,25 +286,10 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
                 if candidates:
                     pt_sup, _ = max(candidates, key=lambda e: e[1])
                     pt_inf = inf
-            if pt_sup is None and lt_inf <= 12:
-                lt_angle = calc_angle(vert_sup_cnrs[lt_sup],
-                                      vert_inf_cnrs[lt_inf])
-                sup = lt_inf
-                candidates = []
-                for inf in range(sup+2, n_verts):
-                    angle = calc_angle(vert_sup_cnrs[sup], vert_inf_cnrs[inf])
-                    if angle * lt_angle < 0:
-                        candidates.append((inf, abs(angle)))
-                if candidates:
-                    pt_sup, pt_inf = mt_sup, mt_inf
-                    mt_sup, mt_inf = lt_sup, lt_inf
-                    lt_sup = mt_inf
-                    lt_inf, _ = max(candidates, key=lambda e: e[1])
-            mt_apex_corner = find_apex(mt_sup, mt_inf)
-            lt_apex_corner = find_apex(lt_sup, lt_inf)
+
             apex_corners = [mt_apex_corner, lt_apex_corner]
             if pt_sup is not None:
-                pt_apex_corner = find_apex(pt_sup, pt_inf)
+                pt_apex, pt_apex_corner = find_apex(pt_sup, pt_inf)
                 apex_corners = [pt_apex_corner] + apex_corners
 
         measures['curve_indices'] = {
@@ -1056,9 +1070,9 @@ def main():
                            choices=['.svg', '.png'])
     sub_batch.add_argument(
         '--workers',
-        help='The number of concurrent workers. default:%(default)s',
+        help='The number of concurrent workers. Use all available cores by default',
         type=int,
-        default=4)
+        default=0)
 
     def command_batch(args):
         if not args.html and not args.image and not args.measure:
@@ -1067,16 +1081,18 @@ def main():
             )
             sys.exit(1)
         outdir = Path(args.output)
+        if args.workers<=0:
+            import os
+            args.workers = os.cpu_count()
+            logger.info("Use %d cores", args.workers)
         import tqdm
         from joblib import Parallel, delayed
 
         def do(fn: Path):
-            measure = (outdir /
-                       fn.name).with_suffix('.json') if args.measure else None
-            image = (outdir /
-                     fn.name).with_suffix(args.image) if args.image else None
-            html = (outdir /
-                    fn.name).with_suffix('.html') if args.html else None
+            stem = re.sub(r"\.json$", "", fn.name)
+            measure = outdir / (stem + '.json') if args.measure else None
+            image = outdir / (stem + args.image) if args.image else None
+            html = outdir / (stem + '.html') if args.html else None
             if args.parent_dir:
                 image_dir = Path(args.parent_dir)
             else:
@@ -1092,12 +1108,10 @@ def main():
                                 not args.external_svg, image_dir, args.slopes, args.algo)
 
         def do_ndjson(fn: Path, lm_data):
-            measure = (outdir /
-                       lm_data['filename']).with_suffix('.json') if args.measure else None
-            image = (outdir /
-                     lm_data['filename']).with_suffix(args.image) if args.image else None
-            html = (outdir /
-                    lm_data['filename']).with_suffix('.html') if args.html else None
+            stem = re.sub(r"\.json$", "", Path(lm_data['filename']).name)
+            measure = outdir / (stem + '.json') if args.measure else None
+            image = outdir / (stem + args.image) if args.image else None
+            html = outdir / (stem + '.html') if args.html else None
             if args.parent_dir:
                 image_dir = Path(args.parent_dir)
             else:
@@ -1125,7 +1139,7 @@ def main():
         if args.ndjson:
             with open(args.ndjson, 'w') as f:
                 for fn, ms in zip(json_filenames, all_measures):
-                    ms['filename'] = fn.stem
+                    ms['filename'] = re.sub(r"\.json$", "", fn.name) # not using `fn.stem` to avoid stripping to much
                     f.write(json.dumps(ms, ensure_ascii=False))
                     f.write('\n')
         return 0

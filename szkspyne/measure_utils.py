@@ -89,7 +89,7 @@ def calc_angle(line1, line2):
     v1 = v1 / np.linalg.norm(v1)
     v2 = line2[1] - line2[0]
     v2 = v2 / np.linalg.norm(v2)
-    cos = v1 @ v2
+    cos = np.clip(v1 @ v2, -1, 1)
     a = np.arccos(cos)
     if v1[1] - v2[1] <= 0:
         a = -a
