@@ -15,13 +15,12 @@ for fold_dir in "$result_dir"/?; do
             outdir="$fold_dir"/auto/$image_type
             mkdir -p "$outdir"
             python3 "$SCRIPT_DIR"/apply_model.py hm2lm "$fold_dir"/y_pred_$image_type.mha "$fold_dir"/test_$image_type.ndjson "$outdir" --save_ndjson "$outdir"/all_heatmap_keypoints.ndjson
-            python3 "$SCRIPT_DIR"/fit_spine_model.py "$outdir"/all_heatmap_keypoints.ndjson "$fold_dir"/y_pred_$image_type.mha --output "$outdir"/all_pca_keypoints.ndjson -m "$fold_dir"/pca_${image_type}_L4.npz -m "$fold_dir"/pca_${image_type}_L5.npz --sigma 10 1 --device cpu --skipped "$outdir"/skipped.txt
+            python3 "$SCRIPT_DIR"/fit_spine_model.py "$outdir"/all_heatmap_keypoints.ndjson "$fold_dir"/y_pred_$image_type.mha --output "$outdir"/all_pca_keypoints.ndjson -m "$fold_dir"/pca_${image_type}_L4.npz "$fold_dir"/pca_${image_type}_L5.npz --sigma 1 --device cpu --skipped "$outdir"/skipped.txt
         done
     ) &
 done
 wait
 echo 'end applying and fitting:' "$(date)"
-
 mkdir -p "$result_dir"/{auto,reference}{,/keypoints}/{ap_whole,lateral_whole}
 echo 'collect ndjson files from all folds and modify them'
 for image_type in ap_whole lateral_whole; do
