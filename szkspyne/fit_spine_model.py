@@ -1,7 +1,7 @@
 import json
 import sys
 from pathlib import Path
-from typing import Tuple, Union
+from typing import Tuple, Union, List
 
 import logzero
 import matplotlib.pyplot as plt
@@ -22,7 +22,7 @@ from torch.optim import Adam
 from torch_utils import lerp2d
 from tqdm import tqdm
 
-from szkspyne import labelme_utils, settings
+from szkspyne import labelme_utils, settings, measure_utils
 
 
 log_format = '%(color)s[%(levelname)1.1s %(asctime)s.%(msecs)d %(module)s:%(lineno)d]%(end_color)s %(message)s'
@@ -133,6 +133,38 @@ class PointAlignModel(nn.Module):
         for ch, pts in zip(heatmap, warped):
             probas.append(lerp2d(ch, pts))
         return probas
+    
+    def icp_loss(self, points):
+        warped = self.pca.unravel(self.warp())
+        distances = []
+        assert len(points) == len(warped)
+        for ref, pts in zip(points, warped):
+            m_dist = torch.cdist(ref, pts, p=2)
+            min_dists = torch.min(m_dist, dim=1, keepdim=False)[0] # [0] to ignore returned indices
+            distances.append(torch.mean(min_dists))
+        return distances
+
+    def icp(self, t_points: List[torch.Tensor], lr, max_iter, patience):
+        optimizer = Adam([self.coefs],
+                            lr=lr)
+
+        history = []
+        best_loss = np.finfo(np.float64).max
+        acc_patience = 0
+        for i in range(max_iter):
+            distances = self.icp_loss(t_points)
+            loss = torch.log(torch.stack(distances)).mean()
+            history.append(loss.detach().item())
+            if history[-1] <= best_loss:
+                best_loss = history[-1]
+                acc_patience = 0
+            else:
+                acc_patience += 1
+            if acc_patience >= patience:
+                break
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
 
 
 def calculate_anchors(anchor_maps):
@@ -248,6 +280,10 @@ def main():
         # heatmaps = heatmaps[:4]
 
         top_anchor, bottom_anchor = calculate_anchors(anchor_maps)
+        kps = measure_utils.get_point_dict(original_json)
+        vert_points = [kps[l] for l in settings.VERTEBRA_LABEL_NAMES]
+        # TODO: transform vert_points into the pca space
+        t_vert_points = [torch.Tensor(p).to(device) for p in vert_points]
 
         results = []
         histories = []
@@ -256,6 +292,7 @@ def main():
             n_comps = pca.calc_n_comps(args.contr_rate)
             pt_pca = PointAlignModel(pca, n_comps, top_anchor, bottom_anchor)
             pt_pca.to(device)
+            pt_pca.icp(t_vert_points, 0.001, args.max_iter, args.patience) # TODO: `lr=0.001`  should be some kind of variable
             optimizer = Adam([pt_pca.coefs],
                              lr=args.lr,
                              weight_decay=args.l2_reg)
@@ -303,6 +340,7 @@ def main():
                         history['model'] = f'{name}-{blur_sigma}'
                         histories.append(history)
             except IndexError:  # updated coefs become really big when warped points completely miss the heatmaps
+                logger.warning('Index error')
                 continue
             results.append((name, best_loss, best_coefs, best_pca))
 
