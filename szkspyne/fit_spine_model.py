@@ -1,7 +1,7 @@
 import json
 import sys
 from pathlib import Path
-from typing import Tuple, Union, List
+from typing import List, Tuple, Union
 
 import logzero
 import matplotlib.pyplot as plt
@@ -22,7 +22,7 @@ from torch.optim import Adam
 from torch_utils import lerp2d
 from tqdm import tqdm
 
-from szkspyne import labelme_utils, settings, measure_utils
+from szkspyne import labelme_utils, measure_utils, settings
 
 
 log_format = '%(color)s[%(levelname)1.1s %(asctime)s.%(msecs)d %(module)s:%(lineno)d]%(end_color)s %(message)s'
@@ -141,19 +141,26 @@ class PointAlignModel(nn.Module):
         for ref, pts in zip(points, warped):
             m_dist = torch.cdist(ref, pts, p=2)
             min_dists = torch.min(m_dist, dim=1, keepdim=False)[0] # [0] to ignore returned indices
-            distances.append(torch.mean(min_dists))
+            # print(ref.shape, pts.shape)
+            # print('ref', ref)
+            # print('pts', pts)
+            # print(m_dist)
+            distances.append(min_dists)
         return distances
 
     def icp(self, t_points: List[torch.Tensor], lr, max_iter, patience):
+        '''
+        t_points: list of (y, x) coordinates
+        '''
         optimizer = Adam([self.coefs],
-                            lr=lr)
+                            lr=lr, weight_decay=0.1)
 
         history = []
         best_loss = np.finfo(np.float64).max
         acc_patience = 0
         for i in range(max_iter):
             distances = self.icp_loss(t_points)
-            loss = torch.log(torch.stack(distances)).mean()
+            loss = torch.stack([d.mean() for d in distances]).mean()
             history.append(loss.detach().item())
             if history[-1] <= best_loss:
                 best_loss = history[-1]
@@ -166,7 +173,17 @@ class PointAlignModel(nn.Module):
             loss.backward()
             optimizer.step()
 
-
+        # for pts in t_points:
+        #     pts = pts.detach().numpy()
+        #     plt.scatter(pts[:,0], pts[:,1], c='blue', label='dst')
+        # warped = self.pca.unravel(self.warp())
+        # for pts in warped:
+        #     pts = pts.detach().numpy()
+        #     plt.scatter(pts[:,0], pts[:,1], c='green', label='src')
+        # plt.gca().invert_yaxis()
+        # plt.legend()
+        # plt.show()
+    
 def calculate_anchors(anchor_maps):
     '''
     Args:
@@ -281,8 +298,8 @@ def main():
 
         top_anchor, bottom_anchor = calculate_anchors(anchor_maps)
         kps = measure_utils.get_point_dict(original_json)
-        vert_points = [kps[l] for l in settings.VERTEBRA_LABEL_NAMES]
-        # TODO: transform vert_points into the pca space
+        s = IMG_HEIGHT / original_json['imageHeight'] # scale to heatmap
+        vert_points = [s * np.flip(kps[l], 1).copy() for l in settings.VERTEBRA_LABEL_NAMES] # (x, y) to (y, x)
         t_vert_points = [torch.Tensor(p).to(device) for p in vert_points]
 
         results = []
@@ -292,7 +309,7 @@ def main():
             n_comps = pca.calc_n_comps(args.contr_rate)
             pt_pca = PointAlignModel(pca, n_comps, top_anchor, bottom_anchor)
             pt_pca.to(device)
-            pt_pca.icp(t_vert_points, 0.001, args.max_iter, args.patience) # TODO: `lr=0.001`  should be some kind of variable
+            pt_pca.icp(t_vert_points, 0.01, args.max_iter, args.patience) # TODO: `lr=0.001`  should be some kind of variable
             optimizer = Adam([pt_pca.coefs],
                              lr=args.lr,
                              weight_decay=args.l2_reg)
