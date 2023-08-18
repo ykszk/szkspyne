@@ -267,6 +267,9 @@ def main():
     parser.add_argument('--history',
                         help='Save optimization history',
                         action='store_true')
+    parser.add_argument('--skip_complete',
+                        help='Skip fitting if given set of points is complete (i.e. the number of points matches expected number of points).',
+                        action='store_true')
     parser.add_argument(
         '--threads',
         help='Integer value for torch.set_num_threads(). default: %(default)d',
@@ -301,9 +304,11 @@ def main():
         s = IMG_HEIGHT / original_json['imageHeight'] # scale to heatmap
         vert_points = [s * np.flip(kps[l], 1).copy() for l in settings.VERTEBRA_LABEL_NAMES] # (x, y) to (y, x)
         vert_points_count = np.array([len(p) for p in vert_points])
-        for pca in pca_models:
-            if np.all(vert_points_count == np.array(pca.pca['point_counts'])):
-                return original_json, []
+        if args.skip_complete:
+            for pca in pca_models:
+                if np.all(vert_points_count == np.array(pca.pca['point_counts'])):
+                    logger.debug('Skip completed set for %s', pca.model_name)
+                    return original_json, []
         if not channel_first:
             heatmaps = heatmaps.transpose(2, 0, 1)
         if h_flip:  #h_flip:  # horizontal flip
