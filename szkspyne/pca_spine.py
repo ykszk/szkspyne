@@ -116,12 +116,28 @@ if __name__ == '__main__':
         all_data = [json.loads(line) for line in f]
     logger.info('Original data: %d', len(all_data))
     if args.mirror:
-        mirrored = copy.deepcopy(all_data)
-        for d in mirrored:
+        from settings import FLIP_PAIRS, LABEL_NAMES
+        mirrored = []
+        for d in all_data:
+            if d['image_type']!='ap':
+                continue
+            d = copy.deepcopy(d)
             width = d['imageWidth']
-            for point in d['point'].values():
+            kps = d['point']
+            for point in kps.values():
                 for p in point:
                     p[0][0] = width - p[0][0]
+            for flip_pair in FLIP_PAIRS:
+                k1, k2 = LABEL_NAMES[flip_pair[0]], LABEL_NAMES[flip_pair[1]]
+                if k1 in kps and k2 in kps:
+                    kps[k1], kps[k2] = kps[k2], kps[k1]
+                elif k1 in d and k2 not in d:
+                    kps[k2] = kps.pop(k1)
+                elif k1 not in kps and k2 in kps:
+                    kps[k1] = kps.pop(k2)
+            mirrored.append(d)
+
+
         all_data += mirrored
         
 

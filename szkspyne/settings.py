@@ -27,7 +27,7 @@ LABEL_NAMES = load_env_var(
     VERTEBRA_LABEL_NAMES + NON_VERTEBRA_LABEL_NAMES + ANCHOR_LABEL_NAMES)
 
 FLIPPED_NAMES = load_env_var('FLIPPED_NAMES', ['TR', 'TL', 'BR', 'BL'] +
-                             NON_VERTEBRA_LABEL_NAMES + ANCHOR_LABEL_NAMES)
+                             NON_VERTEBRA_LABEL_NAMES + ['C7-TR', 'C7-TL', 'S-TR', 'S-TL'])
 
 
 def create_flip_pairs(normal, flipped):
