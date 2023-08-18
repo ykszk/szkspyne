@@ -205,11 +205,16 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
                 # maximum translation
                 sup_line = Line.from_points(vert_corners[sup][0], vert_corners[sup][1])
                 inf_line = Line.from_points(vert_corners[inf][0], vert_corners[inf][1])
-                p_intersect = sup_line.intersect_line(inf_line)
 
                 if True:
                     vert_disc_corners = vert_corners[sup:(inf + 1)]
                     vert_disc_centroids = vert_centroids[sup:(inf + 1)]
+                try:
+                    p_intersect = sup_line.intersect_line(inf_line)
+                except ValueError: # parallel lines
+                    apex = (sup+inf)//2 # TODO: implement better parallel-line handling
+                    return apex, vert_disc_corners[apex-sup]
+
                 line_sup2inf = Line.from_points(vert_centroids[inf],
                                                 vert_centroids[sup])
                 # apex, _ = max(

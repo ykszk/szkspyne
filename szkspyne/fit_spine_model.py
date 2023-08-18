@@ -2,6 +2,7 @@ import json
 import sys
 from pathlib import Path
 from typing import List, Tuple, Union
+import os
 
 import logzero
 import matplotlib.pyplot as plt
@@ -160,7 +161,7 @@ class PointAlignModel(nn.Module):
         acc_patience = 0
         for i in range(max_iter):
             distances = self.icp_loss(t_points)
-            loss = torch.stack([d.mean() for d in distances]).mean()
+            loss = torch.concat(distances, dim=0).mean()
             history.append(loss.detach().item())
             if history[-1] <= best_loss:
                 best_loss = history[-1]
@@ -168,11 +169,12 @@ class PointAlignModel(nn.Module):
             else:
                 acc_patience += 1
             if acc_patience >= patience:
+                logger.debug('Early stopping ICP at %d %f', i, history[-1])
                 break
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-
+        return loss.detach()
         # for pts in t_points:
         #     pts = pts.detach().numpy()
         #     plt.scatter(pts[:,0], pts[:,1], c='blue', label='dst')
@@ -223,10 +225,14 @@ def main():
     parser.add_argument('--sigma',
                         help='Sigma value(s) for heatmap blurring.',
                         nargs='+',
-                        type=int,
+                        type=float,
                         default=[10, 1])
     parser.add_argument('--lr',
                         help='Initial learning rate. default: %(default)s',
+                        type=float,
+                        default=0.1)
+    parser.add_argument('--icp_lr',
+                        help='Initial learning rate for ICP. default: %(default)s',
                         type=float,
                         default=0.1)
     parser.add_argument(
@@ -271,6 +277,7 @@ def main():
                         type=int,
                         default=2)
 
+    logger.setLevel(os.environ.get('LOGLEVEL', 'INFO').upper())
     args, unknown = parser.parse_known_args()
     if unknown:
         logger.warning('Unknown arguments:%s', unknown)
@@ -289,6 +296,7 @@ def main():
     h_flip = False
 
     def fit(original_json: dict, heatmaps: np.ndarray):
+        logger.setLevel(os.environ.get('LOGLEVEL', 'INFO').upper())
         if not channel_first:
             heatmaps = heatmaps.transpose(2, 0, 1)
         if h_flip:  #h_flip:  # horizontal flip
@@ -305,11 +313,21 @@ def main():
         results = []
         histories = []
         for pca in pca_models:
+            if np.any(np.array([len(p) for p in t_vert_points]) > np.array(pca.pca['point_counts'])):
+                logger.debug('Skip model: %s', pca.model_name)
+                continue
+            # for m, t in zip(pca.pca['point_counts'], t_vert_points):
+            #     if len(t) > m: # Skip if |heatmap points| > |moidel points|
             name = pca.model_name
             n_comps = pca.calc_n_comps(args.contr_rate)
             pt_pca = PointAlignModel(pca, n_comps, top_anchor, bottom_anchor)
             pt_pca.to(device)
-            pt_pca.icp(t_vert_points, 0.01, args.max_iter, args.patience) # TODO: `lr=0.001`  should be some kind of variable
+            best_loss = pt_pca.icp(t_vert_points, args.icp_lr, args.max_iter, args.patience)
+            # best_pca = pca
+            # best_coefs = pt_pca.coefs.detach()
+            # best_name = 'icp_' + name
+            # results.append((best_name, best_loss, best_coefs, best_pca, [0]))
+            # continue
             optimizer = Adam([pt_pca.coefs],
                              lr=args.lr,
                              weight_decay=args.l2_reg)
@@ -340,6 +358,7 @@ def main():
                         if history[-1] <= best_loss:
                             best_loss = history[-1]
                             best_coefs = pt_pca.coefs.detach()
+                            best_probas = [p.detach() for p in probas]
                             best_pca = pca
                             patience = 0
                         else:
@@ -359,13 +378,15 @@ def main():
             except IndexError:  # updated coefs become really big when warped points completely miss the heatmaps
                 logger.warning('Index error')
                 continue
-            results.append((name, best_loss, best_coefs, best_pca))
+            results.append((name, best_loss, best_coefs, best_pca, best_probas))
 
         if len(results) == 0:
             return None
         result_json = original_json.copy()
         results.sort(key=lambda e: e[1])  # sort results by loss
-        best_name, best_loss, best_coefs, best_pca = results[0]
+        best_name, best_loss, best_coefs, best_pca, best_probas = results[0]
+        logger.debug('results: %s', results)
+        logger.debug('best loss: %s', best_loss)
         pca = best_pca
         pt_pca = PointAlignModel(pca, pca.calc_n_comps(args.contr_rate),
                                  top_anchor, bottom_anchor).to(device)
@@ -401,6 +422,7 @@ def main():
             outdir = Path(args.output)
 
         def do_dirin(fn: Path):
+            logger.setLevel(os.environ.get('LOGLEVEL', 'INFO').upper())
             torch.set_num_threads(args.threads)
             file_id = fn.stem
             heatmaps, h = mhd.read(str(data_dir / f'{file_id}.mha'))
