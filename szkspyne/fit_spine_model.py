@@ -1,8 +1,8 @@
 import json
+import os
 import sys
 from pathlib import Path
 from typing import List, Tuple, Union
-import os
 
 import logzero
 import matplotlib.pyplot as plt
@@ -297,6 +297,13 @@ def main():
 
     def fit(original_json: dict, heatmaps: np.ndarray):
         logger.setLevel(os.environ.get('LOGLEVEL', 'INFO').upper())
+        kps = measure_utils.get_point_dict(original_json)
+        s = IMG_HEIGHT / original_json['imageHeight'] # scale to heatmap
+        vert_points = [s * np.flip(kps[l], 1).copy() for l in settings.VERTEBRA_LABEL_NAMES] # (x, y) to (y, x)
+        vert_points_count = np.array([len(p) for p in vert_points])
+        for pca in pca_models:
+            if np.all(vert_points_count == np.array(pca.pca['point_counts'])):
+                return original_json, []
         if not channel_first:
             heatmaps = heatmaps.transpose(2, 0, 1)
         if h_flip:  #h_flip:  # horizontal flip
@@ -305,9 +312,6 @@ def main():
         # heatmaps = heatmaps[:4]
 
         top_anchor, bottom_anchor = calculate_anchors(anchor_maps)
-        kps = measure_utils.get_point_dict(original_json)
-        s = IMG_HEIGHT / original_json['imageHeight'] # scale to heatmap
-        vert_points = [s * np.flip(kps[l], 1).copy() for l in settings.VERTEBRA_LABEL_NAMES] # (x, y) to (y, x)
         t_vert_points = [torch.Tensor(p).to(device) for p in vert_points]
 
         results = []
