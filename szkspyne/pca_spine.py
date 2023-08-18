@@ -2,6 +2,7 @@
 import json
 from pathlib import Path
 from typing import List, NamedTuple, Union
+import copy
 
 import numpy as np
 from logzero import logger
@@ -86,6 +87,9 @@ if __name__ == '__main__':
                         metavar='<output>',
                         nargs='?',
                         default='.')
+    parser.add_argument('--mirror',
+                        help='Add horizontally mirrored point set to the dataset',
+                        action='store_true')
 
     args, unknown = parser.parse_known_args()
     if unknown:
@@ -111,6 +115,16 @@ if __name__ == '__main__':
     with open(args.input) as f:
         all_data = [json.loads(line) for line in f]
     logger.info('Original data: %d', len(all_data))
+    if args.mirror:
+        mirrored = copy.deepcopy(all_data)
+        for d in mirrored:
+            width = d['imageWidth']
+            for point in d['point'].values():
+                for p in point:
+                    p[0][0] = width - p[0][0]
+        all_data += mirrored
+        
+
     # preprocess
     for d in all_data:
         ns = {k: len(v) for k, v in d['point'].items()}
@@ -123,7 +137,6 @@ if __name__ == '__main__':
             np_pts[label] = np.array(pts)[:, 0]  # squeeze (N, 1, 2) -> (N, 2)
         d['point'] = np_pts
     # add potential pseudo L4
-    import copy
     l4_data = copy.deepcopy(all_data)
     for d in l4_data:
         np_pts = {}
