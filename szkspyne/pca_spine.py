@@ -1,4 +1,3 @@
-#%%
 import json
 from pathlib import Path
 from typing import List, NamedTuple, Union
@@ -119,7 +118,7 @@ if __name__ == '__main__':
         from settings import FLIP_PAIRS, LABEL_NAMES
         mirrored = []
         for d in all_data:
-            if d['image_type']!='ap':
+            if d['image_type']!='ap_whole':
                 continue
             d = copy.deepcopy(d)
             width = d['imageWidth']
