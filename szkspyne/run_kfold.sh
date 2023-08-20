@@ -3,12 +3,13 @@ if [ "$#" -lt 1 ]; then
     echo "Usage" "$0" "<result_dir> [--holdout]"
     exit
 fi
-result_dir="$1"
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
+readonly SCRIPT_DIR
+readonly result_dir="$1"
 
-N_SPLIT=5
+readonly N_SPLIT=5
 
-python3 "$SCRIPT_DIR"/preexp.py --fold 5 --output $result_dir $2 --ndjson "$SCRIPT_DIR"/../script/neck_manual_annotation.ndjson
+python3 "$SCRIPT_DIR"/preexp.py --fold "$N_SPLIT" --output "$result_dir" "$2" --ndjson "$SCRIPT_DIR"/../script/neck_manual_annotation.ndjson
 
 for fold_dir in "$result_dir"/?; do
     echo "$fold_dir"

@@ -3,8 +3,9 @@ if [ "$#" -ne 1 ]; then
     echo "Usage" "$0" "<result_dir>"
     exit
 fi
-result_dir="$1"
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
+readonly SCRIPT_DIR
+readonly result_dir="$1"
 
 echo 'start:' "$(date)"
 for fold_dir in "$result_dir"/?; do
@@ -28,14 +29,14 @@ for image_type in ap_whole lateral_whole; do
     python3 "$SCRIPT_DIR"/../script/modify_ai_annotation.py $image_type "$result_dir"/auto/keypoints/$image_type/all_pca_keypoints.ndjson --output "$result_dir"/auto/keypoints/$image_type/all_final_keypoints.ndjson
 done
 
-HIDE="MajorApex APT CoronalBalance T1Tilt ClavicleAngle ShoulderHeight Pelvis FemoralHead PelvicObliquity LegLength SacralObliquity Mid/LowerThoracicKyphosis ProximalThoracicKyphosis SacralSlope PelvicIncidence PelvicRadiusAngle L5IncidenceAngle LumbosacralAngle"
-algo="no-cross"
+readonly HIDE="MajorApex APT CoronalBalance T1Tilt ClavicleAngle ShoulderHeight Pelvis FemoralHead PelvicObliquity LegLength SacralObliquity Mid/LowerThoracicKyphosis ProximalThoracicKyphosis SacralSlope PelvicIncidence PelvicRadiusAngle L5IncidenceAngle LumbosacralAngle"
+readonly algo="no-cross"
 for image_type in ap lateral; do
     # create reference
     grep ${image_type}_whole "$result_dir"/manual_annotation.ndjson | python3 "$SCRIPT_DIR"/../script/exp2lmjson.py - "$result_dir"/reference/keypoints/${image_type}_whole/all_final_keypoints.ndjson
     for subdir in auto reference; do
         echo measure and draw $image_type $subdir
-        python3 "$SCRIPT_DIR"/measure_and_draw.py --hide $HIDE --height 1200 --points --numbers --image_type $image_type --parent_dir "$SCRIPT_DIR"/../../data/annotation/images/all --config "$SCRIPT_DIR"/../../data/annotation/config.yaml --algo "$algo" batch "$result_dir"/$subdir/keypoints/${image_type}_whole/all_final_keypoints.ndjson "$result_dir"/$subdir/${image_type}_whole/ --html --image .svg --ndjson "$result_dir"/$subdir/measures_${image_type}_whole.ndjson
+        python3 "$SCRIPT_DIR"/measure_and_draw.py --hide "$HIDE" --height 1200 --points --numbers --image_type $image_type --parent_dir "$SCRIPT_DIR"/../../data/annotation/images/all --config "$SCRIPT_DIR"/../../data/annotation/config.yaml --algo "$algo" batch "$result_dir"/$subdir/keypoints/${image_type}_whole/all_final_keypoints.ndjson "$result_dir"/$subdir/${image_type}_whole/ --html --image .svg --ndjson "$result_dir"/$subdir/measures_${image_type}_whole.ndjson
         python3 "$SCRIPT_DIR"/create_svg_catalog.py --title AI "$result_dir"/$subdir/${image_type}_whole/ "$result_dir"/$subdir/catalog_${image_type}_whole.html
     done
 done
