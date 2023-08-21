@@ -37,7 +37,7 @@ def kps2shapes(kps, label_names) -> list:
     '''
     Create labelme's `shape` element
 
-    input point format is 'yx'
+    input point format is 'yx' and output format is 'xy'
     '''
     shapes = []
     assert len(label_names) == len(kps)

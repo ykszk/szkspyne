@@ -308,6 +308,13 @@ def main():
             for pca in pca_models:
                 if np.all(vert_points_count == np.array(pca.pca['point_counts'])):
                     logger.debug('Skip completed set for %s', pca.model_name)
+                    kps = measure_utils.get_point_dict(original_json)
+                    kps = measure_utils.sort_kps(kps)
+                    for label in kps.keys():
+                        kps[label] = np.flip(kps[label], axis=1) # xy -> yx because kps2shapes's input is in yx format
+                    [kps.pop(label, None) for label in ['C7-TL', 'C7-TR', 'S-TL', 'S-TR']]
+                    original_json['shapes'] = labelme_utils.kps2shapes(list(kps.values()), list(kps.keys()))
+                        
                     return original_json, []
         if not channel_first:
             heatmaps = heatmaps.transpose(2, 0, 1)

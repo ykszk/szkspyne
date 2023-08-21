@@ -4,7 +4,7 @@ import itertools
 from base64 import b64encode
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, List, Tuple, Union
+from typing import Dict, List, Tuple, Union, Any
 
 import numpy as np
 import svgwrite
@@ -157,9 +157,12 @@ def get_circle_dict(json_data):
     return _get_shape_dict(json_data, 'circle')
 
 
-def sort_kps(points) -> Dict[str, np.ndarray]:
+def sort_kps(points: Dict[str, Any]) -> Dict[str, np.ndarray]:
     '''
     Sort keypoints by y position
+
+    Args:
+    - points Dict[str, List[(x, y)]]
 
     returns Dict[str, np.ndarray]
     '''
