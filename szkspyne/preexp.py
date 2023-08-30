@@ -30,6 +30,9 @@ def main():
     parser.add_argument('--ndjson',
                         help='Specify input ndjson',
                         default='script/manual_annotation.ndjson')
+    parser.add_argument('--seed',
+                        help='random state for splitting',
+                        default=2022)
     parser.add_argument(
         '--holdout',
         help=
@@ -39,7 +42,6 @@ def main():
     args = parser.parse_args()
     DEBUG = args.debug
 
-    data_root = Path('../data/')
     outroot = Path(args.output)
     outroot.mkdir(parents=True, exist_ok=True)
     logzero.logfile(outroot / 'output.log')
@@ -55,18 +57,8 @@ def main():
     shutil.copy(args.ndjson, NDJSON_FILENAME)
     exclude_flags = set(['除外', '側面右向き'])
     df = exp_utils.ndjson2csv(NDJSON_FILENAME, exclude_flags)
-    RANDOM_STATE = 2022
 
-    def extract_pid(filepath: str):
-        fp = Path(filepath)
-        if filepath.startswith('SSS'):
-            return fp.stem.split('-')[0]
-        elif filepath.startswith('CLO'):
-            return 'CLO' + fp.stem.split('_')[0]
-        else:
-            return Path(filepath).parts[1]
-
-    df['pid'] = df['filepath'].map(lambda pid: extract_pid(pid))
+    df['pid'] = df['group_id']
     # if True: # TODO: remove after debugging
     #     df = df[df['pid'].map(lambda e:e.startswith('OSC'))]
     df_all = df
@@ -76,7 +68,7 @@ def main():
     K_FOLD = args.fold
     df_all['set_id'] = -1
     kfold = KFold(n_splits=K_FOLD, shuffle=True,
-                  random_state=RANDOM_STATE)  #None if args.debug else 2022)
+                  random_state=args.seed)  #None if args.debug else 2022)
     for set_id, (_, test_index) in enumerate(kfold.split(pids)):
         idset = set(pids[test_index])
         df_all.loc[df_all['pid'].map(lambda e: e in idset), 'set_id'] = set_id
@@ -97,7 +89,7 @@ def main():
             df_train = df_all[df_all['set_id'].map(lambda e: e in train_ids)]
             non_test_pids = df_train['pid'].unique()
             test_pids = set(pids) - set(non_test_pids)
-            rng = np.random.RandomState(RANDOM_STATE)
+            rng = np.random.RandomState(args.seed)
             val_pids = set(
                 rng.choice(non_test_pids,
                            size=int(0.1 * len(non_test_pids)),
@@ -123,7 +115,7 @@ def main():
             #         lambda d: len(set(d['flags']).intersection(exclude_flags))
             #         == 0, all_data))
             for d in all_data:
-                pid = extract_pid(d['filepath'])
+                pid = d['group_id']
                 d['pid'] = pid
                 if pid in val_pids:
                     d['set'] = 'val'

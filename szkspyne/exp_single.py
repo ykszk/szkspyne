@@ -21,6 +21,7 @@ torch.set_num_threads(1)
 
 import exp_utils
 import img_utils
+import labelme_utils
 import logzero
 import numpy as np
 import pandas as pd
@@ -289,8 +290,7 @@ def main():
             lit_model.model.to('cpu').state_dict(),
             outdir / 'best_weights.pth')
     # y_preds = np.moveaxis(y_preds, 1, -1).copy()  # to channel last
-    with open(outdir / 'test.ndjson') as f:
-        test_data = [json.loads(l) for l in f.readlines()]
+    test_data = labelme_utils.load_ndjson(outdir / 'test.ndjson')
     for image_type in ['ap_whole', 'lateral_whole']:
         logger.info('Save preds %s', image_type)
         indices = []
@@ -301,10 +301,7 @@ def main():
         mhd.write(outdir / f'y_pred_{image_type}.mha', y_preds_it,
                   {'ElementNumberOfChannels': y_preds_it.shape[-1]})
         it_data = [test_data[i] for i in indices]
-        with open(outdir / f'test_{image_type}.ndjson', 'w') as f:
-            for data in it_data:
-                f.write(json.dumps(data))
-                f.write('\n')
+        labelme_utils.save_ndjson(it_data, outdir / f'test_{image_type}.ndjson')
     logger.info('End saving results')
 
     return 0

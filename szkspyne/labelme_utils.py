@@ -4,7 +4,7 @@ import os
 import sys
 from collections import defaultdict
 from pathlib import Path
-from typing import List
+from typing import Union, Dict, List, Any
 
 import numpy as np
 from joblib import Parallel, delayed
@@ -150,6 +150,18 @@ def split_ndjson(filename, output_dir):
             json.dump(data, f, ensure_ascii=False, indent=2)
         if mtime:
             os.utime(outname, (mtime, mtime))
+
+
+def load_ndjson(filename: Union[str, Path], encoding=None) -> List[Dict]:
+    with open(filename, encoding=encoding) as f:
+        return [json.loads(line) for line in f]
+
+
+def save_ndjson(ndjson: List[Any], filename: Union[str, Path], encoding=None, dump_kwargs={}) -> List[Dict]:
+    with open(filename, 'w', encoding=encoding) as f:
+        for data in ndjson:
+            f.write(json.dumps(data, **dump_kwargs))
+            f.write('\n')
 
 
 def diff_ndjsons(fn1, fn2):

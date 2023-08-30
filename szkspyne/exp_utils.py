@@ -112,7 +112,7 @@ def ndjson2csv(filename: Union[str, Path],
         for name in LABEL_NAMES:
             if name not in points.keys():
                 points[name] = np.array(())
-        row = {'filepath': data['filepath'], 'flags': data['flags']}
+        row = {'filepath': data['filepath'], 'flags': data['flags'], 'group_id': data.get('group_id', None)}
         row.update(points)
         rows.append(row)
     df = pd.DataFrame(rows)
