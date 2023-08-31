@@ -338,10 +338,7 @@ def main():
             heatmap, data = args
             original_shape = data['imageHeight'], data['imageWidth']
             filepath = Path(data['filepath'])
-            if filepath.parts[0] in ['CLO', 'SSS']:
-                stem = filepath.stem
-            else:
-                stem = '_'.join(filepath.with_suffix('').parts[1:])
+            stem = filepath.stem
             if save_heatmap:
                 mhd.write(outdir / f'{stem}.mha', heatmap)
             if save_ndjson is None:

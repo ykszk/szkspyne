@@ -324,6 +324,9 @@ def main():
         # heatmaps = heatmaps[:4]
 
         top_anchor, bottom_anchor = calculate_anchors(anchor_maps)
+        if not top_anchor or not bottom_anchor:
+            print('No anchor found in', original_json['filename'])
+            return
         t_vert_points = [torch.Tensor(p).to(device) for p in vert_points]
 
         results = []

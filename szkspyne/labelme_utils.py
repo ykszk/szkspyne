@@ -157,10 +157,10 @@ def load_ndjson(filename: Union[str, Path], encoding=None) -> List[Dict]:
         return [json.loads(line) for line in f]
 
 
-def save_ndjson(ndjson: List[Any], filename: Union[str, Path], encoding=None, dump_kwargs={}) -> List[Dict]:
+def save_ndjson(ndjson: List[Any], filename: Union[str, Path], encoding=None, ensure_ascii=False):
     with open(filename, 'w', encoding=encoding) as f:
         for data in ndjson:
-            f.write(json.dumps(data, **dump_kwargs))
+            f.write(json.dumps(data, ensure_ascii=ensure_ascii))
             f.write('\n')
 
 
