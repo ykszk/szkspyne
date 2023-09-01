@@ -16,25 +16,25 @@ from skspatial.objects import Line, LineSegment
 from szkspyne import measure_utils as utils
 from szkspyne.measure_utils import SpinalDrawing, calc_angle, get_circle_dict, perp
 
-
 LINE_WIDTH = 2.0
 POINT_RADIUS = 2.0
 PERP_BOX_SIZE = (20, 20)  # perpendicular sign
+
 
 def lerp(a, b, t):
     if t > 1 or 1 < 0:
         raise ValueError('Invalid value for lerp: %f', t)
     return t * a + (1 - t) * b
 
+
 def measure_json(lm_data: Any, height: int, config_filename: str,
                  draw_points: bool, draw_vertebral_number: bool,
-                 image_type: Union[str, None], image_filename: Union[Path,
-                                                                     None],
-                 html_filename: Union[Path,
-                                      None], measure_filename: Union[Path,
-                                                                     None],
-                 template_directory: str, html_title: str, hide: List[str],
-                 embed_svg: bool, image_dir: Path, calc_slopes: bool, curve_algo: str):
+                 image_type: Union[str, None],
+                 image_filename: Union[Path, None], html_filename: Union[Path,
+                                                                         None],
+                 measure_filename: Union[Path, None], template_directory: str,
+                 html_title: str, hide: List[str], embed_svg: bool,
+                 image_dir: Path, calc_slopes: bool, curve_algo: str):
 
     if not embed_svg and not str(image_filename).endswith('.svg'):
         raise RuntimeError('.svg output is required to link external svg')
@@ -52,7 +52,7 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
 
     if draw_points:
         drawings.append(('Points', 'Points'))
-        grp = dwg.add(dwg.g(id='Points', stroke_width=LINE_WIDTH, fill='none'))
+        grp = dwg.add(dwg.g(id='Points', stroke_width=LINE_WIDTH))
         for label, pts in kps.items():
             if label not in label_colors:
                 logger.warning(
@@ -62,16 +62,15 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
             else:
                 color = '#' + ''.join(
                     ['{:02x}'.format(c) for c in label_colors[label]])
+            g_ptx = dwg.g(id=f'Points-{label}', stroke=color, fill=color)
             for pt in pts:
-                grp.add(
-                    dwg.circle(center=pt,
-                               r=POINT_RADIUS,
-                               stroke=color,
-                               fill=color))
+                g_ptx.add(dwg.circle(center=pt, r=POINT_RADIUS))
+            grp.add(g_ptx)
 
     measures = {'flags': lm_data['flags']}
     if len(kps['TL']) != len(kps['TR']) or len(kps['BL']) != len(kps['BR']):
-        raise ValueError('Invalid set of number of points for TL, TR, BL and BR')
+        raise ValueError(
+            'Invalid set of number of points for TL, TR, BL and BR')
     sacrum_tltr, vert_corners, disc_corners = dwg.sacrum_tltr, dwg.vert_corners, dwg.disc_corners
     vert_corners_w_c7, c7_corners, c7_centroid = dwg.vert_corners_w_c7, dwg.c7_corners, dwg.c7_centroid
 
@@ -85,9 +84,9 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
         vn_attrs.update(dict(stroke_width='2px'))
         grp = dwg.add(
             dwg.g(id=gid,
-                    text_anchor="middle",
-                    dominant_baseline="central",
-                    **vn_attrs))
+                  text_anchor="middle",
+                  dominant_baseline="central",
+                  **vn_attrs))
         for i, vc in enumerate(vert_centroids, 1):
             if i > 12:
                 vn = f'L{i-12}'
@@ -104,20 +103,20 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
         best_score = 0
         MT_MARGIN = 3
 
-        if curve_algo=='max_diffs':
+        if curve_algo == 'max_diffs':
             for mt_sup in range(MT_MARGIN, 7):
                 for mt_inf in range(9, len(vert_sup_cnrs) - MT_MARGIN):
                     if mt_inf - mt_sup >= 10:
                         continue
                     mt_angle = calc_angle(vert_sup_cnrs[mt_sup],
-                                            vert_inf_cnrs[mt_inf])
+                                          vert_inf_cnrs[mt_inf])
                     # pt
                     best_pt_score = 0
                     best_pt = None
                     pt_inf = mt_sup
                     for pt_sup in range(0, mt_sup - 1):
                         pt_angle = calc_angle(vert_sup_cnrs[pt_sup],
-                                                vert_inf_cnrs[pt_inf])
+                                              vert_inf_cnrs[pt_inf])
                         score = np.abs(pt_angle - mt_angle)
                         if score > best_pt_score:
                             best_pt = (pt_sup, pt_inf)
@@ -131,7 +130,7 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
                     lt_sup = mt_inf
                     for lt_inf in range(lt_sup + 1, len(vert_inf_cnrs)):
                         lt_angle = calc_angle(vert_sup_cnrs[lt_sup],
-                                                vert_inf_cnrs[lt_inf])
+                                              vert_inf_cnrs[lt_inf])
                         score = np.abs(lt_angle - mt_angle)
                         if score > best_lt_score:
                             best_lt = (lt_sup, lt_inf)
@@ -143,13 +142,19 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
                         best_set = (mt_sup, mt_inf), best_pt, best_lt
             assert best_set is not None
             (mt_sup, mt_inf), (pt_sup, pt_inf), (lt_sup, lt_inf) = best_set
-            apexes = [np.abs(
-            coronal_translation[MT_MARGIN:-MT_MARGIN]).argmax() + MT_MARGIN]
+            apexes = [
+                np.abs(coronal_translation[MT_MARGIN:-MT_MARGIN]).argmax() +
+                MT_MARGIN
+            ]
             apex_corners = [vert_corners[a] for a in apexes]
-        elif curve_algo=='fujimori':
-            APEX_MARGIN=2
-            diff_mat = coronal_translation[APEX_MARGIN:-APEX_MARGIN, np.newaxis] - coronal_translation[np.newaxis, APEX_MARGIN:-APEX_MARGIN]
-            max_pair: Tuple[int] = np.unravel_index(diff_mat.argmax(), diff_mat.shape)
+        elif curve_algo == 'fujimori':
+            APEX_MARGIN = 2
+            diff_mat = coronal_translation[APEX_MARGIN:-APEX_MARGIN,
+                                           np.newaxis] - coronal_translation[
+                                               np.newaxis,
+                                               APEX_MARGIN:-APEX_MARGIN]
+            max_pair: Tuple[int] = np.unravel_index(diff_mat.argmax(),
+                                                    diff_mat.shape)
             upper_apex = int(min(*max_pair) + APEX_MARGIN)
             lower_apex = int(max(*max_pair) + APEX_MARGIN)
             if vert_centroids[upper_apex][0] > vert_centroids[lower_apex][0]:
@@ -157,19 +162,19 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
             else:
                 upper_arg, lower_arg = np.argmax, np.argmin
             mt_angles = []
-            for mt_sup in range(upper_apex-1):
-                for mt_inf in range(upper_apex+1, lower_apex-1):
+            for mt_sup in range(upper_apex - 1):
+                for mt_inf in range(upper_apex + 1, lower_apex - 1):
                     mt_angle = calc_angle(vert_sup_cnrs[mt_sup],
-                                                vert_inf_cnrs[mt_inf])
+                                          vert_inf_cnrs[mt_inf])
                     mt_angles.append((mt_sup, mt_inf, mt_angle))
             mt_set = mt_angles[upper_arg([e[-1] for e in mt_angles])]
             mt_sup, mt_inf = mt_set[0], mt_set[1]
 
             lt_sup = mt_inf
             lt_angles = []
-            for lt_inf in range(lower_apex+1, len(vert_corners)):
+            for lt_inf in range(lower_apex + 1, len(vert_corners)):
                 lt_angle = calc_angle(vert_sup_cnrs[lt_sup],
-                                            vert_inf_cnrs[lt_inf])
+                                      vert_inf_cnrs[lt_inf])
                 lt_angles.append((lt_sup, lt_inf, lt_angle))
             lt_set = lt_angles[lower_arg([e[-1] for e in lt_angles])]
             lt_sup, lt_inf = lt_set[0], lt_set[1]
@@ -187,7 +192,7 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
                     return True
                 except ValueError:
                     return False
-                
+
             def find_apex(sup, inf):
                 # if include_discs:
                 #     vert_disc_corners = np.concatenate([
@@ -203,17 +208,21 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
                 # else:
 
                 # maximum translation
-                sup_line = Line.from_points(vert_corners[sup][0], vert_corners[sup][1])
-                inf_line = Line.from_points(vert_corners[inf][0], vert_corners[inf][1])
+                sup_line = Line.from_points(vert_corners[sup][0],
+                                            vert_corners[sup][1])
+                inf_line = Line.from_points(vert_corners[inf][0],
+                                            vert_corners[inf][1])
 
                 if True:
                     vert_disc_corners = vert_corners[sup:(inf + 1)]
                     vert_disc_centroids = vert_centroids[sup:(inf + 1)]
                 try:
                     p_intersect = sup_line.intersect_line(inf_line)
-                except ValueError: # parallel lines
-                    apex = (sup+inf)//2 # TODO: implement better parallel-line handling
-                    return apex, vert_disc_corners[apex-sup]
+                except ValueError:  # parallel lines
+                    apex = (
+                        sup + inf
+                    ) // 2  # TODO: implement better parallel-line handling
+                    return apex, vert_disc_corners[apex - sup]
 
                 line_sup2inf = Line.from_points(vert_centroids[inf],
                                                 vert_centroids[sup])
@@ -221,12 +230,11 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
                 #     [(i, abs(line_sup2inf.distance_point(c)))
                 #         for i, c in enumerate(vert_disc_centroids)],
                 #     key=lambda e: e[1])
-                apex, _ = max(
-                    [(i, abs(p_intersect[0]-c[0]))
-                        for i, c in enumerate(vert_disc_centroids)],
-                    key=lambda e: e[1])
+                apex, _ = max([(i, abs(p_intersect[0] - c[0]))
+                               for i, c in enumerate(vert_disc_centroids)],
+                              key=lambda e: e[1])
                 apex_corner = vert_disc_corners[apex]
-                return sup+apex, apex_corner
+                return sup + apex, apex_corner
 
             for mt_sup in range(n_verts):
                 for mt_inf in range(mt_sup + 2, 13):  #n_verts-2):
@@ -252,8 +260,8 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
                         lt_angle = calc_angle(vert_sup_cnrs[lt_sup],
                                               vert_inf_cnrs[lt_inf])
                         score = mt_angle - lt_angle
-                        candidates.append((score, mt_sup, mt_inf, lt_sup,
-                                           lt_inf))
+                        candidates.append(
+                            (score, mt_sup, mt_inf, lt_sup, lt_inf))
             if len(candidates) == 0:
                 raise RuntimeError('No candidate was found for %s',
                                    lm_data['imagePath'])
@@ -269,7 +277,7 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
                                       vert_inf_cnrs[lt_inf])
                 sup = lt_inf
                 candidates = []
-                for inf in range(sup+2, n_verts):
+                for inf in range(sup + 2, n_verts):
                     angle = calc_angle(vert_sup_cnrs[sup], vert_inf_cnrs[inf])
                     if angle * lt_angle < 0:
                         candidates.append((inf, abs(angle)))
@@ -311,41 +319,43 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
             visibility = 'hidden' if gid in hide else 'visible'
             grp = dwg.add(
                 dwg.g(id=gid,
-                        stroke='red',
-                        stroke_width=LINE_WIDTH,
-                        fill='none',
-                        visibility=visibility))
+                      stroke='red',
+                      stroke_width=LINE_WIDTH,
+                      fill='none',
+                      visibility=visibility))
             measures[gid] = dwg.draw_cobb(vert_sup_cnrs[pt_sup],
-                                            vert_inf_cnrs[pt_inf],
-                                            grp,
-                                            text_attrs=text_attrs)
-        drawings += [('MT', 'MT Cobb (p.49)'),
-                        ('LT', 'LT Cobb (p.49)')]
+                                          vert_inf_cnrs[pt_inf],
+                                          grp,
+                                          title=gid,
+                                          text_attrs=text_attrs)
+        drawings += [('MT', 'MT Cobb (p.49)'), ('LT', 'LT Cobb (p.49)')]
         gid = 'MT'
         visibility = 'hidden' if gid in hide else 'visible'
         grp = dwg.add(
             dwg.g(id=gid,
-                    stroke=line_colors[gid],
-                    stroke_width=LINE_WIDTH,
-                    fill='none',
-                    visibility=visibility))
+                  stroke=line_colors[gid],
+                  stroke_width=LINE_WIDTH,
+                  fill='none',
+                  visibility=visibility))
         measures[gid] = dwg.draw_cobb(vert_sup_cnrs[mt_sup],
-                                        vert_inf_cnrs[mt_inf],
-                                        grp,
-                                        text_attrs=text_attrs)
+                                      vert_inf_cnrs[mt_inf],
+                                      grp,
+                                      title=gid,
+                                      text_attrs=text_attrs)
         if lt_sup is not None and lt_inf is not None:
             gid = 'LT'
             visibility = 'hidden' if gid in hide else 'visible'
             grp = dwg.add(
                 dwg.g(id=gid,
-                        stroke=line_colors[gid],
-                        stroke_width=LINE_WIDTH,
-                        fill='none',
-                        visibility=visibility))
+                      stroke=line_colors[gid],
+                      stroke_width=LINE_WIDTH,
+                      fill='none',
+                      visibility=visibility))
             measures[gid] = dwg.draw_cobb(vert_sup_cnrs[lt_sup],
-                                            vert_inf_cnrs[lt_inf],
-                                            grp,
-                                            text_attrs=text_attrs)
+                                          vert_inf_cnrs[lt_inf],
+                                          grp,
+                                          title=gid,
+                                          text_attrs=text_attrs)
         # Major apex
         if apex_corners:
             gid = 'MajorApex'
@@ -354,16 +364,16 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
             color = 'orange'
             grp = dwg.add(
                 dwg.g(id=gid,
-                        stroke=color,
-                        stroke_width=LINE_WIDTH,
-                        fill='none',
-                        visibility=visibility))
+                      stroke=color,
+                      stroke_width=LINE_WIDTH,
+                      fill='none',
+                      visibility=visibility))
             for vert_apex in apex_corners:
                 grp.add(
                     dwg.path((['M'] + [
                         vc.tolist() for vc in [
-                            vert_apex[0], vert_apex[1], vert_apex[3], vert_apex[2],
-                            vert_apex[0]
+                            vert_apex[0], vert_apex[1], vert_apex[3],
+                            vert_apex[2], vert_apex[0]
                         ]
                     ])))
                 for v in vert_centroids:
@@ -394,11 +404,12 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
                            r=POINT_RADIUS,
                            stroke=color,
                            fill=color))
-            grp.add(
-                dwg.text('{:.1f} pixels'.format(vert_apex[0] -
-                                                sacrum_center[0]),
-                         insert=vert_apex,
-                         **text_attrs))
+            text_elm = dwg.text('{:.1f} pixels'.format(vert_apex[0] -
+                                                       sacrum_center[0]),
+                                insert=vert_apex,
+                                **text_attrs)
+            text_elm.set_desc(title=gid)
+            grp.add(text_elm)
             grp.add(dwg.path((['M'] + sacrum_tltr.ravel().tolist())))
             for pos in np.concatenate((sacrum_tltr, sacrum_center[np.newaxis]),
                                       axis=0):
@@ -416,37 +427,37 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
         color = line_colors[gid]
         grp = dwg.add(
             dwg.g(id=gid,
-                    stroke=color,
-                    stroke_width=LINE_WIDTH,
-                    fill='none',
-                    visibility=visibility))
-
+                  stroke=color,
+                  stroke_width=LINE_WIDTH,
+                  fill='none',
+                  visibility=visibility))
 
         grp.add(
             dwg.path((['M'] + sacrum_center.tolist() + [sacrum_center[0]] +
-                        [lerp(sacrum_center[1], c7_centroid[1], .4)])))
+                      [lerp(sacrum_center[1], c7_centroid[1], .4)])))
         grp.add(
             dwg.path((['M'] + c7_centroid.tolist() + [c7_centroid[0]] +
-                        [lerp(sacrum_center[1], c7_centroid[1], .6)])))
+                      [lerp(sacrum_center[1], c7_centroid[1], .6)])))
         grp.add(
             dwg.circle(center=sacrum_center.tolist(),
-                        r=POINT_RADIUS,
-                        stroke=color,
-                        fill=color))
+                       r=POINT_RADIUS,
+                       stroke=color,
+                       fill=color))
         grp.add(
             dwg.circle(center=c7_centroid.tolist(),
-                        r=POINT_RADIUS,
-                        stroke=color,
-                        fill=color))
+                       r=POINT_RADIUS,
+                       stroke=color,
+                       fill=color))
         y_cb = lerp(sacrum_center[1], c7_centroid[1], .5)
         grp.add(
-            dwg.path((['M'] + [c7_centroid[0], y_cb] +
-                        [sacrum_center[0], y_cb])))
-        grp.add(
-            dwg.text('{:.1f} pixels'.format(c7_centroid[0] -
-                                            sacrum_center[0]),
-                        insert=[max(c7_centroid[0], sacrum_center[0]), y_cb],
-                        **text_attrs))
+            dwg.path(
+                (['M'] + [c7_centroid[0], y_cb] + [sacrum_center[0], y_cb])))
+        text_elm = dwg.text(
+            '{:.1f} pixels'.format(c7_centroid[0] - sacrum_center[0]),
+            insert=[max(c7_centroid[0], sacrum_center[0]), y_cb],
+            **text_attrs)
+        text_elm.set_desc(title=gid)
+        grp.add(text_elm)
         measures['CoronalBalance'] = c7_centroid[0] - sacrum_center[0]
         # T1 tilt
         gid = 'T1Tilt'
@@ -456,10 +467,10 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
         color = line_colors[gid]
         grp = dwg.add(
             dwg.g(id=gid,
-                    stroke=color,
-                    stroke_width=LINE_WIDTH,
-                    fill='none',
-                    visibility=visibility))
+                  stroke=color,
+                  stroke_width=LINE_WIDTH,
+                  fill='none',
+                  visibility=visibility))
 
         c7pl = np.array((c7_centroid, (c7_centroid[0], img.size[1])))
         t1_corners = vert_corners[0]
@@ -469,21 +480,22 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
         line_t1 = Line.from_points(vert_corners[0, 0], vert_corners[0, 1])
 
         aux_t1_tilt = Line.from_points(c7pl[0],
-                                        c7pl[1]).intersect_line(line_t1)
-        grp.add(
-            dwg.path((['M'] +
-                        (aux_t1_tilt - 2 * t1_width * t1_sup_vec).tolist() +
-                        (aux_t1_tilt + 5 * t1_width * t1_sup_vec).tolist())))
+                                       c7pl[1]).intersect_line(line_t1)
         grp.add(
             dwg.path(
-                (['M'] + (aux_t1_tilt - 2 * t1_width * aux_vec).tolist() +
-                    (aux_t1_tilt + 5 * t1_width * aux_vec).tolist())))
+                (['M'] + (aux_t1_tilt - 2 * t1_width * t1_sup_vec).tolist() +
+                 (aux_t1_tilt + 5 * t1_width * t1_sup_vec).tolist())))
+        grp.add(
+            dwg.path((['M'] + (aux_t1_tilt - 2 * t1_width * aux_vec).tolist() +
+                      (aux_t1_tilt + 5 * t1_width * aux_vec).tolist())))
         angle = calc_angle(
             vert_corners[0],
             ([0, aux_t1_tilt[1]], [img.size[0], aux_t1_tilt[1]]))
         angle_deg = np.rad2deg(angle)
         txt_angle = '{:.2f}°'.format(angle_deg)
-        grp.add(dwg.text(txt_angle, insert=c7_centroid, **text_attrs))
+        text_elm = dwg.text(txt_angle, insert=c7_centroid, **text_attrs)
+        text_elm.set_desc(title=gid)
+        grp.add(text_elm)
         measures['T1Tilt'] = angle_deg
 
         if 'Clavicle' in kps and len(kps['Clavicle']) == 2:
@@ -493,21 +505,19 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
             color = line_colors[gid]
             grp = dwg.add(
                 dwg.g(id=gid,
-                        stroke=color,
-                        stroke_width=LINE_WIDTH,
-                        fill='none',
-                        visibility='hidden' if gid in hide else 'visible'))
+                      stroke=color,
+                      stroke_width=LINE_WIDTH,
+                      fill='none',
+                      visibility='hidden' if gid in hide else 'visible'))
             assert kps['Clavicle'].shape == (2, 2)
             clavicle_kps = kps['Clavicle']
-            line_clavicle = Line.from_points(clavicle_kps[0],
-                                                clavicle_kps[1])
-            chrl = Line.from_points(
-                [0, clavicle_kps[:, 1].min()],
-                [img.size[0], clavicle_kps[:, 1].min()])
+            line_clavicle = Line.from_points(clavicle_kps[0], clavicle_kps[1])
+            chrl = Line.from_points([0, clavicle_kps[:, 1].min()],
+                                    [img.size[0], clavicle_kps[:, 1].min()])
             dwg.draw_line(clavicle_kps[0], clavicle_kps[1], grp)
             grp.add(
                 dwg.path((['M'] + [0, clavicle_kps[:, 1].min()] +
-                            [img.size[0], clavicle_kps[:, 1].min()])))
+                          [img.size[0], clavicle_kps[:, 1].min()])))
             if clavicle_kps[0, 1] != clavicle_kps[
                     1,
                     1]:  # TODO: somehow chrl.intersect_line(line_clavicle) raises ValueError of parallel
@@ -515,8 +525,7 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
                     sorted(clavicle_kps, key=lambda e: e[0]))  # sort by x
 
                 try:
-                    clavicle_intersection = chrl.intersect_line(
-                        line_clavicle)
+                    clavicle_intersection = chrl.intersect_line(line_clavicle)
                     angle = calc_angle(
                         ([0, 0], [10, 0]),  # horizontal line
                         clavicle_kps)
@@ -527,16 +536,17 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
                 angle = -angle
                 angle_deg = np.rad2deg(angle)
                 txt_angle = '{:.1f}°'.format(angle_deg)
-                grp.add(
-                    dwg.text(txt_angle,
-                                insert=clavicle_intersection,
-                                **text_attrs))
+                text_elm = dwg.text(txt_angle,
+                                    insert=clavicle_intersection,
+                                    **text_attrs)
+                text_elm.set_desc(title=gid)
+                grp.add(text_elm)
                 for pos in clavicle_kps:
                     grp.add(
                         dwg.circle(center=pos.tolist(),
-                                    r=POINT_RADIUS,
-                                    stroke=color,
-                                    fill=color))
+                                   r=POINT_RADIUS,
+                                   stroke=color,
+                                   fill=color))
                 measures['ClavicleAngle'] = angle_deg
 
         # Shoulder Height
@@ -547,21 +557,24 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
             color = line_colors[gid]
             grp = dwg.add(
                 dwg.g(id=gid,
-                        stroke=color,
-                        stroke_width=LINE_WIDTH,
-                        fill='none',
-                        visibility='hidden' if gid in hide else 'visible'))
+                      stroke=color,
+                      stroke_width=LINE_WIDTH,
+                      fill='none',
+                      visibility='hidden' if gid in hide else 'visible'))
             shoulder_kps = kps['Shoulder']
-            shoulder_kps = np.array(
-                sorted(shoulder_kps, key=lambda e: e[0]))  # sort by x
-            dwg.draw_vertical_dist(shoulder_kps[0], shoulder_kps[1], grp)
+            shoulder_kps = np.array(sorted(shoulder_kps,
+                                           key=lambda e: e[0]))  # sort by x
+            dwg.draw_vertical_dist(shoulder_kps[0],
+                                   shoulder_kps[1],
+                                   grp,
+                                   title=gid)
 
             for pos in shoulder_kps:
                 grp.add(
                     dwg.circle(center=pos.tolist(),
-                                r=POINT_RADIUS,
-                                stroke=color,
-                                fill=color))
+                               r=POINT_RADIUS,
+                               stroke=color,
+                               fill=color))
             measures[gid] = shoulder_kps[0, 1] - shoulder_kps[1, 1]
 
         # Pelvic Obliquity
@@ -572,40 +585,41 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
             color = line_colors[gid]
             grp = dwg.add(
                 dwg.g(id=gid,
-                        stroke=color,
-                        stroke_width=LINE_WIDTH,
-                        fill='none',
-                        visibility='hidden' if gid in hide else 'visible'))
+                      stroke=color,
+                      stroke_width=LINE_WIDTH,
+                      fill='none',
+                      visibility='hidden' if gid in hide else 'visible'))
             pelvic_kps = kps['Pelvis']
             assert pelvic_kps.shape == (2, 2)
             pelvic_kps = np.array(sorted(pelvic_kps,
-                                            key=lambda e: e[0]))  # sort by x
-            pelvic_ref_line = Line.from_points(pelvic_kps[0],
-                                                pelvic_kps[1])
+                                         key=lambda e: e[0]))  # sort by x
+            pelvic_ref_line = Line.from_points(pelvic_kps[0], pelvic_kps[1])
             dwg.draw_line(pelvic_kps[0], pelvic_kps[1], grp)
             y_up = pelvic_kps[:, 1].min()
             grp.add(dwg.path((['M'] + [0, y_up] + [img.size[0], y_up])))
             for pos in pelvic_kps:
                 grp.add(
                     dwg.circle(center=pos.tolist(),
-                                r=POINT_RADIUS,
-                                stroke=color,
-                                fill=color))
+                               r=POINT_RADIUS,
+                               stroke=color,
+                               fill=color))
             hline = Line.from_points((0, y_up), (img.size[0], y_up))
             if pelvic_kps[0, 1] != pelvic_kps[1, 1]:
                 pelvic_cross = pelvic_ref_line.intersect_line(hline)
                 angle = calc_angle(((0, y_up), (img.size[0], y_up)),
-                                    pelvic_kps)
+                                   pelvic_kps)
                 angle = np.abs(angle)
                 if pelvic_kps[0, 1] > pelvic_kps[1, 1]:
                     angle *= -1
                 angle_deg = np.rad2deg(angle)
                 txt_angle = '{:.1f}°'.format(angle_deg)
+                text_elm = dwg.text(txt_angle,
+                                    insert=pelvic_cross,
+                                    **text_attrs)
+                text_elm.set_desc(title=gid)
+                grp.add(text_elm)
                 grp.add(
-                    dwg.text(txt_angle, insert=pelvic_cross, **text_attrs))
-                grp.add(
-                    dwg.rect(insert=(-LINE_WIDTH, y_up),
-                                size=PERP_BOX_SIZE))
+                    dwg.rect(insert=(-LINE_WIDTH, y_up), size=PERP_BOX_SIZE))
                 measures[gid] = angle_deg
 
         # Leg Length Discrepancy
@@ -617,21 +631,24 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
             color = line_colors[gid]
             grp = dwg.add(
                 dwg.g(id=gid,
-                        stroke=color,
-                        stroke_width=LINE_WIDTH,
-                        fill='none',
-                        visibility='hidden' if gid in hide else 'visible'))
+                      stroke=color,
+                      stroke_width=LINE_WIDTH,
+                      fill='none',
+                      visibility='hidden' if gid in hide else 'visible'))
             femoral_kps = kps['FemoralHead']
             assert femoral_kps.shape == (2, 2)
             femoral_kps = np.array(sorted(femoral_kps,
-                                            key=lambda e: e[0]))  # sort by x
-            dwg.draw_vertical_dist(femoral_kps[0], femoral_kps[1], grp)
+                                          key=lambda e: e[0]))  # sort by x
+            dwg.draw_vertical_dist(femoral_kps[0],
+                                   femoral_kps[1],
+                                   grp,
+                                   title=gid)
             for pos in femoral_kps:
                 grp.add(
                     dwg.circle(center=pos.tolist(),
-                                r=POINT_RADIUS,
-                                stroke=color,
-                                fill=color))
+                               r=POINT_RADIUS,
+                               stroke=color,
+                               fill=color))
             measures[gid] = femoral_kps[1, 1] - femoral_kps[0, 1]
 
         # Sacral Obliquity
@@ -643,25 +660,28 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
             x_pos1, x_pos2 = femoral_kps[:, 0]
             grp = dwg.add(
                 dwg.g(id=gid,
-                        stroke=color,
-                        stroke_width=LINE_WIDTH,
-                        fill='none',
-                        visibility='hidden' if gid in hide else 'visible'))
+                      stroke=color,
+                      stroke_width=LINE_WIDTH,
+                      fill='none',
+                      visibility='hidden' if gid in hide else 'visible'))
             (_, y_pos1), (_, y_pos2) = dwg.draw_line(sacrum_tltr[0],
-                                                        sacrum_tltr[1],
-                                                        grp,
-                                                        xrange=(x_pos1,
-                                                                x_pos2))
+                                                     sacrum_tltr[1],
+                                                     grp,
+                                                     xrange=(x_pos1, x_pos2))
 
-            angle_deg = dwg.draw_cobb(
-                np.array([[x_pos1, y_pos1], [x_pos2, y_pos2]]),
-                femoral_kps, grp, 1, text_attrs)
+            angle_deg = dwg.draw_cobb(np.array([[x_pos1, y_pos1],
+                                                [x_pos2, y_pos2]]),
+                                      femoral_kps,
+                                      grp,
+                                      1,
+                                      title=gid,
+                                      text_attrs=text_attrs)
             for pos in np.concatenate((femoral_kps, sacrum_tltr), axis=0):
                 grp.add(
                     dwg.circle(center=pos.tolist(),
-                                r=POINT_RADIUS,
-                                stroke=color,
-                                fill=color))
+                               r=POINT_RADIUS,
+                               stroke=color,
+                               fill=color))
             measures[gid] = angle_deg
     else:  # lateral
         # Thoracic kyphosis
@@ -671,13 +691,17 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
         visibility = 'hidden' if gid in hide else 'visible'
         grp = dwg.add(
             dwg.g(id=gid,
-                    stroke=color,
-                    stroke_width=LINE_WIDTH,
-                    fill='none',
-                    visibility=visibility))
+                  stroke=color,
+                  stroke_width=LINE_WIDTH,
+                  fill='none',
+                  visibility=visibility))
         sup = vert_sup_cnrs[1]
         inf = vert_inf_cnrs[11]
-        angle_deg = dwg.draw_cobb(sup, inf, grp, text_attrs=text_attrs)
+        angle_deg = dwg.draw_cobb(sup,
+                                  inf,
+                                  grp,
+                                  title=gid,
+                                  text_attrs=text_attrs)
         measures[gid] = angle_deg
 
         # Mid/Lower thoracic kyphosis
@@ -687,13 +711,17 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
         visibility = 'hidden' if gid in hide else 'visible'
         grp = dwg.add(
             dwg.g(id=gid,
-                    stroke=color,
-                    stroke_width=LINE_WIDTH,
-                    fill='none',
-                    visibility=visibility))
+                  stroke=color,
+                  stroke_width=LINE_WIDTH,
+                  fill='none',
+                  visibility=visibility))
         sup = vert_sup_cnrs[4]
         inf = vert_inf_cnrs[11]
-        angle_deg = dwg.draw_cobb(sup, inf, grp, text_attrs=text_attrs)
+        angle_deg = dwg.draw_cobb(sup,
+                                  inf,
+                                  grp,
+                                  title=gid,
+                                  text_attrs=text_attrs)
 
         measures[gid] = angle_deg
 
@@ -704,13 +732,17 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
         visibility = 'hidden' if gid in hide else 'visible'
         grp = dwg.add(
             dwg.g(id=gid,
-                    stroke=color,
-                    stroke_width=LINE_WIDTH,
-                    fill='none',
-                    visibility=visibility))
+                  stroke=color,
+                  stroke_width=LINE_WIDTH,
+                  fill='none',
+                  visibility=visibility))
         sup = vert_sup_cnrs[1]
         inf = vert_inf_cnrs[4]
-        angle_deg = dwg.draw_cobb(sup, inf, grp, text_attrs=text_attrs)
+        angle_deg = dwg.draw_cobb(sup,
+                                  inf,
+                                  grp,
+                                  title=gid,
+                                  text_attrs=text_attrs)
 
         measures[gid] = angle_deg
 
@@ -721,13 +753,17 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
         visibility = 'hidden' if gid in hide else 'visible'
         grp = dwg.add(
             dwg.g(id=gid,
-                    stroke=color,
-                    stroke_width=LINE_WIDTH,
-                    fill='none',
-                    visibility=visibility))
+                  stroke=color,
+                  stroke_width=LINE_WIDTH,
+                  fill='none',
+                  visibility=visibility))
         sup = vert_sup_cnrs[11]
         inf = sacrum_tltr
-        angle_deg = dwg.draw_cobb(sup, inf, grp, text_attrs=text_attrs)
+        angle_deg = dwg.draw_cobb(sup,
+                                  inf,
+                                  grp,
+                                  title=gid,
+                                  text_attrs=text_attrs)
 
         measures[gid] = angle_deg
 
@@ -738,20 +774,20 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
         color = line_colors[gid]
         grp = dwg.add(
             dwg.g(id=gid,
-                    stroke=color,
-                    visibility='hidden' if gid in hide else 'visible'))
+                  stroke=color,
+                  visibility='hidden' if gid in hide else 'visible'))
         grp.add(dwg.path((['M'] + sacrum_tltr.ravel().tolist())))
         sacrum_width = np.linalg.norm(sacrum_tltr[1] - sacrum_tltr[0])
         sacrum_hl = sacrum_tltr[0] + sacrum_width * np.array(
             (np.sign(sacrum_tltr[1, 0] - sacrum_tltr[0, 0]), 0))
         grp.add(
-            dwg.path(
-                (['M'] + sacrum_tltr[0].tolist() + sacrum_hl.tolist())))
-        angle = np.abs(calc_angle(sacrum_tltr,
-                                    (sacrum_tltr[0], sacrum_hl)))
+            dwg.path((['M'] + sacrum_tltr[0].tolist() + sacrum_hl.tolist())))
+        angle = np.abs(calc_angle(sacrum_tltr, (sacrum_tltr[0], sacrum_hl)))
         angle_deg = np.rad2deg(angle)
         txt_angle = '{:.2f}°'.format(angle_deg)
-        grp.add(dwg.text(txt_angle, insert=sacrum_center, **text_attrs))
+        text_elm = dwg.text(txt_angle, insert=sacrum_center, **text_attrs)
+        text_elm.set_desc(title=gid)
+        grp.add(text_elm)
         measures['SacralSlope'] = angle_deg
 
         # C7-SVA
@@ -761,35 +797,35 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
         color = line_colors[gid]
         grp = dwg.add(
             dwg.g(id=gid,
-                    stroke=color,
-                    visibility='hidden' if gid in hide else 'visible'))
+                  stroke=color,
+                  visibility='hidden' if gid in hide else 'visible'))
 
         sacrum_tr = sacrum_tltr[1]
         grp.add(
             dwg.path((['M'] + sacrum_tr.tolist() + [sacrum_tr[0]] +
-                        [lerp(sacrum_tr[1], c7_centroid[1], .7)])))
+                      [lerp(sacrum_tr[1], c7_centroid[1], .7)])))
         grp.add(
             dwg.path((['M'] + c7_centroid.tolist() + [c7_centroid[0]] +
-                        [lerp(sacrum_tr[1], c7_centroid[1], .9)])))
+                      [lerp(sacrum_tr[1], c7_centroid[1], .9)])))
         grp.add(
             dwg.circle(center=sacrum_tr.tolist(),
-                        r=POINT_RADIUS,
-                        stroke=color,
-                        fill=color))
+                       r=POINT_RADIUS,
+                       stroke=color,
+                       fill=color))
         grp.add(
             dwg.circle(center=c7_centroid.tolist(),
-                        r=POINT_RADIUS,
-                        stroke=color,
-                        fill=color))
+                       r=POINT_RADIUS,
+                       stroke=color,
+                       fill=color))
         y_cb = lerp(sacrum_tr[1], c7_centroid[1], .8)
         balance = sacrum_tr[0] - c7_centroid[0]
         grp.add(
-            dwg.path(
-                (['M'] + [c7_centroid[0], y_cb] + [sacrum_tr[0], y_cb])))
-        grp.add(
-            dwg.text('{:.1f} pixels'.format(balance),
-                        insert=[max(c7_centroid[0], sacrum_tr[0]), y_cb],
-                        **text_attrs))
+            dwg.path((['M'] + [c7_centroid[0], y_cb] + [sacrum_tr[0], y_cb])))
+        text_elm = dwg.text('{:.1f} pixels'.format(balance),
+                            insert=[max(c7_centroid[0], sacrum_tr[0]), y_cb],
+                            **text_attrs)
+        text_elm.set_desc(title=gid)
+        grp.add(text_elm)
         measures[gid] = balance
 
         # Pelvic Incidence
@@ -801,46 +837,46 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
             color = line_colors[gid]
             grp = dwg.add(
                 dwg.g(id=gid,
-                        stroke=color,
-                        fill='none',
-                        visibility='hidden' if gid in hide else 'visible'))
+                      stroke=color,
+                      fill='none',
+                      visibility='hidden' if gid in hide else 'visible'))
             femoral_heads = np.array(circles['FemoralHead'])
             grp.add(dwg.path((['M'] + sacrum_tltr.ravel().tolist())))
             for femoral_head in femoral_heads:
                 grp.add(
                     dwg.circle(center=femoral_head[0].tolist(),
-                                r=2,
-                                stroke=color,
-                                fill=color))
+                               r=2,
+                               stroke=color,
+                               fill=color))
                 r = np.linalg.norm(femoral_head[0] - femoral_head[1])
                 grp.add(
                     dwg.circle(center=femoral_head[0].tolist(),
-                                r=r,
-                                stroke=color,
-                                fill='none'))
-            grp.add(
-                dwg.path((['M'] + femoral_heads[:, 0].ravel().tolist())))
+                               r=r,
+                               stroke=color,
+                               fill='none'))
+            grp.add(dwg.path((['M'] + femoral_heads[:, 0].ravel().tolist())))
             femoral_center = femoral_heads[:, 0].mean(axis=0)
             grp.add(
                 dwg.circle(center=femoral_center.tolist(),
-                            r=2,
-                            stroke=color,
-                            fill=color))
+                           r=2,
+                           stroke=color,
+                           fill=color))
             grp.add(
                 dwg.path((['M'] + femoral_center.tolist() +
-                            sacrum_center.tolist())))
+                          sacrum_center.tolist())))
 
             sacrum_perp = perp(sacrum_tltr[1] - sacrum_tltr[0])
             grp.add(
-                dwg.path((['M'] + sacrum_center.tolist() +
-                            (sacrum_center +
-                            sacrum_width * sacrum_perp).tolist())))
+                dwg.path(
+                    (['M'] + sacrum_center.tolist() +
+                     (sacrum_center + sacrum_width * sacrum_perp).tolist())))
             angle = np.abs(
                 calc_angle(sacrum_tltr, (femoral_center, sacrum_center)))
             angle_deg = 90 - np.rad2deg(angle)
             txt_angle = '{:.2f}°'.format(angle_deg)
-            grp.add(dwg.text(txt_angle, insert=sacrum_center,
-                                **text_attrs))
+            text_elm = dwg.text(txt_angle, insert=sacrum_center, **text_attrs)
+            text_elm.set_desc(title=gid)
+            grp.add(text_elm)
             measures['PelvicIncidence'] = angle_deg
 
             # Pelvic Radius Angle
@@ -850,18 +886,19 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
             color = line_colors[gid]
             grp = dwg.add(
                 dwg.g(id=gid,
-                        stroke=color,
-                        visibility='hidden' if gid in hide else 'visible'))
+                      stroke=color,
+                      visibility='hidden' if gid in hide else 'visible'))
             grp.add(dwg.path((['M'] + sacrum_tltr.ravel().tolist())))
             grp.add(
                 dwg.path((['M'] + femoral_center.tolist() +
-                            sacrum_tltr[1].tolist())))
+                          sacrum_tltr[1].tolist())))
             angle = np.abs(
                 calc_angle(sacrum_tltr, (femoral_center, sacrum_tltr[1])))
             angle_deg = np.rad2deg(angle)
             txt_angle = '{:.2f}°'.format(angle_deg)
-            grp.add(
-                dwg.text(txt_angle, insert=sacrum_tltr[1], **text_attrs))
+            text_elm = dwg.text(txt_angle, insert=sacrum_tltr[1], **text_attrs)
+            text_elm.set_desc(title=gid)
+            grp.add(text_elm)
             measures['PelvicRadiusAngle'] = angle_deg
             # L5 Incidence Angle
             gid = 'L5IncidenceAngle'
@@ -870,25 +907,25 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
             color = line_colors[gid]
             grp = dwg.add(
                 dwg.g(id=gid,
-                        stroke=color,
-                        visibility='hidden' if gid in hide else 'visible'))
+                      stroke=color,
+                      visibility='hidden' if gid in hide else 'visible'))
             l5_sup = vert_sup_cnrs[-1]
             l5_sup_center = l5_sup.mean(axis=0)
             l5_perp = perp(l5_sup[1] - l5_sup[0])
             l5_width = np.linalg.norm(l5_sup[1] - l5_sup[0])
             grp.add(
                 dwg.path((['M'] + l5_sup_center.tolist() +
-                            (l5_sup_center + l5_width * l5_perp).tolist())))
+                          (l5_sup_center + l5_width * l5_perp).tolist())))
             grp.add(dwg.path((['M'] + vert_sup_cnrs[-1].ravel().tolist())))
             grp.add(
                 dwg.path((['M'] + femoral_center.tolist() +
-                            l5_sup_center.tolist())))
-            angle = np.abs(
-                calc_angle(l5_sup, (femoral_center, l5_sup_center)))
+                          l5_sup_center.tolist())))
+            angle = np.abs(calc_angle(l5_sup, (femoral_center, l5_sup_center)))
             angle_deg = 90 - np.rad2deg(angle)
             txt_angle = '{:.2f}°'.format(angle_deg)
-            grp.add(dwg.text(txt_angle, insert=l5_sup_center,
-                                **text_attrs))
+            text_elm = dwg.text(txt_angle, insert=l5_sup_center, **text_attrs)
+            text_elm.set_desc(title=gid)
+            grp.add(text_elm)
             measures['L5IncidenceAngle'] = angle_deg
             # Lumbosacral Angle
             gid = 'LumbosacralAngle'
@@ -898,43 +935,44 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
             visibility = 'hidden' if gid in hide else 'visible'
             grp = dwg.add(
                 dwg.g(id=gid,
-                        stroke=color,
-                        stroke_width=LINE_WIDTH,
-                        fill='none',
-                        visibility=visibility))
+                      stroke=color,
+                      stroke_width=LINE_WIDTH,
+                      fill='none',
+                      visibility=visibility))
             angle_deg = dwg.draw_cobb(vert_inf_cnrs[-1],
-                                        sacrum_tltr,
-                                        grp,
-                                        text_attrs=text_attrs)
+                                      sacrum_tltr,
+                                      grp,
+                                      title=gid,
+                                      text_attrs=text_attrs)
             measures[gid] = angle_deg
 
     if calc_slopes:
         grps = {}
-        for ul, name  in [('upper', 'Upper slope'),
-                                ('lower', 'Lower slope')]:
+        for ul, name in [('upper', 'Upper slope'), ('lower', 'Lower slope')]:
             gid = f'{ul}_slope'
             color = line_colors[gid]
             grp = dwg.add(
                 dwg.g(id=gid,
-                        stroke=color,
-                        visibility='hidden' if gid in hide else 'visible'))
+                      stroke=color,
+                      visibility='hidden' if gid in hide else 'visible'))
             grps[gid] = grp
             drawings.append((gid, name))
         for i, corners in enumerate(vert_corners_w_c7, 1):
-            for pair, ul in ((corners[:2], 'upper'),
-                                    (corners[2:], 'lower')):
+            for pair, ul in ((corners[:2], 'upper'), (corners[2:], 'lower')):
                 name = f'V{i}_{ul}_slope'
                 gid = f'{ul}_slope'
                 v = pair[1] - pair[0]
                 angle = -np.arctan2(
-                    v[1], v[0]
-                )  # negation because y axis in image is upside down
+                    v[1],
+                    v[0])  # negation because y axis in image is upside down
                 angle_deg = np.rad2deg(angle)
                 txt_angle = '{:.2f}°'.format(angle_deg)
                 measures[name] = angle_deg
                 grp = grps[gid]
                 grp.add(dwg.path((['M'] + pair.ravel().tolist())))
-                grp.add(dwg.text(txt_angle, insert=pair[0], **text_attrs))
+                text_elm = dwg.text(txt_angle, insert=pair[0], **text_attrs)
+                text_elm.set_desc(title=gid)
+                grp.add(text_elm)
             name = f'V{i}_center'
             center = corners.mean(axis=0)
             measures[name + '_x'] = center[0]
@@ -974,10 +1012,12 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
                 t_cb.render(name=name,
                             label=label,
                             checked='' if name in hide else 'checked'))
-        assert image_filename is not None
-        svg_tag = dwg.tostring(
-        ) if embed_svg else '<object id="svgfile" type="image/svg+xml" data="{}"></object>'.format(
-            Path(image_filename).name)
+        if embed_svg:
+            svg_tag = dwg.tostring()
+        else:
+            assert image_filename is not None
+            svg_tag = '<object id="svgfile" type="image/svg+xml" data="{}"></object>'.format(
+                Path(image_filename).name)
         with open(html_filename, 'w', encoding='utf8') as f:
             f.write(
                 template.render(
@@ -1075,7 +1115,8 @@ def main():
                            choices=['.svg', '.png'])
     sub_batch.add_argument(
         '--workers',
-        help='The number of concurrent workers. Use all available cores by default',
+        help=
+        'The number of concurrent workers. Use all available cores by default',
         type=int,
         default=0)
 
@@ -1086,7 +1127,7 @@ def main():
             )
             sys.exit(1)
         outdir = Path(args.output)
-        if args.workers<=0:
+        if args.workers <= 0:
             import os
             args.workers = os.cpu_count()
             logger.info("Use %d cores", args.workers)
@@ -1108,9 +1149,9 @@ def main():
             return measure_json(lm_data, args.height, args.config, args.points,
                                 args.numbers, args.image_type, image, html,
                                 measure, args.template,
-                                '{} - {}'.format(fn.stem,
-                                                 args.title), args.hide,
-                                not args.external_svg, image_dir, args.slopes, args.algo)
+                                '{} - {}'.format(fn.stem, args.title),
+                                args.hide, not args.external_svg, image_dir,
+                                args.slopes, args.algo)
 
         def do_ndjson(fn: Path, lm_data):
             stem = re.sub(r"\.json$", "", Path(lm_data['filename']).name)
@@ -1124,9 +1165,9 @@ def main():
             return measure_json(lm_data, args.height, args.config, args.points,
                                 args.numbers, args.image_type, image, html,
                                 measure, args.template,
-                                '{} - {}'.format(fn.stem,
-                                                 args.title), args.hide,
-                                not args.external_svg, image_dir, args.slopes, args.algo)
+                                '{} - {}'.format(fn.stem, args.title),
+                                args.hide, not args.external_svg, image_dir,
+                                args.slopes, args.algo)
 
         if Path(args.input).is_dir():
             json_filenames = sorted(Path(args.input).glob('*.json'))
@@ -1144,7 +1185,9 @@ def main():
         if args.ndjson:
             with open(args.ndjson, 'w') as f:
                 for fn, ms in zip(json_filenames, all_measures):
-                    ms['filename'] = re.sub(r"\.json$", "", fn.name) # not using `fn.stem` to avoid stripping to much
+                    ms['filename'] = re.sub(
+                        r"\.json$", "", fn.name
+                    )  # not using `fn.stem` to avoid stripping to much
                     f.write(json.dumps(ms, ensure_ascii=False))
                     f.write('\n')
         return 0
