@@ -314,6 +314,8 @@ def main():
                         kps[label] = np.flip(kps[label], axis=1) # xy -> yx because kps2shapes's input is in yx format
                     [kps.pop(label, None) for label in ['C7-TL', 'C7-TR', 'S-TL', 'S-TR']]
                     original_json['shapes'] = labelme_utils.kps2shapes(list(kps.values()), list(kps.keys()))
+                    original_json['flags'][pca.model_name] = True
+                    original_json['flags']['PCA'] = False
                         
                     return original_json, []
         if not channel_first:
@@ -427,7 +429,7 @@ def main():
         result_shapes = labelme_utils.kps2shapes(scaled_warped, pca.labels)
         result_shapes.extend(original_shapes)
         result_json['shapes'] = result_shapes
-        result_json['flags'] = {best_name: True}
+        result_json['flags'] = {best_name: True, 'PCA': True}
         return result_json, histories
 
     n_jobs = args.jobs
