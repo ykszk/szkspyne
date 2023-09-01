@@ -64,7 +64,7 @@ for kind in ['ap_whole', 'lateral_whole']:
     print(kind)
     fns = sorted(data_dir.glob(kind + '/*.json'))
     validators: List[lmrspy.Validator] = []
-    for ignore in ['L4', 'L5', 'L6', '先天性側彎']:
+    for ignore in ['L5', 'L4', 'L6', '先天性側彎']:
         ignores = IGNORES.copy()
         ignores.remove(ignore)
         key=ignore
@@ -87,6 +87,7 @@ for kind in ['ap_whole', 'lateral_whole']:
                 result = validator.validate_jsons(json_str)
                 if result: # passed
                     valid_json.append(json_data)
+                    break
                 else: # skipped
                     # try next validator
                     continue

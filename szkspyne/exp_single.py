@@ -272,7 +272,7 @@ def main():
     # with torch.no_grad():
     #     y_preds.append(trainer.predict(dataloaders=test_loader, ckpt_path=None))
     assert y_preds is not None
-    print('minmax', y_preds[0].min(), y_preds[1].max())
+    logger.info('minmax: %s, %s', y_preds[0].min(), y_preds[1].max())
     from szkspyne.apply_model import PROB_MAX
 
     # to channel last
@@ -281,7 +281,7 @@ def main():
             (0, 2, 3, 1)).type(torch.ShortTensor)  # type: ignore
         for y_pred in y_preds
     ]
-    print('minmax after prob_max', y_preds[0].min(), y_preds[1].max())
+    logger.info('minmax after prob_max: %s, %s', y_preds[0].min(), y_preds[1].max())
     y_preds = torch.cat(y_preds, 0).cpu().numpy().astype(np.int16)
     # y_preds = np.concatenate(y_preds, axis=0)
     logger.info('End test')

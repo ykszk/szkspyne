@@ -16,6 +16,9 @@ parser = argparse.ArgumentParser(
 parser.add_argument('--noconv',
                     help='No dataformat conversion. Just concat input and remove duplicates',
                     action='store_true')
+parser.add_argument('--check_image',
+                    help='Check image file existence.',
+                    action='store_true')
 
 args = parser.parse_args()
 
@@ -28,8 +31,10 @@ for line in sys.stdin:
     else:
         shape_data = labelme_utils.conv2shape_dict(data)
         shape_data['filepath'] = data['filepath']
+        if 'image_type' in data:
+            shape_data['image_type'] = data['image_type']
         shape_data['flags'] = [k for k, v in data['flags'].items() if v]
-        if not os.path.exists(data['filepath']):
+        if args.check_image and not os.path.exists(data['filepath']):
             logger.warning('Skip entry with no image: %s', data['filepath'])
             continue
         for t_copy in ['imageHeight', 'imageWidth']:

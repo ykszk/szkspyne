@@ -46,10 +46,7 @@ for old in tqdm(exp_data):
                     'flags': {}
                 })
     filepath = Path(old['filepath'])
-    if filepath.parts[0] in ['SSS', 'CLO']:
-        stem = filepath.stem
-    else:
-        stem = '_'.join(filepath.with_suffix('').parts[1:])
+    stem = filepath.stem
     new = {
         "version": "4.5.7",
         'flags': {f: True
