@@ -31,11 +31,10 @@ from collections import namedtuple
 
 # df_birthday = pd.read_csv('../../data/anonymized_birthday.csv')
 # dict_sex_bday = {row.PatientID:(row.PatientSex, datetime.strptime(str(row.Birthday), '%Y%m%d')) for _, row in df_birthday.iterrows()}
-ImageType = namedtuple("ImageType", ["name", "filename", "first_value_col", "angle_cols", "key_cols"])
+ImageType = namedtuple("ImageType", ["name", "filename", "angle_cols", "key_cols"])
 d_ap = ImageType(
     name="ap",
     filename="ap_whole.csv",
-    first_value_col="PT",
     angle_cols=["PT", "MT", "LT", "T1Tilt", "ClavicleAngle", "PelvicObliquity", "SacralObliquity"],
     key_cols=["MT"],
 )
@@ -43,7 +42,6 @@ d_ap = ImageType(
 d_lateral = ImageType(
     name="lateral",
     filename="lateral_whole.csv",
-    first_value_col="ThoracicKyphosis",
     angle_cols=[
         "ThoracicKyphosis",
         "Mid/LowerThoracicKyphosis",
@@ -58,8 +56,10 @@ d_lateral = ImageType(
     key_cols=["ThoracicKyphosis", "LumbarLordosis"],
 )
 
+FLAG_COLS = ['術後', 'L4', 'L5']
+
 for d in [d_ap, d_lateral]:
-    name, filename, first_value_col, angle_cols, key_cols = d
+    name, filename, angle_cols, key_cols = d
     filename = str(result_dir / filename)
     display(HTML(f"<h1>{name}</h1>"))
     df = pd.read_csv(filename, encoding="cp932")
@@ -88,8 +88,7 @@ for d in [d_ap, d_lateral]:
 
     df.set_index("filename", inplace=True, drop=True)
 
-    flag_cols = df.columns[: df.columns.to_list().index("true " + first_value_col)]
-    df_flags = df[flag_cols]
+    df_flags = df[FLAG_COLS]
     df_flag_stats = pd.DataFrame(df_flags.sum(), columns=["count"])
     display(df_flag_stats.T)
 
