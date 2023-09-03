@@ -1,0 +1,211 @@
+# %%
+import os
+from collections import defaultdict
+from datetime import datetime
+from pathlib import Path
+
+import japanize_matplotlib
+import matplotlib as mpl
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import seaborn as sns
+from bs4 import BeautifulSoup
+from IPython.display import HTML, display
+from scipy import stats
+
+from szkspyne.measure_utils import pearsonr_ci
+
+
+mpl.rcParams["figure.dpi"] = 100
+
+
+sns.set(context="notebook", style="whitegrid", font="IPAexGothic")
+
+
+result_dir = Path(os.environ["INPUT_DIR"])
+
+# %%
+from collections import namedtuple
+
+
+# df_birthday = pd.read_csv('../../data/anonymized_birthday.csv')
+# dict_sex_bday = {row.PatientID:(row.PatientSex, datetime.strptime(str(row.Birthday), '%Y%m%d')) for _, row in df_birthday.iterrows()}
+ImageType = namedtuple("ImageType", ["name", "filename", "first_value_col", "angle_cols", "key_cols"])
+d_ap = ImageType(
+    name="ap",
+    filename="ap_whole.csv",
+    first_value_col="PT",
+    angle_cols=["PT", "MT", "LT", "T1Tilt", "ClavicleAngle", "PelvicObliquity", "SacralObliquity"],
+    key_cols=["MT"],
+)
+
+d_lateral = ImageType(
+    name="lateral",
+    filename="lateral_whole.csv",
+    first_value_col="ThoracicKyphosis",
+    angle_cols=[
+        "ThoracicKyphosis",
+        "Mid/LowerThoracicKyphosis",
+        "ProximalThoracicKyphosis",
+        "LumbarLordosis",
+        "SacralSlope",
+        "PelvicIncidence",
+        "PelvicRadiusAngle",
+        "L5IncidenceAngle",
+        "LumbosacralAngle",
+    ],
+    key_cols=["ThoracicKyphosis", "LumbarLordosis"],
+)
+
+for d in [d_ap, d_lateral]:
+    name, filename, first_value_col, angle_cols, key_cols = d
+    filename = str(result_dir / filename)
+    display(HTML(f"<h1>{name}</h1>"))
+    df = pd.read_csv(filename, encoding="cp932")
+    for c in ["除外", "左屈", "右屈", "L6", "先天性側彎"]:
+        df = df[np.logical_not(df[c])]
+        del df[c]
+    display(df.head())
+
+    df_dropped = df.dropna()
+
+    pids = df["filename"].map(lambda e: e.split("_")[0])
+    print("# of images", len(df))
+    print("# of unique patients", len(set(pids)))
+
+    # sexes, ages = [], []
+    for fn in df["filename"]:
+        pid = fn.split("_")[0].split("-")[0]
+        # pid, study_date = fn.split('_')[:2]
+        # study_date = datetime.strptime(study_date, '%Y%m%d')
+        # sex, bdate = dict_sex_bday[pid]
+        # age = (study_date - bdate).days/365
+        # sexes.append(sex)
+        # ages.append(age)
+    # display(pd.DataFrame(sexes, columns=['PatientSex']).value_counts())
+    # display(pd.DataFrame(ages, columns=['PatientAge']).describe().T)
+
+    df.set_index("filename", inplace=True, drop=True)
+
+    flag_cols = df.columns[: df.columns.to_list().index("true " + first_value_col)]
+    df_flags = df[flag_cols]
+    df_flag_stats = pd.DataFrame(df_flags.sum(), columns=["count"])
+    display(df_flag_stats.T)
+
+    df_flag_stats["flag"] = df_flag_stats.apply(lambda row: "{}\n({})".format(row.name, row["count"]), axis=1)
+    # sns.barplot(data=df_flag_stats, x='flag', y='count')
+    # plt.show()
+
+    df_true = df[[c for c in df.columns if (c.startswith("true") and not c.endswith("curve_indices"))]]
+    display(HTML(f"<h2>Reference</h2>"))
+    display(df_true.describe())
+    pred_col_order = ["pred " + c.replace("true ", "") for c in df_true.columns]
+    # df_pred = df[[c for c in df.columns if c.startswith('pred')]]
+    df_pred = df[pred_col_order]
+    display(HTML(f"<h2>AI</h2>"))
+    display(df_pred.describe())
+
+    df_diff = pd.DataFrame(df_true.values - df_pred.values, columns=[c.replace("true ", "") for c in df_true])
+    df_diff.index = df_true.index
+    display(HTML(f"<h2>Reference - AI</h2>"))
+    desc = df_diff.describe()
+    df_diff_dropped = df.dropna()
+    new_rows = defaultdict(list)
+    for col_true in df_true.columns:
+        col_pred = col_true.replace("true", "pred")
+        r, p, lo, hi = pearsonr_ci(df_diff_dropped[col_true], df_diff_dropped[col_pred])
+        new_rows["r"].append(r)
+        new_rows["R^2"].append(r**2)
+        df_cmp = df[[col_true, col_pred]]
+        df_cmp = df_cmp.dropna()
+        diff = df_cmp[col_true] - df_cmp[col_pred]
+        new_rows["RMS"].append(np.sqrt((diff**2).mean()))
+        result = stats.linregress(df_cmp[col_true], df_cmp[col_pred])
+        new_rows["regression slope"].append(result.slope)
+        new_rows["regression intercept"].append(result.intercept)
+    for k, v in new_rows.items():
+        desc.loc[k] = v
+    display(desc)
+
+    display(HTML(f"<h2>|Reference - AI|</h2>"))
+    display(df_diff.abs().describe())
+
+    display(HTML(f"<h2>Plots</h2>"))
+    for col in angle_cols:
+        display(HTML(f"<h3>{col}</h3>"))
+        col_x = "true " + col
+        col_y = "pred " + col
+        df_sub = df[["術後", col_x, col_y]].copy()
+        df_sub["op"] = df_sub["術後"].map(lambda e: "post-op" if e else "pre-op")
+        df_sub = df_sub.dropna()
+        hue_order = ["pre-op", "post-op"]
+        plt.figure(figsize=(10, 4))
+        plt.subplot(1, 2, 1)
+        ax = sns.scatterplot(
+            data=df_sub, x=col_x, y=col_y, hue="op", hue_order=hue_order, alpha=min(1, 100 / len(df_sub))
+        )
+        x0, x1 = ax.get_xlim()
+        y0, y1 = ax.get_ylim()
+        lims = [max(x0, y0), min(x1, y1)]
+        ax.plot(lims, lims, "gray", linestyle="dotted", label="y = x")
+        ax.set_xlabel("Reference")
+        ax.set_ylabel("AI")
+        # r, p = stats.pearsonr(df_dropped[col_x], df_dropped[col_y])
+        r, p, lo, hi = pearsonr_ci(df_dropped[col_x], df_dropped[col_y])
+        ax.set_title("{} (r={:.03f} [{:.03f} - {:.03f}])".format(col, r, lo, hi))
+        plt.legend()
+        plt.subplot(1, 2, 2)
+        df_d = df_diff[[col]].dropna().copy()
+        df_d["op"] = df.loc[df_d.index]["術後"].map(lambda e: "post-op" if e else "pre-op")
+        sns.histplot(data=df_d, x=col, hue="op", hue_order=hue_order)
+        plt.title(
+            "(μ={:.2f}, σ={:.2f}, RMS={:.2f})".format(
+                df_d[col].mean(), df_d[col].std(), np.sqrt((df_d[col].to_numpy() ** 2).mean())
+            )
+        )
+        plt.show()
+        flex_style = "display:flex;flex-direction:row;"
+        N = 10
+        if col in key_cols:
+            # for best_worst, sls in [('Best',slice(N)), ('Median',slice(len(df_d)//2-N//2,int(len(df_d)//2+np.ceil(N/2)))), ('Worst',slice(-N,None))]:
+            third_q = (
+                "Third quartile",
+                slice(3 * (len(df_d) // 4) - N // 2, int(3 * (len(df_d) // 4) + np.ceil(N / 2))),
+            )
+            p_90 = (
+                "90 percentile",
+                slice(9 * (len(df_d) // 10) - N // 2, int(9 * (len(df_d) // 10) + np.ceil(N / 2))),
+            )
+            p_95 = (
+                "95 percentile",
+                slice(95 * (len(df_d) // 100) - N // 2, int(95 * (len(df_d) // 100) + np.ceil(N / 2))),
+            )
+            for best_worst, sls in [
+                ("Median", slice(len(df_d) // 2 - N // 2, int(len(df_d) // 2 + np.ceil(N / 2)))),
+                third_q,
+                p_90,
+                # p_95,
+                ("Worst", slice(-N, None)),
+            ]:
+                # for best_worst, sls in [('Median',slice(len(df_d)//2-N//2,int(len(df_d)//2+np.ceil(N/2)))), ('Worst',slice(-N,None))]:
+                display(HTML(f"<h4>{best_worst}</h4>"))
+                df_reps = df_d[[col]].abs().sort_values(col)[sls]
+                display(df_reps)
+                for subdir, label in [("reference", "Reference"), ("auto", "AI")]:
+                    display(HTML(f"<h5>{label}</h5>"))
+                    svgs = []
+                    for file_id, row in df_reps.iterrows():
+                        svg_filename = result_dir / subdir / f"{name}_whole" / f"{file_id}.svg"
+                        if svg_filename.exists():
+                            with open(svg_filename) as f:
+                                svgs.append('<div class="sample" title="{}">{}</div>'.format(file_id, f.read()))
+                        else:
+                            pass
+                            # with open(svg_filename.with_suffix('.html')) as f:
+                            #     soup = BeautifulSoup(f.read(), 'html.parser')
+                            # svg = str(soup.select_one('svg'))
+                            # svgs.append('<div class="sample" title="{}">{}</div>'.format(file_id, svg))
+                    display(HTML('<div style="{}">{}</div>'.format(flex_style, "\n".join(svgs))))
+    #         break
+    # break
