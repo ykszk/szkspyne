@@ -21,13 +21,15 @@ NON_VERTEBRA_LABEL_NAMES = load_env_var(
     ['Shoulder', 'Clavicle', 'Pelvis', 'Iliac', 'FemoralHead'])
 ANCHOR_LABEL_NAMES = load_env_var('ANCHOR_LABEL_NAMES',
                                   ['C7-TL', 'C7-TR', 'S-TL', 'S-TR'])
-
+IMPLANT_LABEL_NAMES = load_env_var('IMPLANT_LABEL_NAMES',
+                                   ['Rod', 'Screw', 'Hook', 'Transverse'])
 LABEL_NAMES = load_env_var(
     'LABEL_NAMES',
     VERTEBRA_LABEL_NAMES + NON_VERTEBRA_LABEL_NAMES + ANCHOR_LABEL_NAMES)
 
 FLIPPED_NAMES = load_env_var('FLIPPED_NAMES', ['TR', 'TL', 'BR', 'BL'] +
-                             NON_VERTEBRA_LABEL_NAMES + ['C7-TR', 'C7-TL', 'S-TR', 'S-TL'])
+                             NON_VERTEBRA_LABEL_NAMES +
+                             ['C7-TR', 'C7-TL', 'S-TR', 'S-TL'])
 
 
 def create_flip_pairs(normal, flipped):

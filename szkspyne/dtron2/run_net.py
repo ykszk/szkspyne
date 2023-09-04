@@ -1,7 +1,6 @@
 # Copyright (c) Facebook, Inc. and its affiliates.
 import argparse
 import glob
-import multiprocessing as mp
 import os
 import time
 import tqdm
@@ -16,6 +15,7 @@ import torch
 
 # from predictor import VisualizationDemo
 from szkspyne.dtron2 import utils
+from szkspyne.labelme_utils import load_ndjson
 
 def setup_cfg(args):
     # load config from file and command-line arguments
@@ -52,7 +52,14 @@ def get_parser():
         "If not given, will show output in an OpenCV window.",
         required=True,
     )
-
+    parser.add_argument(
+        "--metadata",
+        help="Load metadata json file",
+    )
+    parser.add_argument(
+        "--verbose",
+        help="Verbose mode", action='store_true'
+    )
     parser.add_argument(
         "--confidence-threshold",
         type=float,
@@ -70,15 +77,19 @@ def get_parser():
 
 
 if __name__ == "__main__":
-    mp.set_start_method("spawn", force=True)
     args = get_parser().parse_args()
-    setup_logger(name="fvcore")
     logger = setup_logger()
     logger.info("Arguments: " + str(args))
-    from detectron2.data import MetadataCatalog
-    MetadataCatalog.get('scoliosis_val').set(thing_classes = ["vertebra"],
+    dataset_name = 'scoliosis_val'
+    metadata = dict(thing_classes = ["vertebra"],
                                         keypoint_names=['TL', 'TR', 'BL', 'BR'],
                                         keypoint_flip_map=[('TL','TR'), ('BL','BR')])
+    if args.metadata:
+        with open(args.metadata) as f:
+            metadata = json.load(f)
+    
+    from detectron2.data import MetadataCatalog
+    MetadataCatalog.get(dataset_name).set(**metadata)
 
     cfg = setup_cfg(args)
 
@@ -87,23 +98,26 @@ if __name__ == "__main__":
     if len(args.input) == 1:
         args.input = glob.glob(os.path.expanduser(args.input[0]))
         assert args.input, "The input path(s) was not found"
+    if len(args.input)==1 and args.input[0].endswith('.ndjson'):
+        args.input = [e['file_name'] for e in load_ndjson(args.input[0])]
     for path in tqdm.tqdm(args.input, disable=not args.output):
         # use PIL, to be consistent with evaluation
         img = read_image(path, format="BGR")
         start_time = time.time()
         predictions = predictor(img)
-        logger.info(
-            "{}: {} in {:.2f}s".format(
-                path,
-                "detected {} instances".format(len(predictions["instances"]))
-                if "instances" in predictions
-                else "finished",
-                time.time() - start_time,
+        if args.verbose:
+            logger.info(
+                "{}: {} in {:.2f}s".format(
+                    path,
+                    "detected {} instances".format(len(predictions["instances"]))
+                    if "instances" in predictions
+                    else "finished",
+                    time.time() - start_time,
+                )
             )
-        )
 
         instances = predictions["instances"].to(torch.device("cpu"))
-        visualizer = Visualizer(img, MetadataCatalog.get('scoliosis_val'), instance_mode=ColorMode.IMAGE)
+        visualizer = Visualizer(img, MetadataCatalog.get(dataset_name), instance_mode=ColorMode.IMAGE)
         visualized_output = visualizer.draw_instance_predictions(predictions=instances)
 
         if os.path.isdir(args.output):
@@ -114,5 +128,5 @@ if __name__ == "__main__":
             out_filename = args.output
         visualized_output.save(out_filename)
         
-        with open(os.path.join(args.output, os.path.basename(path)+'.json'), 'w') as f:
+        with open(os.path.join(args.output, os.path.splitext(os.path.basename(path))[0]+'.json'), 'w') as f:
             json.dump(predictions, f, cls=utils.PredictionEncoder)
