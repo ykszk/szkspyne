@@ -24,6 +24,7 @@ sns.set(context="notebook", style="whitegrid", font="IPAexGothic")
 
 
 result_dir = Path(os.environ["INPUT_DIR"])
+include_visualization = not ('NO_VIS' in os.environ)
 
 # %%
 from collections import namedtuple
@@ -191,20 +192,20 @@ for d in [d_ap, d_lateral]:
                 display(HTML(f"<h4>{best_worst}</h4>"))
                 df_reps = df_d[[col]].abs().sort_values(col)[sls]
                 display(df_reps)
-                for subdir, label in [("reference", "Reference"), ("auto", "AI")]:
-                    display(HTML(f"<h5>{label}</h5>"))
-                    svgs = []
-                    for file_id, row in df_reps.iterrows():
-                        svg_filename = result_dir / subdir / f"{name}_whole" / f"{file_id}.svg"
-                        if svg_filename.exists():
-                            with open(svg_filename) as f:
-                                svgs.append('<div class="sample" title="{}">{}</div>'.format(file_id, f.read()))
-                        else:
-                            pass
-                            # with open(svg_filename.with_suffix('.html')) as f:
-                            #     soup = BeautifulSoup(f.read(), 'html.parser')
-                            # svg = str(soup.select_one('svg'))
-                            # svgs.append('<div class="sample" title="{}">{}</div>'.format(file_id, svg))
-                    display(HTML('<div style="{}">{}</div>'.format(flex_style, "\n".join(svgs))))
+                if include_visualization:
+                    for subdir, label in [("reference", "Reference"), ("auto", "AI")]:
+                        display(HTML(f"<h5>{label}</h5>"))
+                        svgs = []
+                        for file_id, row in df_reps.iterrows():
+                            svg_filename = result_dir / subdir / f"{name}_whole" / f"{file_id}.svg"
+                            if svg_filename.exists():
+                                with open(svg_filename) as f:
+                                    svgs.append('<div class="sample" title="{}">{}</div>'.format(file_id, f.read()))
+                            else:
+                                with open(svg_filename.with_suffix('.html')) as f:
+                                    soup = BeautifulSoup(f.read(), 'html.parser')
+                                svg = str(soup.select_one('svg'))
+                                svgs.append('<div class="sample" title="{}">{}</div>'.format(file_id, svg))
+                        display(HTML('<div style="{}">{}</div>'.format(flex_style, "\n".join(svgs))))
     #         break
     # break
