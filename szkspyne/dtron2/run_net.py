@@ -57,6 +57,10 @@ def get_parser():
         help="Load metadata json file",
     )
     parser.add_argument(
+        "--ndjson",
+        help='Save one ndjson instaed of json files'
+    )
+    parser.add_argument(
         "--verbose",
         help="Verbose mode", action='store_true'
     )
@@ -100,6 +104,7 @@ if __name__ == "__main__":
         assert args.input, "The input path(s) was not found"
     if len(args.input)==1 and args.input[0].endswith('.ndjson'):
         args.input = [e['file_name'] for e in load_ndjson(args.input[0])]
+    ndjson = []
     for path in tqdm.tqdm(args.input, disable=not args.output):
         # use PIL, to be consistent with evaluation
         img = read_image(path, format="BGR")
@@ -128,5 +133,15 @@ if __name__ == "__main__":
             out_filename = args.output
         visualized_output.save(out_filename)
         
-        with open(os.path.join(args.output, os.path.splitext(os.path.basename(path))[0]+'.json'), 'w') as f:
-            json.dump(predictions, f, cls=utils.PredictionEncoder)
+        filename = os.path.splitext(os.path.basename(path))[0]+'.json'
+        if args.ndjson:
+            predictions['filename'] = filename
+            ndjson.append(json.dumps(predictions, cls=utils.PredictionEncoder))
+        else:
+            with open(os.path.join(args.output, filename), 'w') as f:
+                json.dump(predictions, f, cls=utils.PredictionEncoder, indent=2)
+    if args.ndjson:
+        with open(args.ndjson, 'w') as f:
+            for line in ndjson:
+                f.write(line)
+                f.write('\n')
