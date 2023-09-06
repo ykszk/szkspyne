@@ -60,6 +60,12 @@ def corners2midpoints(corners: np.ndarray) -> np.ndarray:
     return np.array(midpoints)
 
 
+def lerp(a, b, t):
+    if t > 1 or 1 < 0:
+        raise ValueError('Invalid value for lerp: %f', t)
+    return t * a + (1 - t) * b
+
+
 def perp(a: np.ndarray) -> np.ndarray:
     '''
     perpendicular unit vector
@@ -208,33 +214,31 @@ def read_default_line_colors() -> Dict[str, str]:
 
 class SpinalDrawing(svgwrite.Drawing):
 
-    def __init__(self, lm_data, image_dir: Path, height: int):
+    def __init__(self, lm_data: Dict, image_dir: Path, height: int):
         lm_data = lm_data.copy()
-        img_fn = Path(image_dir) / Path(lm_data['imagePath'].replace(
-            '\\', '/')).name
-        if not img_fn.exists():
-            img_fn = str(
-                Path(image_dir) /
-                Path(lm_data['imagePath']).name.replace('_', '/'))
-        img = Image.open(img_fn)
-        original_image_shape = img.size
-
-        img.thumbnail(
-            (100000,
-             height))  # specify height. width argument is just a big number
+        img_fn = Path(image_dir) / Path(lm_data['imagePath']).name
+        pixel_size = 1
+        original_image_shape = (lm_data['imageWidth'], lm_data['imageHeight'])
         scale = height / original_image_shape[1]
+        image_size = (scale * lm_data['imageWidth'] * pixel_size, height * pixel_size)
+        super().__init__('output.svg',
+                         size=image_size,
+                         viewBox=('0 0 {} {}'.format(*image_size)))
+        if img_fn.exists():
+            img = Image.open(img_fn)
+            img.thumbnail(
+                (100000,
+                height))  # specify height. width argument is just a big number
+            w, h = img.size
+            image_size = (w * pixel_size, h * pixel_size)
+            self.add(
+                self.image('data:image/jpg;base64,' + img2b64(img), size=img.size))
+        else:
+            img = None
+            
 
         for shape in lm_data['shapes']:
             shape['points'] = [[scale * e for e in p] for p in shape['points']]
-
-        w, h = img.size
-        pixel_size = 1
-        image_size = (w * pixel_size, h * pixel_size)
-        super().__init__('output.svg',
-                         size=image_size,
-                         viewBox=('0 0 {} {}'.format(w, h)))
-        self.add(
-            self.image('data:image/jpg;base64,' + img2b64(img), size=img.size))
 
         text_attrs = dict(stroke='black',
                           stroke_width='1px',
@@ -244,7 +248,7 @@ class SpinalDrawing(svgwrite.Drawing):
         points = get_point_dict(lm_data)
         kps = sort_kps(points)
 
-        self.size = img.size
+        self.size = image_size
         self.text_attrs = text_attrs
         self.points = points
         self.kps = kps
@@ -295,12 +299,12 @@ class SpinalDrawing(svgwrite.Drawing):
                   xrange: Union[Tuple[float, float], None] = None,
                   yrange: Union[Tuple[float, float], None] = None):
         d = b - a
-        if d[1] == 0:
+        if d[1] == 0: # horizontal line
             p0 = [0, a[1]]
             p1 = [self.size[0], a[1]]
             grp.add(self.path((['M'] + p0 + p1)))
             return p0, p1
-        if d[0] == 0:
+        if d[0] == 0: # vertical line
             p0 = [a[0], self.size[0]]
             p1 = [a[0], self.size[1]]
             grp.add(self.path((['M'] + p0 + p1)))
@@ -310,21 +314,23 @@ class SpinalDrawing(svgwrite.Drawing):
         if yrange is None:
             yrange = (0, self.size[1])
         slope = d[1] / d[0]
-        t0 = -a[0] / d[0]
-        y0 = a[1] + t0 * d[1]
-        f0 = slope * xrange[0] + y0
-        f1 = slope * xrange[1] + y0
-        xmin = np.array([xrange[0], f0])
-        xmax = np.array([xrange[1], f1])
-        f0 = (yrange[0] - y0) / slope
-        f1 = (yrange[1] - y0) / slope
-        ymin = np.array([f0, yrange[0]])
-        ymax = np.array([f1, yrange[1]])
-        combos = list(itertools.combinations([xmin, xmax, ymin, ymax], 2))
-        ds = [np.linalg.norm(c[1] - c[0]) for c in combos]
-        p0, p1 = combos[np.argmin(ds)]
-        grp.add(self.path((['M'] + p0.tolist() + p1.tolist())))
-        return p0, p1
+        y0 = a[1] - slope * a[0]
+        intersections = []
+        y = slope * xrange[0] + y0
+        if yrange[0] <= y <= yrange[1]:
+            intersections.append([xrange[0], y])
+        y = slope * xrange[1] + y0
+        if yrange[0] <= y <= yrange[1]:
+            intersections.append([xrange[1], y])
+        x = (yrange[0] - y0) / slope
+        if xrange[0] <= x <= xrange[1]:
+            intersections.append([x, yrange[0]])
+        x = (yrange[1] - y0) / slope
+        if xrange[0] <= x <= xrange[1]:
+            intersections.append([x, yrange[1]])
+        p1, p2 = intersections[0], intersections[1]
+        grp.add(self.path((['M'] + p1 + p2)))
+        return p1, p2
 
     def draw_cobb(self,
                   sup_cnrs: np.ndarray,

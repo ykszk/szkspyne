@@ -14,17 +14,11 @@ from logzero import logger
 from skspatial.objects import Line, LineSegment
 
 from szkspyne import measure_utils as utils
-from szkspyne.measure_utils import SpinalDrawing, calc_angle, get_circle_dict, perp
+from szkspyne.measure_utils import SpinalDrawing, calc_angle, get_circle_dict, perp, lerp
 
 LINE_WIDTH = 2.0
 POINT_RADIUS = 2.0
 PERP_BOX_SIZE = (20, 20)  # perpendicular sign
-
-
-def lerp(a, b, t):
-    if t > 1 or 1 < 0:
-        raise ValueError('Invalid value for lerp: %f', t)
-    return t * a + (1 - t) * b
 
 
 def measure_json(lm_data: Any, height: int, config_filename: str,
@@ -40,7 +34,7 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
         raise RuntimeError('.svg output is required to link external svg')
 
     dwg = SpinalDrawing(lm_data, image_dir, height)
-    kps, text_attrs, img = dwg.kps, dwg.text_attrs, dwg.img
+    kps, text_attrs, image_size = dwg.kps, dwg.text_attrs, dwg.size
 
     with open(config_filename) as f:
         color_data = yaml.safe_load(f)
@@ -472,7 +466,7 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
                   fill='none',
                   visibility=visibility))
 
-        c7pl = np.array((c7_centroid, (c7_centroid[0], img.size[1])))
+        c7pl = np.array((c7_centroid, (c7_centroid[0], image_size[1])))
         t1_corners = vert_corners[0]
         t1_sup_vec = vert_sup_vecs[0]
         aux_vec = np.array([1, 0])
@@ -490,7 +484,7 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
                       (aux_t1_tilt + 5 * t1_width * aux_vec).tolist())))
         angle = calc_angle(
             vert_corners[0],
-            ([0, aux_t1_tilt[1]], [img.size[0], aux_t1_tilt[1]]))
+            ([0, aux_t1_tilt[1]], [image_size[0], aux_t1_tilt[1]]))
         angle_deg = np.rad2deg(angle)
         txt_angle = '{:.2f}°'.format(angle_deg)
         text_elm = dwg.text(txt_angle, insert=c7_centroid, **text_attrs)
@@ -513,11 +507,11 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
             clavicle_kps = kps['Clavicle']
             line_clavicle = Line.from_points(clavicle_kps[0], clavicle_kps[1])
             chrl = Line.from_points([0, clavicle_kps[:, 1].min()],
-                                    [img.size[0], clavicle_kps[:, 1].min()])
+                                    [image_size[0], clavicle_kps[:, 1].min()])
             dwg.draw_line(clavicle_kps[0], clavicle_kps[1], grp)
             grp.add(
                 dwg.path((['M'] + [0, clavicle_kps[:, 1].min()] +
-                          [img.size[0], clavicle_kps[:, 1].min()])))
+                          [image_size[0], clavicle_kps[:, 1].min()])))
             if clavicle_kps[0, 1] != clavicle_kps[
                     1,
                     1]:  # TODO: somehow chrl.intersect_line(line_clavicle) raises ValueError of parallel
@@ -596,17 +590,17 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
             pelvic_ref_line = Line.from_points(pelvic_kps[0], pelvic_kps[1])
             dwg.draw_line(pelvic_kps[0], pelvic_kps[1], grp)
             y_up = pelvic_kps[:, 1].min()
-            grp.add(dwg.path((['M'] + [0, y_up] + [img.size[0], y_up])))
+            grp.add(dwg.path((['M'] + [0, y_up] + [image_size[0], y_up])))
             for pos in pelvic_kps:
                 grp.add(
                     dwg.circle(center=pos.tolist(),
                                r=POINT_RADIUS,
                                stroke=color,
                                fill=color))
-            hline = Line.from_points((0, y_up), (img.size[0], y_up))
+            hline = Line.from_points((0, y_up), (image_size[0], y_up))
             if pelvic_kps[0, 1] != pelvic_kps[1, 1]:
                 pelvic_cross = pelvic_ref_line.intersect_line(hline)
-                angle = calc_angle(((0, y_up), (img.size[0], y_up)),
+                angle = calc_angle(((0, y_up), (image_size[0], y_up)),
                                    pelvic_kps)
                 angle = np.abs(angle)
                 if pelvic_kps[0, 1] > pelvic_kps[1, 1]:
