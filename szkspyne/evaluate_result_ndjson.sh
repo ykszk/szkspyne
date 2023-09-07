@@ -31,8 +31,8 @@ for image_type in ap_whole lateral_whole; do
 done
 
 readonly HIDE="MajorApex APT CoronalBalance T1Tilt ClavicleAngle ShoulderHeight Pelvis FemoralHead PelvicObliquity LegLength SacralObliquity Mid/LowerThoracicKyphosis ProximalThoracicKyphosis SacralSlope PelvicIncidence PelvicRadiusAngle L5IncidenceAngle LumbosacralAngle"
-readonly algo="no-cross"
-# readonly algo="max_diffs"
+algo="no-cross"
+# algo="max_diffs"
 for image_type in ap lateral; do
     # create reference
     grep ${image_type}_whole "$result_dir"/manual_annotation.ndjson | python3 "$SCRIPT_DIR"/../script/exp2lmjson.py - "$result_dir"/reference/keypoints/${image_type}_whole/all_final_keypoints.ndjson
@@ -48,7 +48,7 @@ subdir="auto"
 image_type="ap"
 suffix="_w_curve_indices"
 mkdir -p "$result_dir"/"$subdir"/"$image_type"_whole${suffix}
-readonly algo="stored"
+algo="stored"
 readonly ndjson_w_indices="$result_dir"/$subdir/keypoints/${image_type}_whole/all_final_keypoints${suffix}.ndjson
 cat "$result_dir"/reference/measures_ap_whole.ndjson | jq -c '{"curve_indices": .curve_indices, "filename": .filename}' | lmrs join --mode inner "$result_dir"/auto/keypoints/ap_whole/all_final_keypoints.ndjson - > "$ndjson_w_indices"
 python3 "$SCRIPT_DIR"/measure_and_draw.py --hide "$HIDE" --height 1200 --points --numbers --image_type $image_type --parent_dir "$SCRIPT_DIR"/../../data/annotation/images/all --title "${subdir} ${image_type}" --config "$SCRIPT_DIR"/../../data/annotation/config.yaml --algo "$algo" batch "$ndjson_w_indices" "$result_dir"/$subdir/${image_type}_whole${suffix}/ --html --ndjson "$result_dir"/$subdir/measures_${image_type}_whole${suffix}.ndjson
@@ -56,7 +56,7 @@ python3 "$SCRIPT_DIR"/measure_and_draw.py --hide "$HIDE" --height 1200 --points 
 python3 "$SCRIPT_DIR"/../script/measured_jsons2csv.py "$result_dir"
 jupytext --to ipynb --output - "$SCRIPT_DIR"/../notebooks/exp_summary.py --update-metadata '{"title":"exp summary"}' | INPUT_DIR="$result_dir" jupyter nbconvert --stdin --to html --execute --no-input --output "$result_dir"/summary.html
 
-jupytext --to ipynb --output - "$SCRIPT_DIR"/../notebooks/exp_summary.py --update-metadata '{"title":"exp summary w indices"}' | INPUT_DIR="$result_dir" AP_FILENAME="measures_ap_whole_w_curve_indices.csv" jupyter nbconvert --stdin --to html --execute --no-input --output "$result_dir"/summary${suffix}.html
+jupytext --to ipynb --output - "$SCRIPT_DIR"/../notebooks/exp_summary.py --update-metadata '{"title":"exp summary w indices"}' | INPUT_DIR="$result_dir" STORED_CURVE=true jupyter nbconvert --stdin --to html --execute --no-input --output "$result_dir"/summary${suffix}.html
 
 # python3 "$SCRIPT_DIR"/../script/pair_data.py "$result_dir" || (echo "Failed at pair_data.py" && exit 1)
 # INPUT_DIR="$result_dir" jupyter nbconvert "$SCRIPT_DIR"/../script/ap_summary.ipynb --no-input --execute --to html --output "$result_dir"/summary_flex.html

@@ -29,15 +29,17 @@ include_visualization = not ('NO_VIS' in os.environ)
 # %%
 from collections import namedtuple
 
-
+STORED_CURVE = 'STORED_CURVE' in os.environ
+ap_filename = 'measures_ap_whole_w_curve_indices.csv' if STORED_CURVE else 'ap_whole.csv'
+dir_suffix = os.environ.get("DIR_SUFFIX", '_whole')
 # df_birthday = pd.read_csv('../../data/anonymized_birthday.csv')
 # dict_sex_bday = {row.PatientID:(row.PatientSex, datetime.strptime(str(row.Birthday), '%Y%m%d')) for _, row in df_birthday.iterrows()}
 ImageType = namedtuple("ImageType", ["name", "filename", "angle_cols", "key_cols"])
 d_ap = ImageType(
     name="ap",
-    filename="ap_whole.csv",
+    filename=ap_filename,
     angle_cols=["PT", "MT", "LT", "T1Tilt", "ClavicleAngle", "PelvicObliquity", "SacralObliquity"],
-    key_cols=["MT"],
+    key_cols=["MT", "PelvicObliquity"],
 )
 
 d_lateral = ImageType(
@@ -197,7 +199,10 @@ for d in [d_ap, d_lateral]:
                         display(HTML(f"<h5>{label}</h5>"))
                         svgs = []
                         for file_id, row in df_reps.iterrows():
-                            svg_filename = result_dir / subdir / f"{name}_whole" / f"{file_id}.svg"
+                            if STORED_CURVE and name=='ap' and subdir=='auto':
+                                svg_filename = result_dir / subdir / 'ap_whole_w_curve_indices' / f"{file_id}.svg"
+                            else:
+                                svg_filename = result_dir / subdir / f"{name}_whole" / f"{file_id}.svg"
                             if svg_filename.exists():
                                 with open(svg_filename) as f:
                                     svgs.append('<div class="sample" title="{}">{}</div>'.format(file_id, f.read()))
