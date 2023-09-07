@@ -97,6 +97,50 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
         best_score = 0
         MT_MARGIN = 3
 
+
+        def find_apex(sup, inf):
+            # if include_discs:
+            #     vert_disc_corners = np.concatenate([
+            #         vert_corners[sup:(inf + 1)],
+            #         disc_corners[sup:inf]
+            #     ],
+            #                                         axis=0)
+            #     vert_disc_centroids = np.concatenate([
+            #         vert_centroids[sup:(inf + 1)],
+            #         disc_centroids[sup:inf]
+            #     ],
+            #                                             axis=0)
+            # else:
+
+            # maximum translation
+            sup_line = Line.from_points(vert_corners[sup][0],
+                                        vert_corners[sup][1])
+            inf_line = Line.from_points(vert_corners[inf][0],
+                                        vert_corners[inf][1])
+
+            if True:
+                vert_disc_corners = vert_corners[sup:(inf + 1)]
+                vert_disc_centroids = vert_centroids[sup:(inf + 1)]
+            try:
+                p_intersect = sup_line.intersect_line(inf_line)
+            except ValueError:  # parallel lines
+                apex = (
+                    sup + inf
+                ) // 2  # TODO: implement better parallel-line handling
+                return apex, vert_disc_corners[apex - sup]
+
+            line_sup2inf = Line.from_points(vert_centroids[inf],
+                                            vert_centroids[sup])
+            # apex, _ = max(
+            #     [(i, abs(line_sup2inf.distance_point(c)))
+            #         for i, c in enumerate(vert_disc_centroids)],
+            #     key=lambda e: e[1])
+            apex, _ = max([(i, abs(p_intersect[0] - c[0]))
+                            for i, c in enumerate(vert_disc_centroids)],
+                            key=lambda e: e[1])
+            apex_corner = vert_disc_corners[apex]
+            return sup + apex, apex_corner
+
         if curve_algo == 'max_diffs':
             for mt_sup in range(MT_MARGIN, 7):
                 for mt_inf in range(9, len(vert_sup_cnrs) - MT_MARGIN):
@@ -174,7 +218,7 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
             lt_sup, lt_inf = lt_set[0], lt_set[1]
             pt_sup, pt_inf = None, None
             apex_corners = [vert_corners[upper_apex], vert_corners[lower_apex]]
-        else:
+        elif curve_algo == 'no-cross':
             # no-cross: max diff with constraint
             # No PT
             n_verts = len(vert_corners)
@@ -187,48 +231,6 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
                 except ValueError:
                     return False
 
-            def find_apex(sup, inf):
-                # if include_discs:
-                #     vert_disc_corners = np.concatenate([
-                #         vert_corners[sup:(inf + 1)],
-                #         disc_corners[sup:inf]
-                #     ],
-                #                                         axis=0)
-                #     vert_disc_centroids = np.concatenate([
-                #         vert_centroids[sup:(inf + 1)],
-                #         disc_centroids[sup:inf]
-                #     ],
-                #                                             axis=0)
-                # else:
-
-                # maximum translation
-                sup_line = Line.from_points(vert_corners[sup][0],
-                                            vert_corners[sup][1])
-                inf_line = Line.from_points(vert_corners[inf][0],
-                                            vert_corners[inf][1])
-
-                if True:
-                    vert_disc_corners = vert_corners[sup:(inf + 1)]
-                    vert_disc_centroids = vert_centroids[sup:(inf + 1)]
-                try:
-                    p_intersect = sup_line.intersect_line(inf_line)
-                except ValueError:  # parallel lines
-                    apex = (
-                        sup + inf
-                    ) // 2  # TODO: implement better parallel-line handling
-                    return apex, vert_disc_corners[apex - sup]
-
-                line_sup2inf = Line.from_points(vert_centroids[inf],
-                                                vert_centroids[sup])
-                # apex, _ = max(
-                #     [(i, abs(line_sup2inf.distance_point(c)))
-                #         for i, c in enumerate(vert_disc_centroids)],
-                #     key=lambda e: e[1])
-                apex, _ = max([(i, abs(p_intersect[0] - c[0]))
-                               for i, c in enumerate(vert_disc_centroids)],
-                              key=lambda e: e[1])
-                apex_corner = vert_disc_corners[apex]
-                return sup + apex, apex_corner
 
             for mt_sup in range(n_verts):
                 for mt_inf in range(mt_sup + 2, 13):  #n_verts-2):
@@ -298,6 +300,22 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
             if pt_sup is not None:
                 pt_apex, pt_apex_corner = find_apex(pt_sup, pt_inf)
                 apex_corners = [pt_apex_corner] + apex_corners
+        elif curve_algo=='stored': # Use stored value in json
+            indices = lm_data['curve_indices']
+            pt_sup, pt_inf = indices['PT']
+            mt_sup, mt_inf = indices['MT']
+            lt_sup, lt_inf = indices['LT']
+            if lt_inf >= len(vert_corners):
+                logger.info('Stored index exceeds possible value')
+                lt_inf = len(vert_corners) - 1
+            mt_apex, mt_apex_corner = find_apex(mt_sup, mt_inf)
+            lt_apex, lt_apex_corner = find_apex(lt_sup, lt_inf)
+            apex_corners = [mt_apex_corner, lt_apex_corner]
+            if pt_sup is not None:
+                pt_apex, pt_apex_corner = find_apex(pt_sup, pt_inf)
+                apex_corners = [pt_apex_corner] + apex_corners
+        else:
+            raise NotImplemented
 
         measures['curve_indices'] = {
             'MT': (mt_sup, mt_inf),
@@ -1043,7 +1061,7 @@ def main():
                         default='ap')
     parser.add_argument('--algo',
                         help='Algorithm to determine curves',
-                        choices=['max_diffs', 'fujimori', 'no-cross'],
+                        choices=['max_diffs', 'fujimori', 'no-cross', 'stored'],
                         default='max_diffs')
     parser.add_argument('--hide',
                         help='Hide specified drawings',
@@ -1159,7 +1177,7 @@ def main():
             return measure_json(lm_data, args.height, args.config, args.points,
                                 args.numbers, args.image_type, image, html,
                                 measure, args.template,
-                                '{} - {}'.format(fn.stem, args.title),
+                                '{} - {}'.format(stem, args.title),
                                 args.hide, not args.external_svg, image_dir,
                                 args.slopes, args.algo)
 
