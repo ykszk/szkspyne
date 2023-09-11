@@ -23,7 +23,8 @@ from torch.optim import Adam
 from torch_utils import bicubic, lerp2d
 from tqdm import tqdm
 
-from szkspyne import labelme_utils, measure_utils, settings
+import szkspyne.utils.measure as measure_utils
+from szkspyne import labelme_utils, settings
 
 
 log_format = '%(color)s[%(levelname)1.1s %(asctime)s.%(msecs)d %(module)s:%(lineno)d]%(end_color)s %(message)s'

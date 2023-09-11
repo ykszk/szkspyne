@@ -1,10 +1,10 @@
 #%%
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any, List, Tuple, Union
-import re
 
 import logzero
 import numpy as np
@@ -13,8 +13,15 @@ from jinja2 import Environment, FileSystemLoader
 from logzero import logger
 from skspatial.objects import Line, LineSegment
 
-from szkspyne import measure_utils as utils
-from szkspyne.measure_utils import SpinalDrawing, calc_angle, get_circle_dict, perp, lerp
+import szkspyne.utils.measure as utils
+from szkspyne.utils.measure import (
+    SpinalDrawing,
+    calc_angle,
+    get_circle_dict,
+    lerp,
+    perp,
+)
+
 
 LINE_WIDTH = 2.0
 POINT_RADIUS = 2.0

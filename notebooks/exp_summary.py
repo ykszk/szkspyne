@@ -12,11 +12,12 @@ import pandas as pd
 import seaborn as sns
 from bs4 import BeautifulSoup
 from IPython.display import HTML, display
-from scipy import stats
 from jinja2 import Environment, FileSystemLoader
+from scipy import stats
 
 import szkspyne
-from szkspyne.measure_utils import pearsonr_ci
+from szkspyne.utils.measure import pearsonr_ci
+
 
 mpl.rcParams["figure.dpi"] = 100
 
@@ -31,6 +32,7 @@ include_visualization = not ('NO_VIS' in os.environ)
 
 # %%
 from collections import namedtuple
+
 
 STORED_CURVE = 'STORED_CURVE' in os.environ
 ap_filename = 'ap_whole_w_curve_indices.csv' if STORED_CURVE else 'ap_whole.csv'
