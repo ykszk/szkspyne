@@ -20,7 +20,7 @@ from scipy.ndimage import gaussian_filter
 from szkmipy import mhd
 from torch import nn
 from torch.optim import Adam
-from torch_utils import lerp2d
+from torch_utils import bicubic, lerp2d
 from tqdm import tqdm
 
 from szkspyne import labelme_utils, measure_utils, settings
@@ -94,13 +94,14 @@ class TorchPCA(nn.Module):
 
 class PointAlignModel(nn.Module):
 
-    def __init__(self, pca: TorchPCA, n_comps: int, top_anchor, bottom_anchor):
+    def __init__(self, pca: TorchPCA, n_comps: int, top_anchor, bottom_anchor, use_bicubic=False):
         super().__init__()
         self.coefs = nn.parameter.Parameter(
             torch.zeros([n_comps], dtype=torch.float32, requires_grad=True))
         self.pca = pca
         self.top_anchor = top_anchor
         self.bottom_anchor = bottom_anchor
+        self.use_bicubic = use_bicubic
         mat_ref2pt = PointsPCA(pca.pca['ref_height']).to_target_mat(
             top_anchor[::-1], bottom_anchor[::-1]).astype(np.float32)
         # convert (x, y) to (y, x)
@@ -132,7 +133,10 @@ class PointAlignModel(nn.Module):
         probas = []
         assert len(heatmap) == len(warped)
         for ch, pts in zip(heatmap, warped):
-            probas.append(lerp2d(ch, pts))
+            if self.use_bicubic:
+                probas.append(lerp2d(ch, pts))
+            else:
+                probas.append(bicubic(ch, pts))
         return probas
     
     def icp_loss(self, points):
@@ -264,6 +268,9 @@ def main():
     parser.add_argument('--channel_first',
                         help='Heatmap is in channel-first format',
                         action='store_true')
+    parser.add_argument('--bicubic',
+                        help='Use bicubic interpolation instead of bilinear interpolation',
+                        action='store_true')
     parser.add_argument('--history',
                         help='Save optimization history',
                         action='store_true')
@@ -376,7 +383,7 @@ def main():
                         probas = pt_pca(t_heatmaps)
                         loss = -torch.log(torch.concat(probas)).mean()
                         history.append(loss.detach().item())
-                        if history[-1] <= best_loss:
+                        if len(history)==1 or history[-1] <= best_loss:
                             best_loss = history[-1]
                             best_coefs = pt_pca.coefs.detach()
                             best_probas = [p.detach() for p in probas]

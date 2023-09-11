@@ -72,3 +72,35 @@ def lerp2d(arr, idx):
     wy = idx[:, 0] - ia[:, 0]
     ab, cd = torch.lerp(a, b, wx), torch.lerp(c, d, wx)
     return torch.lerp(ab, cd, wy)
+
+
+Cx = torch.FloatTensor([[-1., 3., -2., 0.], [3., -6., -3., 6.],
+                        [-3., 3., 6., 0.], [1., 0., -1., 0.]]) / 6
+Cy = Cx.T
+Cx, Cy = Cx.unsqueeze(0), Cy.unsqueeze(0)  # for batch operations
+
+
+def bicubic(arr, xys):
+    '''
+    [Bicubic interpolation - Wikipedia](https://en.wikipedia.org/wiki/Bicubic_interpolation)
+    Args:
+        arr: 2d torch tensor
+        idx: [[y, x], ...]
+    '''
+    xy00 = torch.floor(xys).long()
+    ty = xys[:, 0] - xy00[:, 0]
+    tx = xys[:, 1] - xy00[:, 1]
+    zs = []
+    for dy in [-1, 0, 1, 2]:
+        for dx in [-1, 0, 1, 2]:
+            ys = torch.clip(xy00[:, 0] + dy, 0, arr.shape[0] - 1)
+            xs = torch.clip(xy00[:, 1] + dx, 0, arr.shape[1] - 1)
+            zs.append(arr[ys, xs])
+
+    zs = torch.stack(zs, dim=1).reshape((xys.shape[0], 4, 4))
+
+    px = torch.stack([tx**3, tx**2, tx, tx**0], dim=1).unsqueeze(2)
+    py = torch.stack([ty**3, ty**2, ty, ty**0], dim=1).unsqueeze(1)
+
+    p = py @ Cy @ zs @ Cx @ px
+    return p.squeeze(1).squeeze(1)
