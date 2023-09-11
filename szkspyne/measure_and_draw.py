@@ -45,8 +45,9 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
     drawings = []
 
     if draw_points:
-        drawings.append(('Points', 'Points'))
-        grp = dwg.add(dwg.g(id='Points', stroke_width=LINE_WIDTH))
+        gid = 'Points'
+        drawings.append((gid, 'Points'))
+        grp = dwg.add(dwg.g(id=gid, class_=gid, stroke_width=LINE_WIDTH))
         for label, pts in kps.items():
             if label not in label_colors:
                 logger.warning(
@@ -78,6 +79,7 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
         vn_attrs.update(dict(stroke_width='2px'))
         grp = dwg.add(
             dwg.g(id=gid,
+                  class_=gid,
                   text_anchor="middle",
                   dominant_baseline="central",
                   **vn_attrs))
@@ -331,6 +333,7 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
             visibility = 'hidden' if gid in hide else 'visible'
             grp = dwg.add(
                 dwg.g(id=gid,
+                      class_=gid,
                       stroke='red',
                       stroke_width=LINE_WIDTH,
                       fill='none',
@@ -345,6 +348,7 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
         visibility = 'hidden' if gid in hide else 'visible'
         grp = dwg.add(
             dwg.g(id=gid,
+                  class_=gid,
                   stroke=line_colors[gid],
                   stroke_width=LINE_WIDTH,
                   fill='none',
@@ -359,6 +363,7 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
             visibility = 'hidden' if gid in hide else 'visible'
             grp = dwg.add(
                 dwg.g(id=gid,
+                      class_=gid,
                       stroke=line_colors[gid],
                       stroke_width=LINE_WIDTH,
                       fill='none',
@@ -376,6 +381,7 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
             color = 'orange'
             grp = dwg.add(
                 dwg.g(id=gid,
+                      class_=gid,
                       stroke=color,
                       stroke_width=LINE_WIDTH,
                       fill='none',
@@ -401,6 +407,7 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
             color = line_colors[gid]
             grp = dwg.add(
                 dwg.g(id=gid,
+                      class_=gid,
                       stroke=color,
                       stroke_width=LINE_WIDTH,
                       fill='none',
@@ -439,6 +446,7 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
         color = line_colors[gid]
         grp = dwg.add(
             dwg.g(id=gid,
+                  class_=gid,
                   stroke=color,
                   stroke_width=LINE_WIDTH,
                   fill='none',
@@ -479,6 +487,7 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
         color = line_colors[gid]
         grp = dwg.add(
             dwg.g(id=gid,
+                  class_=gid,
                   stroke=color,
                   stroke_width=LINE_WIDTH,
                   fill='none',
@@ -517,6 +526,7 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
             color = line_colors[gid]
             grp = dwg.add(
                 dwg.g(id=gid,
+                      class_=gid,
                       stroke=color,
                       stroke_width=LINE_WIDTH,
                       fill='none',
@@ -569,6 +579,7 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
             color = line_colors[gid]
             grp = dwg.add(
                 dwg.g(id=gid,
+                      class_=gid,
                       stroke=color,
                       stroke_width=LINE_WIDTH,
                       fill='none',
@@ -597,6 +608,7 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
             color = line_colors[gid]
             grp = dwg.add(
                 dwg.g(id=gid,
+                      class_=gid,
                       stroke=color,
                       stroke_width=LINE_WIDTH,
                       fill='none',
@@ -643,6 +655,7 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
             color = line_colors[gid]
             grp = dwg.add(
                 dwg.g(id=gid,
+                      class_=gid,
                       stroke=color,
                       stroke_width=LINE_WIDTH,
                       fill='none',
@@ -672,6 +685,7 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
             x_pos1, x_pos2 = femoral_kps[:, 0]
             grp = dwg.add(
                 dwg.g(id=gid,
+                      class_=gid,
                       stroke=color,
                       stroke_width=LINE_WIDTH,
                       fill='none',
@@ -703,6 +717,7 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
         visibility = 'hidden' if gid in hide else 'visible'
         grp = dwg.add(
             dwg.g(id=gid,
+                  class_=gid,
                   stroke=color,
                   stroke_width=LINE_WIDTH,
                   fill='none',
@@ -723,6 +738,7 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
         visibility = 'hidden' if gid in hide else 'visible'
         grp = dwg.add(
             dwg.g(id=gid,
+                  class_=gid,
                   stroke=color,
                   stroke_width=LINE_WIDTH,
                   fill='none',
@@ -744,6 +760,7 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
         visibility = 'hidden' if gid in hide else 'visible'
         grp = dwg.add(
             dwg.g(id=gid,
+                  class_=gid,
                   stroke=color,
                   stroke_width=LINE_WIDTH,
                   fill='none',
@@ -765,6 +782,7 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
         visibility = 'hidden' if gid in hide else 'visible'
         grp = dwg.add(
             dwg.g(id=gid,
+                  class_=gid,
                   stroke=color,
                   stroke_width=LINE_WIDTH,
                   fill='none',
@@ -786,6 +804,7 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
         color = line_colors[gid]
         grp = dwg.add(
             dwg.g(id=gid,
+                  class_=gid,
                   stroke=color,
                   visibility='hidden' if gid in hide else 'visible'))
         grp.add(dwg.path((['M'] + sacrum_tltr.ravel().tolist())))
@@ -809,6 +828,7 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
         color = line_colors[gid]
         grp = dwg.add(
             dwg.g(id=gid,
+                  class_=gid,
                   stroke=color,
                   visibility='hidden' if gid in hide else 'visible'))
 
@@ -849,6 +869,7 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
             color = line_colors[gid]
             grp = dwg.add(
                 dwg.g(id=gid,
+                      class_=gid,
                       stroke=color,
                       fill='none',
                       visibility='hidden' if gid in hide else 'visible'))
@@ -898,6 +919,7 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
             color = line_colors[gid]
             grp = dwg.add(
                 dwg.g(id=gid,
+                      class_=gid,
                       stroke=color,
                       visibility='hidden' if gid in hide else 'visible'))
             grp.add(dwg.path((['M'] + sacrum_tltr.ravel().tolist())))
@@ -919,6 +941,7 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
             color = line_colors[gid]
             grp = dwg.add(
                 dwg.g(id=gid,
+                      class_=gid,
                       stroke=color,
                       visibility='hidden' if gid in hide else 'visible'))
             l5_sup = vert_sup_cnrs[-1]
@@ -947,6 +970,7 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
             visibility = 'hidden' if gid in hide else 'visible'
             grp = dwg.add(
                 dwg.g(id=gid,
+                      class_=gid,
                       stroke=color,
                       stroke_width=LINE_WIDTH,
                       fill='none',
@@ -965,6 +989,7 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
             color = line_colors[gid]
             grp = dwg.add(
                 dwg.g(id=gid,
+                      class_=gid,
                       stroke=color,
                       visibility='hidden' if gid in hide else 'visible'))
             grps[gid] = grp

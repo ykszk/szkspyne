@@ -15,7 +15,7 @@ parser.add_argument(
 args = parser.parse_args()
 data_root = Path(args.root)
 IMAGE_TYPES = ['ap_whole', 'lateral_whole']
-flags_required = ['術後', '左屈', '右屈', '除外', 'L4', 'L5', 'L6', '先天性側彎']
+flags_required = ['術後', 'EOS', '左屈', '右屈', '除外', 'L4', 'L5', 'L6', '先天性側彎']
 
 
 def merge_ndjsons(ndjson_filenames: List[Path], prefixes: List[str]):
@@ -51,4 +51,4 @@ for image_type in IMAGE_TYPES:
 
 suffix = '_w_curve_indices'
 df_merged = merge_ndjsons([data_root/'reference'/'measures_ap_whole.ndjson', data_root/'auto'/f'measures_ap_whole{suffix}.ndjson'], ['true ', 'pred '])
-df_merged.to_csv(data_root / f'measures_ap_whole{suffix}.csv', encoding='cp932')
+df_merged.to_csv(data_root / f'ap_whole{suffix}.csv', encoding='cp932')
