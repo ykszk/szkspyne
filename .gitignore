@@ -1,5 +1,4 @@
 *.csv
-!szkspyne/default_line_colors.csv
 *.svg
 *.ndjson
 *.jsonl
@@ -15,6 +14,7 @@ _version.py
 lightning_logs/
 wandb/
 data/
+old/
 
 # Created by https://www.toptal.com/developers/gitignore/api/python
 # Edit at https://www.toptal.com/developers/gitignore?templates=python
