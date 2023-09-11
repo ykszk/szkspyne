@@ -59,6 +59,19 @@ d_lateral = ImageType(
     key_cols=["ThoracicKyphosis", "LumbarLordosis"],
 )
 
+STYLE = '''
+<style>
+div.sbs {
+    display: flex;
+    flex-direction: row;
+}
+
+div.img {
+    margin: 1em;
+}
+</style>
+'''
+
 FLAG_COLS = ['術後', 'L4', 'L5']
 
 for d in [d_ap, d_lateral]:
@@ -195,6 +208,7 @@ for d in [d_ap, d_lateral]:
                 df_reps = df_d[[col]].abs().sort_values(col)[sls]
                 display(df_reps)
                 if include_visualization:
+                    d_vis = {}
                     for subdir, label in [("reference", "Reference"), ("auto", "AI")]:
                         display(HTML(f"<h5>{label}</h5>"))
                         svgs = []
@@ -210,7 +224,23 @@ for d in [d_ap, d_lateral]:
                                 with open(svg_filename.with_suffix('.html')) as f:
                                     soup = BeautifulSoup(f.read(), 'html.parser')
                                 svg = str(soup.select_one('svg'))
+                                d_vis[(file_id, label)] = svg
                                 svgs.append('<div class="sample" title="{}">{}</div>'.format(file_id, svg))
                         display(HTML('<div style="{}">{}</div>'.format(flex_style, "\n".join(svgs))))
+                    # Create independent html
+                    html = [f'<html><head>{STYLE}</head><body>']
+                    for file_id, row in df_reps.iterrows():
+                        html.append(f'<h2>{file_id}</h2>')
+                        html.append('<div class="sbs">')
+                        for label in ["Reference", "AI"]:
+                            svg = d_vis[(file_id, label)]
+                            elm = f'<div class="img"><h3>{label}</h3>{svg}</div>'
+                            html.append(elm)
+                        html.append('</div>')
+                    html.append('</body></html>')
+                    sbs_dir = result_dir/('side_by_side' + ('_w_curve_indices' if STORED_CURVE else ''))
+                    sbs_dir.mkdir(parents=True, exist_ok=True)
+                    with open(sbs_dir / f'{col}_{best_worst}.html', 'w') as f:
+                        f.write('\n'.join(html))
     #         break
     # break
