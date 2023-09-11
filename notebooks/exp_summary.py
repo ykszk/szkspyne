@@ -195,11 +195,11 @@ for d in [d_ap, d_lateral]:
     hue_order = ['XR & pre', 'XR & post', 'EOS & pre', 'EOS & post']
 
     cbs = []
-    for col_name in ['Points', 'VertebralNumber'] + [
+    for col_name in ['Points', 'VertebralNumber', 'MajorApex'] + [
             c[5:] for c in df.columns
             if c.startswith('pred ') and not c.endswith('curve_indices')
     ]:
-        cbs.append(t_cb.render(name=col_name, label=col_name, checked=''))
+        cbs.append(t_cb.render(name=col_name, label=col_name, checked='checked'))
     cbs = '\n'.join(cbs)
     cbs = '<h2>Show/Hide</h2>' + cbs + '''
         <button onclick="change_all('visible')">Show All</button>
