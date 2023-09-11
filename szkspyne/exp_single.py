@@ -136,14 +136,14 @@ def main():
     lit_model = pretrained_models.LitSMP(n_chs, N_CLASSES, args)
     down_factor = 256
 
+    height = None if args.train_cropped else HEIGHT
     if os.getenv("LOCAL_RANK", '0') == '0':
-        lit_model.summary([BATCH_SIZE, n_chs, 1024, 1024])
+        lit_model.summary([BATCH_SIZE, n_chs, height, height])
         import pickle
         with open(outdir / 'model_hparams.pickle', 'wb') as f:
             pickle.dump(lit_model.hparams, f)
 
     logger.info('load train set')
-    height = None if args.train_cropped else HEIGHT
     train_xs, train_kps = exp_utils.load_dataset(df_train, height, data_root,
                                                  LABEL_NAMES, NUM_WORKERS,
                                                  down_factor, args.clahe)
