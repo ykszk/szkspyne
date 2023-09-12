@@ -80,27 +80,30 @@ Cy = Cx.T
 Cx, Cy = Cx.unsqueeze(0), Cy.unsqueeze(0)  # for batch operations
 
 
-def bicubic(arr, xys):
+def bicubic(arr, yxs):
     '''
-    [Bicubic interpolation - Wikipedia](https://en.wikipedia.org/wiki/Bicubic_interpolation)
+    Bicubic interpolation
+
+    - [Bicubic interpolation - Wikipedia](https://en.wikipedia.org/wiki/Bicubic_interpolation)
+    - [numpy - Bicubic interpolation Python - Stack Overflow](https://stackoverflow.com/questions/52700878/bicubic-interpolation-python#answer-52702678)
     Args:
         arr: 2d torch tensor
-        idx: [[y, x], ...]
+        yxs (tensor): [[y, x], ...]
     '''
-    xy00 = torch.floor(xys).long()
-    ty = xys[:, 0] - xy00[:, 0]
-    tx = xys[:, 1] - xy00[:, 1]
+    yx00 = torch.floor(yxs).long()
+    ty = yxs[:, 0] - yx00[:, 0]
+    tx = yxs[:, 1] - yx00[:, 1]
     zs = []
     for dy in [-1, 0, 1, 2]:
         for dx in [-1, 0, 1, 2]:
-            ys = torch.clip(xy00[:, 0] + dy, 0, arr.shape[0] - 1)
-            xs = torch.clip(xy00[:, 1] + dx, 0, arr.shape[1] - 1)
+            ys = torch.clip(yx00[:, 0] + dy, 0, arr.shape[0] - 1)
+            xs = torch.clip(yx00[:, 1] + dx, 0, arr.shape[1] - 1)
             zs.append(arr[ys, xs])
 
-    zs = torch.stack(zs, dim=1).reshape((xys.shape[0], 4, 4))
+    zs = torch.stack(zs, dim=1).reshape((yxs.shape[0], 4, 4))
 
-    px = torch.stack([tx**3, tx**2, tx, tx**0], dim=1).unsqueeze(2)
-    py = torch.stack([ty**3, ty**2, ty, ty**0], dim=1).unsqueeze(1)
+    px = torch.stack([tx**3, tx**2, tx, torch.ones_like(tx)], dim=1).unsqueeze(2)
+    py = torch.stack([ty**3, ty**2, ty, torch.ones_like(ty)], dim=1).unsqueeze(1)
 
     p = py @ Cy @ zs @ Cx @ px
     return p.squeeze(1).squeeze(1)
