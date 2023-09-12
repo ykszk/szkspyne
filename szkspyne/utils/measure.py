@@ -203,7 +203,7 @@ def get_vert_and_disc_corners(kps):
 
 
 def read_default_line_colors() -> Dict[str, str]:
-    color_filename = Path(__file__).parent.parent / 'default_line_colors.csv'
+    color_filename = Path(__file__).parent.parent.parent / 'configs/default_line_colors.csv'
     color_dict = {}
     with open(color_filename) as f:
         reader = csv.DictReader(f)
