@@ -81,6 +81,12 @@ class InsertGroupId(DictMapper):
             if m is None:
                 raise RuntimeError("No number found in: " + filepath)
             group_id = "CMCAISY" + m.group()
+        elif filepath.startswith('DELAISY'):
+            m = re.search(r'DE?L?(\d+)', filepath.upper())
+            if m is None:
+                group_id = re.split(r"-|=|\.|,| |_|yr", filepath)[0]
+            else:
+                group_id = 'DE' + m[1]
         else:
             group_id = re.split(r"-|=|\.|,| |_|yr", filepath)[0]
         self.path2id.append((filepath, group_id))
