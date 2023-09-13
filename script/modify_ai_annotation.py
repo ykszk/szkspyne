@@ -154,7 +154,6 @@ with JsonsDirIO(input, output) if input.is_dir() else NDJsonIO(input,
                 rw.write(data)
 
     elif args.image_type == 'ap_whole':
-        HEIGHT = 768
         logger.info('ap')
         for rw in ios:
             data = rw.read()

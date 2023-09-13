@@ -8,23 +8,23 @@ import logzero
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import point_utils
 import seaborn as sns
-import settings
 import torch
 from joblib import Parallel, delayed
 from logzero import logger
-from pca_spine import PointsPCA
 from PIL import Image
 from scipy.ndimage import gaussian_filter
 from szkmipy import mhd
 from torch import nn
 from torch.optim import Adam
-from torch_utils import bicubic, lerp2d
 from tqdm import tqdm
 
+from szkspyne import settings
 import szkspyne.utils.measure as measure_utils
 from szkspyne import labelme_utils, settings
+from szkspyne.pca_spine import PointsPCA
+from szkspyne import point_utils
+from szkspyne.torch_utils import bicubic, lerp2d
 
 
 log_format = '%(color)s[%(levelname)1.1s %(asctime)s.%(msecs)d %(module)s:%(lineno)d]%(end_color)s %(message)s'
@@ -34,7 +34,6 @@ logzero.setup_default_logger(formatter=formatter)
 
 ANCHOR_LABELS = ['C7-TL', 'S-TL']
 ANCHOR_INDICES = [settings.LABEL_NAMES.index(l) for l in ANCHOR_LABELS]
-IMG_HEIGHT = 768
 EPSILON = np.finfo(float).eps
 
 
@@ -146,6 +145,7 @@ class PointAlignModel(nn.Module):
         assert len(points) == len(warped)
         for ref, pts in zip(points, warped):
             m_dist = torch.cdist(ref, pts, p=2)
+            # `dim=1` to only count ref to pts distances
             min_dists = torch.min(m_dist, dim=1, keepdim=False)[0] # [0] to ignore returned indices
             # print(ref.shape, pts.shape)
             # print('ref', ref)
@@ -309,7 +309,10 @@ def main():
     def fit(original_json: dict, heatmaps: np.ndarray):
         logger.setLevel(os.environ.get('LOGLEVEL', 'INFO').upper())
         kps = measure_utils.get_point_dict(original_json)
-        s = IMG_HEIGHT / original_json['imageHeight'] # scale to heatmap
+        if not channel_first:
+            heatmaps = heatmaps.transpose(2, 0, 1)
+        heatmap_height = heatmaps.shape[1]
+        s = heatmap_height / original_json['imageHeight'] # scale to heatmap
         vert_points = [s * np.flip(kps[l], 1).copy() for l in settings.VERTEBRA_LABEL_NAMES] # (x, y) to (y, x)
         vert_points_count = np.array([len(p) for p in vert_points])
         if args.skip_complete:
@@ -326,8 +329,6 @@ def main():
                     original_json['flags']['PCA'] = False
                         
                     return original_json, []
-        if not channel_first:
-            heatmaps = heatmaps.transpose(2, 0, 1)
         if h_flip:  #h_flip:  # horizontal flip
             heatmaps = np.flip(heatmaps, axis=2)
         anchor_maps = [heatmaps[i] for i in ANCHOR_INDICES]
@@ -342,6 +343,7 @@ def main():
         results = []
         histories = []
         for pca in pca_models:
+            # Skip model if detected points exceed the number of model's points
             if np.any(np.array([len(p) for p in t_vert_points]) > np.array(pca.pca['point_counts'])):
                 logger.debug('Skip model: %s', pca.model_name)
                 continue
@@ -420,7 +422,7 @@ def main():
         pt_pca = PointAlignModel(pca, pca.calc_n_comps(args.contr_rate),
                                  top_anchor, bottom_anchor).to(device)
         warped = pca.unravel(pt_pca.ref2pt(pca.warp(best_coefs.to(device))))
-        s = original_json['imageHeight'] / IMG_HEIGHT
+        s = original_json['imageHeight'] / heatmap_height
         scaled_warped = [(s * w.detach().cpu().numpy()).tolist()
                          for w in warped]
         # if h_flip:
