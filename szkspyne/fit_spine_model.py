@@ -25,7 +25,7 @@ from szkspyne import labelme_utils, settings
 from szkspyne.pca_spine import PointsPCA
 from szkspyne import point_utils
 from szkspyne.torch_utils import bicubic, lerp2d
-
+from szkmipy import boundingbox
 
 log_format = '%(color)s[%(levelname)1.1s %(asctime)s.%(msecs)d %(module)s:%(lineno)d]%(end_color)s %(message)s'
 formatter = logzero.LogFormatter(fmt=log_format)
@@ -35,6 +35,17 @@ logzero.setup_default_logger(formatter=formatter)
 ANCHOR_LABELS = ['C7-TL', 'S-TL']
 ANCHOR_INDICES = [settings.LABEL_NAMES.index(l) for l in ANCHOR_LABELS]
 EPSILON = np.finfo(float).eps
+
+
+def trim_bottom_right(arr: np.ndarray, margin):
+    '''
+    Args:
+        arr: 3d ndarray with (ch, y, x) dims. ch dimension will be kept intact
+    '''
+    bbox = boundingbox.bbox(arr.max(axis=0)>0)
+    bbox = (np.insert(bbox[0], [0], 0), np.insert(bbox[1], [0], arr.shape[0]-1)) # no cropping in channel axis
+    topleft_bbox = (np.zeros_like(bbox[0]), bbox[1])
+    return boundingbox.crop(arr, topleft_bbox, margin=4)
 
 
 class TorchPCA(nn.Module):
@@ -201,7 +212,7 @@ def calculate_anchors(anchor_maps):
     anchors = []
     for candidates, hm in zip(anchor_candidates, anchor_maps):
         if len(candidates) == 0:
-            raise NotImplementedError
+            anchors.append(None)
         if len(candidates) == 1:
             anchors.append(candidates[0])
         else:
@@ -331,11 +342,11 @@ def main():
                     return original_json, []
         if h_flip:  #h_flip:  # horizontal flip
             heatmaps = np.flip(heatmaps, axis=2)
-        anchor_maps = [heatmaps[i] for i in ANCHOR_INDICES]
-        # heatmaps = heatmaps[:4]
+        heatmaps = trim_bottom_right(heatmaps, 4)
 
+        anchor_maps = [heatmaps[i] for i in ANCHOR_INDICES]
         top_anchor, bottom_anchor = calculate_anchors(anchor_maps)
-        if not top_anchor or not bottom_anchor:
+        if top_anchor is None or bottom_anchor is None:
             print('No anchor found in', original_json['filename'])
             return
         t_vert_points = [torch.Tensor(p).to(device) for p in vert_points]
@@ -374,7 +385,7 @@ def main():
                     blurred_hm = (blurred_hm / blurred_hm.max()).astype(
                         np.float32)
                     blurred_hm = np.clip(blurred_hm, EPSILON, None)
-                    t_heatmaps = torch.from_numpy(blurred_hm).to(device)
+                    t_heatmaps = torch.FloatTensor(blurred_hm).to(device)
                     t_heatmaps.requires_grad = True
 
                     history = []
@@ -385,11 +396,11 @@ def main():
                     for i in range(args.max_iter):
                         probas = pt_pca(t_heatmaps)
                         loss = -torch.log(torch.concat(probas)).mean()
-                        history.append(loss.detach().item())
+                        history.append(loss.detach().cpu().item())
                         if len(history)==1 or history[-1] <= best_loss:
                             best_loss = history[-1]
-                            best_coefs = pt_pca.coefs.detach()
-                            best_probas = [p.detach() for p in probas]
+                            best_coefs = pt_pca.coefs.detach().cpu()
+                            best_probas = [p.detach().cpu() for p in probas]
                             best_pca = pca
                             patience = 0
                         else:
