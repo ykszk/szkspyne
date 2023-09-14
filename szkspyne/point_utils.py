@@ -16,6 +16,7 @@ from scipy.ndimage import distance_transform_edt
 from scipy.ndimage.measurements import center_of_mass
 from skimage import measure
 
+from szkmipy import boundingbox
 
 PointType = np.ndarray  # Tuple[float, float]
 PointsType = Sequence[PointType]
@@ -179,48 +180,48 @@ def create_prob_image(shape: Sequence[int],
     return out
 
 
-@njit("(i8, i8, f8[:], f8[:], f8, f4[:,:])", cache=True, fastmath=True)
-def _gauss_line_dist(w, h, a, b, sigma, img):
-    a_y, a_x, = a
-    ab = b - a
-    ab_y, ab_x, = ab
-    l = (ab**2).sum()
-    coef = 1.0 / (np.sqrt(2 * np.pi) * sigma)
-    denom = 1.0 / (2 * sigma * sigma)
+# @njit("(i8, i8, f8[:], f8[:], f8, f4[:,:])", cache=True, fastmath=True)
+# def _gauss_line_dist(w, h, a, b, sigma, img):
+#     a_y, a_x, = a
+#     ab = b - a
+#     ab_y, ab_x, = ab
+#     l = (ab**2).sum()
+#     coef = 1.0 / (np.sqrt(2 * np.pi) * sigma)
+#     denom = 1.0 / (2 * sigma * sigma)
 
-    for y in range(h):
-        img_row = img[y]
-        pa_y = y - a_y
-        for x in range(w):
-            pa_x = x - a_x
-            dot = pa_x * ab_x + pa_y * ab_y
-            t = min(max(0.0, dot / l), 1.0)  # clip [0, 1]
-            proj_x = a_x + t * ab_x
-            proj_y = a_y + t * ab_y
-            d_x = x - proj_x
-            d_y = y - proj_y
-            dist_sq = d_x * d_x + d_y * d_y
-            g = coef * np.exp(-dist_sq * denom)
-            img_row[x] = g
+#     for y in range(h):
+#         img_row = img[y]
+#         pa_y = y - a_y
+#         for x in range(w):
+#             pa_x = x - a_x
+#             dot = pa_x * ab_x + pa_y * ab_y
+#             t = min(max(0.0, dot / l), 1.0)  # clip [0, 1]
+#             proj_x = a_x + t * ab_x
+#             proj_y = a_y + t * ab_y
+#             d_x = x - proj_x
+#             d_y = y - proj_y
+#             dist_sq = d_x * d_x + d_y * d_y
+#             g = coef * np.exp(-dist_sq * denom)
+#             img_row[x] = g
 
 
-def gauss_line_dist(shape: Sequence[int],
-                    p1: PointType,
-                    p2: PointType,
-                    sigma: float,
-                    normalize: bool = True,
-                    out: Optional[np.ndarray] = None) -> np.ndarray:
-    '''
-    Craete affinity map between two points
-    '''
-    if out is None:
-        out = np.zeros(shape, dtype=np.float32)
-    _gauss_line_dist(shape[1], shape[0], np.array(p1, dtype=np.float64),
-                     np.array(p2, dtype=np.float64), sigma, out)
-    if normalize and out.max() != 0:
-        out *= (1 / out.max())
-    assert out is not None  # type anrrowing
-    return out
+# def gauss_line_dist(shape: Sequence[int],
+#                     p1: PointType,
+#                     p2: PointType,
+#                     sigma: float,
+#                     normalize: bool = True,
+#                     out: Optional[np.ndarray] = None) -> np.ndarray:
+#     '''
+#     Craete affinity map between two points
+#     '''
+#     if out is None:
+#         out = np.zeros(shape, dtype=np.float32)
+#     _gauss_line_dist(shape[1], shape[0], np.array(p1, dtype=np.float64),
+#                      np.array(p2, dtype=np.float64), sigma, out)
+#     if normalize and out.max() != 0:
+#         out *= (1 / out.max())
+#     assert out is not None  # type anrrowing
+#     return out
 
 
 def extract_center_of_masses(heatmaps):
@@ -266,6 +267,9 @@ def local_center_of_masses(heatmaps, min_thresh=.25):
             local_centers = [[]]
             # raise RuntimeError('Empty heatmap')
         else:
+            bbox = boundingbox.bbox(ch > 0)
+            # bbox_w_ch = (np.insert(bbox[0], [0], 0), np.insert(bbox[1], [0], heatmaps.shape[0]-1)) # no cropping in channel axis
+            ch = boundingbox.crop(ch, bbox, margin=1)
             thresh = max(min_thresh, max_value / 2)
             all_labels = measure.label(ch >= thresh)
             local_centers = []
@@ -274,6 +278,7 @@ def local_center_of_masses(heatmaps, min_thresh=.25):
                 island[all_labels != i] = ch.min()
                 local_max = island.max()
                 center = center_of_mass(island == local_max)
+                center = np.array(center) + bbox[0]
                 local_centers.append(center)
         local_centers_per_ch.append(local_centers)
     return local_centers_per_ch
