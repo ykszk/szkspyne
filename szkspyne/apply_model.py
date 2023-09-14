@@ -2,11 +2,11 @@ import argparse
 import sys
 import numpy as np
 from szkmipy import mhd
-import settings
+from szkspyne import settings
 
 from szkspyne.heatmap2labelme import save_kps_json
 
-PROB_MAX = 4000
+PROB_MAX = settings.PROB_MAX
 
 def worker(task_args):
     (pred, original_shape, image_filename, json_filename,

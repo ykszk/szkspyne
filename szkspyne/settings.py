@@ -32,6 +32,8 @@ FLIPPED_NAMES = load_env_var('FLIPPED_NAMES', ['TR', 'TL', 'BR', 'BL'] +
                              ['C7-TR', 'C7-TL', 'S-TR', 'S-TL'])
 
 
+PROB_MAX = 4000
+
 def create_flip_pairs(normal, flipped):
     flip_pairs = []
     for i, (ln, fn) in enumerate(zip(normal, flipped)):

@@ -273,7 +273,7 @@ def main():
     #     y_preds.append(trainer.predict(dataloaders=test_loader, ckpt_path=None))
     assert y_preds is not None
     logger.info('minmax: %s, %s', y_preds[0].min(), y_preds[1].max())
-    from szkspyne.apply_model import PROB_MAX
+    from szkspyne.settings import PROB_MAX
 
     # to channel last
     y_preds = [

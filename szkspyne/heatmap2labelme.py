@@ -11,7 +11,8 @@ import point_utils
 import settings
 from szkmipy import mhd
 
-PROB_MAX = 4000
+PROB_MAX = settings.PROB_MAX
+
 
 def hm2labelme(pred,
                original_shape,
