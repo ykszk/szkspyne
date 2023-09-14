@@ -1,14 +1,10 @@
 import argparse
 import sys
-
-
-# Cannot lazy load for pickling
 import json
 
-import labelme_utils
 import numpy as np
-import point_utils
-import settings
+
+from szkspyne import point_utils, labelme_utils, settings
 from szkmipy import mhd
 
 PROB_MAX = settings.PROB_MAX
@@ -39,7 +35,6 @@ def save_kps_json(pred,
     with open(json_filename, 'w') as f:
         json.dump(json_data, f, indent=2)
     return json_data
-
 
 
 def main():
@@ -83,8 +78,7 @@ def main():
 
         def save_json(args):
             heatmap, data = args
-            heatmap = heatmap.transpose(
-                (2, 0, 1))  # from (Y,X,Ch) to (Ch,Y,X)
+            heatmap = heatmap.transpose((2, 0, 1))  # from (Y,X,Ch) to (Ch,Y,X)
             original_shape = data['imageHeight'], data['imageWidth']
             filepath = Path(data['filepath'])
             stem = filepath.stem
@@ -107,8 +101,18 @@ def main():
             return data
 
         logger.info('start heatmap2labelme')
-        # heatmaps, _ = mhd.read_iterator(heatmap_filename)
         heatmaps, _ = mhd.read(heatmap_filename)
+        # create a generator so that heatmaps can be released immediately after they get processed
+        heatmaps = [h.copy() for h in heatmaps]
+
+        def create_generator(heatmaps: list):
+            while True:
+                try:
+                    yield heatmaps.pop(0)
+                except:
+                    return
+
+        heatmaps = create_generator(heatmaps)
         data = Parallel(n_jobs=n_jobs)(delayed(save_json)(arg)
                                        for arg in zip(heatmaps, json_data))
         logger.info('done heatmap2labelme')

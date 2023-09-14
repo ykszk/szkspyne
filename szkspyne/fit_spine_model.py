@@ -45,7 +45,7 @@ def trim_bottom_right(arr: np.ndarray, margin):
     bbox = boundingbox.bbox(arr.max(axis=0)>0)
     bbox = (np.insert(bbox[0], [0], 0), np.insert(bbox[1], [0], arr.shape[0]-1)) # no cropping in channel axis
     topleft_bbox = (np.zeros_like(bbox[0]), bbox[1])
-    return boundingbox.crop(arr, topleft_bbox, margin=4)
+    return boundingbox.crop(arr, topleft_bbox, margin=margin)
 
 
 class TorchPCA(nn.Module):
