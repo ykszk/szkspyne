@@ -158,10 +158,6 @@ class PointAlignModel(nn.Module):
             m_dist = torch.cdist(ref, pts, p=2)
             # `dim=1` to only count ref to pts distances
             min_dists = torch.min(m_dist, dim=1, keepdim=False)[0] # [0] to ignore returned indices
-            # print(ref.shape, pts.shape)
-            # print('ref', ref)
-            # print('pts', pts)
-            # print(m_dist)
             distances.append(min_dists)
         return distances
 
@@ -191,16 +187,6 @@ class PointAlignModel(nn.Module):
             loss.backward()
             optimizer.step()
         return loss.detach()
-        # for pts in t_points:
-        #     pts = pts.detach().numpy()
-        #     plt.scatter(pts[:,0], pts[:,1], c='blue', label='dst')
-        # warped = self.pca.unravel(self.warp())
-        # for pts in warped:
-        #     pts = pts.detach().numpy()
-        #     plt.scatter(pts[:,0], pts[:,1], c='green', label='src')
-        # plt.gca().invert_yaxis()
-        # plt.legend()
-        # plt.show()
     
 def calculate_anchors(anchor_maps):
     '''
@@ -273,18 +259,14 @@ def main():
         type=float,
         default=0.01)
     parser.add_argument('--skipped',
-                        help='Optional argument. default: %(default)s',
-                        metavar='<name>',
-                        default=f'skipped.txt')
+                        help='Optional argument',
+                        metavar='<name>')
     parser.add_argument('--device', help='Device for pytorch')
     parser.add_argument('--channel_first',
                         help='Heatmap is in channel-first format',
                         action='store_true')
     parser.add_argument('--bicubic',
                         help='Use bicubic interpolation instead of bilinear interpolation',
-                        action='store_true')
-    parser.add_argument('--history',
-                        help='Save optimization history',
                         action='store_true')
     parser.add_argument('--skip_complete',
                         help='Skip fitting if given set of points is complete (i.e. the number of points matches expected number of points).',
@@ -293,11 +275,11 @@ def main():
         '--threads',
         help='Integer value for torch.set_num_threads(). default: %(default)d',
         type=int,
-        default=2)
+        default=1)
     parser.add_argument('--jobs',
                         help='The number of jobs. default: %(default)d',
                         type=int,
-                        default=2)
+                        default=4)
 
     logger.setLevel(os.environ.get('LOGLEVEL', 'INFO').upper())
     args, unknown = parser.parse_known_args()
@@ -338,8 +320,9 @@ def main():
                     original_json['shapes'] = labelme_utils.kps2shapes(list(kps.values()), list(kps.keys()))
                     original_json['flags'][pca.model_name] = True
                     original_json['flags']['PCA'] = False
+                    original_json['pca'] = {}
                         
-                    return original_json, []
+                    return original_json
         if h_flip:  #h_flip:  # horizontal flip
             heatmaps = np.flip(heatmaps, axis=2)
         heatmaps = trim_bottom_right(heatmaps, 4)
@@ -358,18 +341,13 @@ def main():
             if np.any(np.array([len(p) for p in t_vert_points]) > np.array(pca.pca['point_counts'])):
                 logger.debug('Skip model: %s', pca.model_name)
                 continue
-            # for m, t in zip(pca.pca['point_counts'], t_vert_points):
-            #     if len(t) > m: # Skip if |heatmap points| > |moidel points|
             name = pca.model_name
             n_comps = pca.calc_n_comps(args.contr_rate)
             pt_pca = PointAlignModel(pca, n_comps, top_anchor, bottom_anchor)
             pt_pca.to(device)
             best_loss = pt_pca.icp(t_vert_points, args.icp_lr, args.max_iter, args.patience)
-            # best_pca = pca
-            # best_coefs = pt_pca.coefs.detach()
-            # best_name = 'icp_' + name
-            # results.append((best_name, best_loss, best_coefs, best_pca, [0]))
-            # continue
+            histories.append({'history':[], 'name':'icp', 'coefs': pt_pca.coefs.detach().numpy().tolist()})
+
             optimizer = Adam([pt_pca.coefs],
                              lr=args.lr,
                              weight_decay=args.l2_reg)
@@ -390,7 +368,7 @@ def main():
 
                     history = []
                     best_loss = np.finfo(np.float64).max
-                    best_coefs = 0
+                    best_coefs = None
                     best_pca = None
                     patience = 0
                     for i in range(args.max_iter):
@@ -410,13 +388,14 @@ def main():
                         optimizer.zero_grad()
                         loss.backward()
                         optimizer.step()
+                    assert best_coefs is not None
                     if True:  # save history
-                        history = pd.DataFrame(history, columns=['loss'])
-                        history['x'] = np.arange(len(history))
-                        history['name'] = name
-                        history['sigma'] = blur_sigma
-                        history['model'] = f'{name}-{blur_sigma}'
-                        histories.append(history)
+                        d_history = {}
+                        d_history['history'] = [None if np.isnan(h) else h for h in history]
+                        d_history['name'] = name
+                        d_history['sigma'] = blur_sigma
+                        d_history['coefs'] = best_coefs.numpy().tolist()
+                        histories.append(d_history)
             except IndexError:  # updated coefs become really big when warped points completely miss the heatmaps
                 logger.warning('Index error')
                 continue
@@ -451,7 +430,8 @@ def main():
         result_shapes.extend(original_shapes)
         result_json['shapes'] = result_shapes
         result_json['flags'] = {best_name: True, 'PCA': True}
-        return result_json, histories
+        result_json['pca'] = histories
+        return result_json
 
     n_jobs = args.jobs
     skipped = []
@@ -474,19 +454,9 @@ def main():
             if result is None:
                 return file_id
             else:
-                result_json, histories = result
+                result_json = result
                 with open(outdir / f'{file_id}.json', 'w') as f:
                     json.dump(result_json, f, indent=2)
-                if args.history:
-                    df_history = pd.concat(histories, ignore_index=True)
-                    sns.set(context='notebook',
-                            style='whitegrid',
-                            font='serif')
-                    sns.lineplot(data=df_history, x='x', y='loss', hue='model')
-                    plt.gcf().savefig(str(outdir / f'{file_id}.png'),
-                                      transparent=False,
-                                      bbox_inches='tight')
-                    plt.clf()
                 return None
 
         fns = sorted((data_dir).glob('*.json'))
@@ -497,8 +467,6 @@ def main():
 
     elif len(args.input) == 2:
         logger.info('Ndjson input')
-        if args.history:
-            raise RuntimeError('History option is invalid for ndjson input')
         ndjson_fn = Path(args.input[0])
         hm_filename = Path(args.input[1])
         if args.output is None or not args.output.endswith('.ndjson'):
@@ -519,7 +487,7 @@ def main():
             if result is None:
                 return None, file_id
             else:
-                result_json, _histories = result
+                result_json = result
                 return result_json, None
 
         logger.info('Fit')
