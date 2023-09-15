@@ -3,17 +3,17 @@ import sys
 from pathlib import Path
 from typing import List, Sequence, Set, Tuple, Union
 
-import img_utils
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
-import transforms
 from joblib import Parallel, delayed
 from logzero import logger
 from PIL import Image
-from settings import LABEL_NAMES
 from tqdm import tqdm
+
+from szkspyne import img_utils, transforms
+from szkspyne.settings import LABEL_NAMES
 
 
 def plot_history(df):
