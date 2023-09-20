@@ -83,6 +83,11 @@ display:flex;
 flex-directoin: row;
 flex-wrap: wrap;
 }
+#control {
+position: fixed;
+right:0;
+top:0;
+}
 </style>
 '''
 JAVASCRIPT = '''
@@ -197,7 +202,7 @@ for d in [d_ap, d_lateral]:
     hue_order = ['XR & pre', 'XR & post', 'EOS & pre', 'EOS & post']
 
     cbs = []
-    for col_name in ['Points', 'VertebralNumber', 'MajorApex'] + [
+    for col_name in ['Heatmap', 'Points', 'VertebralNumber', 'MajorApex'] + [
             c[5:] for c in df.columns
             if c.startswith('pred ') and not c.endswith('curve_indices')
     ]:
@@ -286,9 +291,9 @@ for d in [d_ap, d_lateral]:
                  slice(
                      len(df_d) // 2 - N // 2,
                      int(len(df_d) // 2 + np.ceil(N / 2)))),
-                    third_q,
-                    p_90,
-                    # p_95,
+                    # third_q,
+                    # p_90,
+                    p_95,
                 ("Worst", slice(-N, None)),
             ]:
                 # for best_worst, sls in [('Median',slice(len(df_d)//2-N//2,int(len(df_d)//2+np.ceil(N/2)))), ('Worst',slice(-N,None))]:
@@ -328,7 +333,7 @@ for d in [d_ap, d_lateral]:
                     html = [
                         f'<html><head><meta charset="utf-8">{STYLE}{JAVASCRIPT}</head><body>'
                     ]
-                    html.append(f'<div>{cbs}</div>')
+                    html.append(f'<div id="control">{cbs}</div>')
                     for file_id, row in df_reps.iterrows():
                         html.append('<div class="patient">')
                         html.append(f'<h2>{file_id}</h2>')

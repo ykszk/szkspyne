@@ -4,7 +4,9 @@ import json
 import re
 import sys
 from pathlib import Path
-from typing import Any, List, Tuple, Union
+from typing import Any, List, Tuple, Optional
+import sqlite3
+from io import BytesIO
 
 import logzero
 import numpy as np
@@ -12,6 +14,7 @@ import yaml
 from jinja2 import Environment, FileSystemLoader
 from logzero import logger
 from skspatial.objects import Line, LineSegment
+from PIL import Image
 
 import szkspyne.utils.measure as utils
 from szkspyne.utils.measure import (
@@ -30,19 +33,18 @@ PERP_BOX_SIZE = (20, 20)  # perpendicular sign
 
 def measure_json(lm_data: Any, height: int, config_filename: str,
                  draw_points: bool, draw_vertebral_number: bool,
-                 image_type: Union[str, None],
-                 image_filename: Union[Path, None], html_filename: Union[Path,
-                                                                         None],
-                 measure_filename: Union[Path, None], template_directory: str,
+                 image_type: Optional[str],
+                 image_filename: Optional[Path], html_filename: Optional[Path],
+                 measure_filename: Optional[Path], template_directory: str,
                  html_title: str, hide: List[str], embed_svg: bool,
-                 image_dir: Path, calc_slopes: bool, curve_algo: str):
+                 image_dir: Path, calc_slopes: bool, curve_algo: str, imagedb: Optional[str]):
 
     if not embed_svg and not str(image_filename).endswith('.svg'):
         raise RuntimeError('.svg output is required to link external svg')
 
     dwg = SpinalDrawing(lm_data, image_dir, height)
     kps, text_attrs, image_size = dwg.kps, dwg.text_attrs, dwg.size
-
+        
     with open(config_filename) as f:
         color_data = yaml.safe_load(f)
     label_colors = color_data['label_colors']
@@ -50,6 +52,27 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
     line_colors = utils.read_default_line_colors()
 
     drawings = []
+
+    if imagedb:
+        with sqlite3.connect(imagedb) as conn:
+            cursor = conn.cursor()
+            filename = lm_data['filename'] + '.png'
+            cursor.execute("SELECT binary FROM image WHERE name = ?", (filename,))
+            binary_data = cursor.fetchone()
+        if binary_data:
+            binary_data = binary_data[0]
+            gid = 'Heatmap'
+            grp = dwg.add(
+                dwg.g(id=gid,
+                      class_=gid,
+                      visibility='hidden'))
+            file_jpgdata = BytesIO(binary_data)
+            img = Image.open(file_jpgdata)
+            img = img.resize((int(round(img.size[0]*height/img.size[1])), height))
+            grp.add(
+                dwg.image('data:image/png;base64,' + utils.img2b64(img, format='png'), size=img.size))
+
+            drawings.append((gid, gid))
 
     if draw_points:
         gid = 'Points'
@@ -1095,6 +1118,8 @@ def main():
                         help='Algorithm to determine curves',
                         choices=['max_diffs', 'fujimori', 'no-cross', 'stored'],
                         default='max_diffs')
+    parser.add_argument('--imagedb',
+                        help='image database filename for heatmap overlay')
     parser.add_argument('--hide',
                         help='Hide specified drawings',
                         nargs='*',
@@ -1139,7 +1164,7 @@ def main():
         measure_json(lm_data, args.height, args.config, args.points,
                      args.numbers, args.image_type, args.image, args.html,
                      args.measure, args.template, args.title, args.hide,
-                     not args.external_svg, image_dir, args.slopes, args.algo)
+                     not args.external_svg, image_dir, args.slopes, args.algo, args.imagedb)
 
     sub_single.set_defaults(handler=command_single)
 
@@ -1195,7 +1220,7 @@ def main():
                                 measure, args.template,
                                 '{} - {}'.format(fn.stem, args.title),
                                 args.hide, not args.external_svg, image_dir,
-                                args.slopes, args.algo)
+                                args.slopes, args.algo, args.imagedb)
 
         def do_ndjson(fn: Path, lm_data):
             stem = re.sub(r"\.json$", "", Path(lm_data['filename']).name)
@@ -1211,7 +1236,7 @@ def main():
                                 measure, args.template,
                                 '{} - {}'.format(stem, args.title),
                                 args.hide, not args.external_svg, image_dir,
-                                args.slopes, args.algo)
+                                args.slopes, args.algo, args.imagedb)
 
         if Path(args.input).is_dir():
             json_filenames = sorted(Path(args.input).glob('*.json'))

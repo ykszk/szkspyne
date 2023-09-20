@@ -42,9 +42,9 @@ def pearsonr_ci(x, y, alpha=0.05):
     return r, p, lo, hi
 
 
-def img2b64(img: Image.Image):
+def img2b64(img: Image.Image, format=None):
     with io.BytesIO() as bio:
-        img.save(bio, format=img.format)
+        img.save(bio, format=format if format else img.format)
         # img.save(bio, format='png')
         binary = bio.getvalue()
     b64 = b64encode(binary)
