@@ -64,6 +64,7 @@ def lerp2d(arr, idx):
         arr: 2d torch tensor
         idx: [[y, x], ...]
     '''
+    idx = torch.clip(idx, 0, torch.tensor(arr.shape)-2)
     ia = torch.floor(idx).long()
     ib = ia + 1
     a, b = arr[ia[:, 0], ia[:, 1]], arr[ia[:, 0], ib[:, 1]]
