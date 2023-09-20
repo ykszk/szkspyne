@@ -14,18 +14,16 @@ from joblib import Parallel, delayed
 from logzero import logger
 from PIL import Image
 from scipy.ndimage import gaussian_filter
-from szkmipy import mhd
+from szkmipy import boundingbox, mhd
 from torch import nn
 from torch.optim import Adam
 from tqdm import tqdm
 
-from szkspyne import settings
 import szkspyne.utils.measure as measure_utils
-from szkspyne import labelme_utils, settings
+from szkspyne import labelme_utils, point_utils, settings
 from szkspyne.pca_spine import PointsPCA
-from szkspyne import point_utils
 from szkspyne.torch_utils import bicubic, lerp2d
-from szkmipy import boundingbox
+
 
 log_format = '%(color)s[%(levelname)1.1s %(asctime)s.%(msecs)d %(module)s:%(lineno)d]%(end_color)s %(message)s'
 formatter = logzero.LogFormatter(fmt=log_format)
@@ -271,6 +269,9 @@ def main():
     parser.add_argument('--skip_complete',
                         help='Skip fitting if given set of points is complete (i.e. the number of points matches expected number of points).',
                         action='store_true')
+    parser.add_argument('--skip_model',
+                        help='Skip model that has less points than the number of points in the json.',
+                        action='store_true')
     parser.add_argument(
         '--threads',
         help='Integer value for torch.set_num_threads(). default: %(default)d',
@@ -307,6 +308,7 @@ def main():
         heatmap_height = heatmaps.shape[1]
         s = heatmap_height / original_json['imageHeight'] # scale to heatmap
         vert_points = [s * np.flip(kps[l], 1).copy() for l in settings.VERTEBRA_LABEL_NAMES] # (x, y) to (y, x)
+        vert_points = [np.sort(vp, axis=0) for vp in vert_points] # sort by y
         vert_points_count = np.array([len(p) for p in vert_points])
         if args.skip_complete:
             for pca in pca_models:
@@ -330,15 +332,14 @@ def main():
         anchor_maps = [heatmaps[i] for i in ANCHOR_INDICES]
         top_anchor, bottom_anchor = calculate_anchors(anchor_maps)
         if top_anchor is None or bottom_anchor is None:
-            print('No anchor found in', original_json['filename'])
-            return
+            raise RuntimeError("No anchor found")
         t_vert_points = [torch.Tensor(p).to(device) for p in vert_points]
 
         results = []
         histories = []
         for pca in pca_models:
             # Skip model if detected points exceed the number of model's points
-            if np.any(np.array([len(p) for p in t_vert_points]) > np.array(pca.pca['point_counts'])):
+            if args.skip_model and np.any(np.array([len(p) for p in t_vert_points]) > np.array(pca.pca['point_counts'])):
                 logger.debug('Skip model: %s', pca.model_name)
                 continue
             name = pca.model_name
@@ -346,7 +347,7 @@ def main():
             pt_pca = PointAlignModel(pca, n_comps, top_anchor, bottom_anchor)
             pt_pca.to(device)
             best_loss = pt_pca.icp(t_vert_points, args.icp_lr, args.max_iter, args.patience)
-            histories.append({'history':[], 'name':'icp', 'coefs': pt_pca.coefs.detach().numpy().tolist()})
+            histories.append({'history':[], 'name':f'{name}-icp', 'coefs': pt_pca.coefs.detach().numpy().tolist()})
 
             optimizer = Adam([pt_pca.coefs],
                              lr=args.lr,
@@ -360,9 +361,9 @@ def main():
                             gaussian_filter(hm, blur_sigma)
                             for hm in heatmaps[:len(pca.labels)]
                         ])
-                    blurred_hm = (blurred_hm / blurred_hm.max()).astype(
+                    blurred_hm = (blurred_hm / settings.PROB_MAX).astype(
                         np.float32)
-                    blurred_hm = np.clip(blurred_hm, EPSILON, None)
+                    blurred_hm = np.clip(blurred_hm, 0.001, None)
                     t_heatmaps = torch.FloatTensor(blurred_hm).to(device)
                     t_heatmaps.requires_grad = True
 
@@ -402,7 +403,7 @@ def main():
             results.append((name, best_loss, best_coefs, best_pca, best_probas))
 
         if len(results) == 0:
-            return None
+            raise RuntimeError("No result found")
         result_json = original_json.copy()
         results.sort(key=lambda e: e[1])  # sort results by loss
         best_name, best_loss, best_coefs, best_pca, best_probas = results[0]
@@ -450,19 +451,21 @@ def main():
             heatmaps, h = mhd.read(str(data_dir / f'{file_id}.mha'))
             with open(str(data_dir / f'{file_id}.json')) as f:
                 original_json = json.load(f)
-            result = fit(original_json, heatmaps)
-            if result is None:
-                return file_id
-            else:
-                result_json = result
-                with open(outdir / f'{file_id}.json', 'w') as f:
-                    json.dump(result_json, f, indent=2)
-                return None
+            try:
+                result = fit(original_json, heatmaps)
+            except Exception as e:
+                return f"{file_id},{e}"
+            result_json = result
+            with open(outdir / f'{file_id}.json', 'w') as f:
+                json.dump(result_json, f, indent=2)
+            return None
 
         fns = sorted((data_dir).glob('*.json'))
         logger.info('Fit')
         skipped = Parallel(n_jobs=n_jobs)(delayed(do_dirin)(fn)
                                           for fn in tqdm(fns))
+        if skipped: # remove None
+            skipped = [s for s in skipped if s]
         logger.info('Done')
 
     elif len(args.input) == 2:
@@ -480,35 +483,34 @@ def main():
                 ndjson.append(json.loads(line))
 
         def do(original_json,
-               heatmaps) -> Tuple[Union[dict, None], Union[str, None]]:
+               heatmaps):
             torch.set_num_threads(args.threads)
             file_id = original_json['filename']
-            result = fit(original_json, heatmaps)
-            if result is None:
-                return None, file_id
-            else:
-                result_json = result
-                return result_json, None
+            try:
+                result = fit(original_json, heatmaps)
+            except Exception as e:
+                return f"{file_id},{e}"
+            result_json = result
+            return result_json
 
         logger.info('Fit')
         result_skipped = Parallel(n_jobs=n_jobs)(
             delayed(do)(*args)
             for args in tqdm(zip(ndjson, all_heatmaps), total=len(ndjson)))
         assert result_skipped is not None
-        results, skipped = zip(*result_skipped)
-        results = [r for r in results if r]
+        results = [r for r in result_skipped if isinstance(r, dict)]
         logger.info('Save ndjson')
         with open(args.output, 'w') as f:
             for r in results:
                 f.write(json.dumps(r, ensure_ascii=False))
                 f.write('\n')
         logger.info('Done')
+        skipped = [r for r in result_skipped if isinstance(r, str)]
     else:
         print('Invalid input')
         return 1
 
     assert skipped is not None
-    skipped = [s for s in skipped if s]
     if len(skipped) > 0:
         print(f'Save skipped {len(skipped)} files', args.skipped)
         with open(args.skipped, 'w') as f:
