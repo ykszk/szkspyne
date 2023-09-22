@@ -6,9 +6,8 @@ import copy
 import numpy as np
 from logzero import logger
 from sklearn.decomposition import PCA
-
+from scipy.interpolate import CubicSpline
 from szkspyne import settings
-
 
 class PointConfig(NamedTuple):
     name: str
@@ -71,6 +70,23 @@ class PointsPCA(PCA):
             labels=labels,
             point_counts=point_counts)
 
+def extrapolate(pts: np.ndarray):
+    '''
+    Append one extra point using extrapolation
+    '''
+    pts = pts[pts[:, 1].argsort()] # sort by y
+    bc_type='natural'
+
+    xs = np.arange(len(pts))
+    sp_x = CubicSpline(xs, pts[:, 0], bc_type=bc_type)
+    sp_y = CubicSpline(xs, pts[:, 1], bc_type=bc_type)
+    tl_xs = sp_x(len(pts))
+    tl_ys = sp_y(len(pts))
+    new_pts = np.zeros((pts.shape[0]+1, 2), dtype=pts.dtype)
+    new_pts[:-1] = pts
+    new_pts[-1, 0] = tl_xs
+    new_pts[-1, 1] = tl_ys
+    return new_pts
 
 if __name__ == '__main__':
     import argparse
@@ -103,13 +119,16 @@ if __name__ == '__main__':
     CONFIGS = [
         PointConfig('L4', 'ap_whole', VERT_LABELS, L4_POINT_COUNTS),
         PointConfig('L5', 'ap_whole', VERT_LABELS, L5_POINT_COUNTS),
+        PointConfig('L6', 'ap_whole', VERT_LABELS, L6_POINT_COUNTS),
         PointConfig('L4', 'lateral_whole', VERT_LABELS, L4_POINT_COUNTS),
         PointConfig('L5', 'lateral_whole', VERT_LABELS, L5_POINT_COUNTS),
-        PointConfig('L4-EXT', 'ap_whole', LABELS_EXT,
-                    L4_POINT_COUNTS + [2] * 5),
-        PointConfig('L5-EXT', 'ap_whole', LABELS_EXT,
-                    L5_POINT_COUNTS + [2] * 5),
-        # PointConfig('L6', LABELS, L6_POINT_COUNTS, 'lateral_whole'),
+        PointConfig('L6', 'lateral_whole', VERT_LABELS, L6_POINT_COUNTS),
+        # PointConfig('L4-EXT', 'ap_whole', LABELS_EXT,
+        #             L4_POINT_COUNTS + [2] * 5),
+        # PointConfig('L5-EXT', 'ap_whole', LABELS_EXT,
+        #             L5_POINT_COUNTS + [2] * 5),
+        # PointConfig('L6-EXT', 'ap_whole', LABELS_EXT,
+        #             L6_POINT_COUNTS + [2] * 5),
     ]
     with open(args.input) as f:
         all_data = [json.loads(line) for line in f]
@@ -151,7 +170,7 @@ if __name__ == '__main__':
                 pts.sort(key=lambda v: v[0][0])  # sort by x
             np_pts[label] = np.array(pts)[:, 0]  # squeeze (N, 1, 2) -> (N, 2)
         d['point'] = np_pts
-    # add potential pseudo L4
+    # Create L4 data from L5 (and L5 from L6)
     l4_data = copy.deepcopy(all_data)
     for d in l4_data:
         np_pts = {}
@@ -162,6 +181,18 @@ if __name__ == '__main__':
                 np_pts[label] = pts.copy()
         d['point'] = np_pts
     all_data += l4_data
+
+    # Create L6 data from L5 (and L5 from L4)
+    l6_data = copy.deepcopy(all_data)
+    for d in l6_data:
+        np_pts = {}
+        for label, pts in d['point'].items():
+            if label in VERT_LABELS:
+                np_pts[label] = extrapolate(pts)
+            else:
+                np_pts[label] = pts.copy()
+        d['point'] = np_pts
+    all_data += l6_data
 
     for config in CONFIGS:
         image_type = config.image_type
