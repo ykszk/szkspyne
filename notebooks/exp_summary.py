@@ -115,14 +115,15 @@ JAVASCRIPT = '''
     </script>
 '''
 
-FLAG_COLS = ['術後', 'EOS', 'L4', 'L5']
+FLAG_COLS = ['術後', 'EOS', 'L4', 'L5', "L6"]
+DELETE_COLS = ["除外", "左屈", "右屈", "先天性側彎"]
 
 for d in [d_ap, d_lateral]:
     name, filename, angle_cols, key_cols = d
     filename = str(result_dir / filename)
     display(HTML(f"<h1>{name}</h1>"))
     df = pd.read_csv(filename, encoding="cp932")
-    for c in ["除外", "左屈", "右屈", "L6", "先天性側彎"]:
+    for c in DELETE_COLS:
         df = df[np.logical_not(df[c])]
         del df[c]
     display(df.head())
@@ -134,8 +135,8 @@ for d in [d_ap, d_lateral]:
     print("# of unique patients", len(set(pids)))
 
     # sexes, ages = [], []
-    for fn in df["filename"]:
-        pid = fn.split("_")[0].split("-")[0]
+    # for fn in df["filename"]:
+    #     pid = fn.split("_")[0].split("-")[0]
         # pid, study_date = fn.split('_')[:2]
         # study_date = datetime.strptime(study_date, '%Y%m%d')
         # sex, bdate = dict_sex_bday[pid]
