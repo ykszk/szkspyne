@@ -15,8 +15,8 @@ from numba import njit
 from scipy.ndimage import distance_transform_edt
 from scipy.ndimage.measurements import center_of_mass
 from skimage import measure
-
 from szkmipy import boundingbox
+
 
 PointType = np.ndarray  # Tuple[float, float]
 PointsType = Sequence[PointType]
@@ -270,7 +270,8 @@ def local_center_of_masses(heatmaps, min_thresh=.25):
             bbox = boundingbox.bbox(ch > 0)
             # bbox_w_ch = (np.insert(bbox[0], [0], 0), np.insert(bbox[1], [0], heatmaps.shape[0]-1)) # no cropping in channel axis
             ch = boundingbox.crop(ch, bbox, margin=1)
-            thresh = max(min_thresh, max_value / 2)
+            # thresh = max(min_thresh, max_value / 2)
+            thresh = min_thresh
             all_labels = measure.label(ch >= thresh)
             local_centers = []
             for i in range(1, np.max(all_labels) + 1):
