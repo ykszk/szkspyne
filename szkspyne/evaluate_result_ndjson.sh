@@ -15,14 +15,17 @@ readonly HIDE="MajorApex APT CoronalBalance T1Tilt ClavicleAngle ShoulderHeight 
 algo="no-cross"
 # algo="max_diffs"
 for image_type in ap lateral; do
-    # create reference
-    grep ${image_type}_whole "$result_dir"/manual_annotation.ndjson | python3 "$SCRIPT_DIR"/../script/exp2lmjson.py - "$result_dir"/reference/keypoints/${image_type}_whole/all_final_keypoints.ndjson
-    for subdir in auto reference; do
-        echo measure and draw $image_type $subdir
-        python3 "$SCRIPT_DIR"/measure_and_draw.py --hide "$HIDE" --height 1200 --points --numbers --image_type $image_type --parent_dir "$SCRIPT_DIR"/../../data/annotation/images/all --title "${subdir} ${image_type}" --config "$SCRIPT_DIR"/../../data/annotation/config.yaml --algo "$algo" batch "$result_dir"/$subdir/keypoints/${image_type}_whole/all_final_keypoints.ndjson "$result_dir"/$subdir/${image_type}_whole/ --html --ndjson "$result_dir"/$subdir/measures_${image_type}_whole.ndjson
-        # python3 "$SCRIPT_DIR"/create_svg_catalog.py --title AI "$result_dir"/$subdir/${image_type}_whole/ "$result_dir"/$subdir/catalog_${image_type}_whole.html
-    done
+    (
+        # create reference
+        grep ${image_type}_whole "$result_dir"/manual_annotation.ndjson | python3 "$SCRIPT_DIR"/../script/exp2lmjson.py - "$result_dir"/reference/keypoints/${image_type}_whole/all_final_keypoints.ndjson
+        for subdir in auto reference; do
+            echo measure and draw $image_type $subdir
+            python3 "$SCRIPT_DIR"/measure_and_draw.py --hide "$HIDE" --height 1200 --points --numbers --image_type $image_type --parent_dir "$SCRIPT_DIR"/../../data/annotation/images/all --title "${subdir} ${image_type}" --config "$SCRIPT_DIR"/../../data/annotation/config.yaml --algo "$algo" --imagedb "$result_dir"/heatmap_images.sqlite3 batch "$result_dir"/$subdir/keypoints/${image_type}_whole/all_final_keypoints.ndjson "$result_dir"/$subdir/${image_type}_whole/ --html --ndjson "$result_dir"/$subdir/measures_${image_type}_whole.ndjson
+            # python3 "$SCRIPT_DIR"/create_svg_catalog.py --title AI "$result_dir"/$subdir/${image_type}_whole/ "$result_dir"/$subdir/catalog_${image_type}_whole.html
+        done
+    ) &
 done
+wait
 
 # reuse curve
 subdir="auto"
@@ -31,8 +34,8 @@ suffix="_w_curve_indices"
 mkdir -p "$result_dir"/"$subdir"/"$image_type"_whole${suffix}
 algo="stored"
 readonly ndjson_w_indices="$result_dir"/$subdir/keypoints/${image_type}_whole/all_final_keypoints${suffix}.ndjson
-cat "$result_dir"/reference/measures_ap_whole.ndjson | jq -c '{"curve_indices": .curve_indices, "filename": .filename}' | lmrs join --mode inner "$result_dir"/auto/keypoints/ap_whole/all_final_keypoints.ndjson - > "$ndjson_w_indices"
-python3 "$SCRIPT_DIR"/measure_and_draw.py --hide "$HIDE" --height 1200 --points --numbers --image_type $image_type --parent_dir "$SCRIPT_DIR"/../../data/annotation/images/all --title "${subdir} ${image_type}" --config "$SCRIPT_DIR"/../../data/annotation/config.yaml --algo "$algo" batch "$ndjson_w_indices" "$result_dir"/$subdir/${image_type}_whole${suffix}/ --html --ndjson "$result_dir"/$subdir/measures_${image_type}_whole${suffix}.ndjson
+cat "$result_dir"/reference/measures_ap_whole.ndjson | jq -c '{"curve_indices": .curve_indices, "filename": .filename}' | lmrs join --mode inner "$result_dir"/auto/keypoints/ap_whole/all_final_keypoints.ndjson - >"$ndjson_w_indices"
+python3 "$SCRIPT_DIR"/measure_and_draw.py --hide "$HIDE" --height 1200 --points --numbers --image_type $image_type --parent_dir "$SCRIPT_DIR"/../../data/annotation/images/all --title "${subdir} ${image_type}" --config "$SCRIPT_DIR"/../../data/annotation/config.yaml --algo "$algo" --imagedb "$result_dir"/heatmap_images.sqlite3 batch "$ndjson_w_indices" "$result_dir"/$subdir/${image_type}_whole${suffix}/ --html --ndjson "$result_dir"/$subdir/measures_${image_type}_whole${suffix}.ndjson
 
 python3 "$SCRIPT_DIR"/../script/measured_jsons2csv.py "$result_dir"
 jupytext --to ipynb --output - "$SCRIPT_DIR"/../notebooks/exp_summary.py --update-metadata '{"title":"exp summary"}' | INPUT_DIR="$result_dir" jupyter nbconvert --stdin --to html --execute --no-input --output "$result_dir"/summary.html
