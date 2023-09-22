@@ -10,12 +10,31 @@ readonly result_dir="$1"
 for fold_dir in "$result_dir"/?; do
     (
         echo "$fold_dir"
-        python3 "$SCRIPT_DIR"/pca_spine.py "$fold_dir"/train_val.ndjson "$fold_dir" --mirror
+        infile="$fold_dir"/train_val.ndjson 
+        outfile="$fold_dir"/pca_ap_whole_L4.npz
+        if [ $infile -nt $outfile ]; then
+            python3 "$SCRIPT_DIR"/pca_spine.py $infile "$fold_dir" --mirror
+        fi
         for image_type in ap_whole lateral_whole; do
             outdir="$fold_dir"/auto/$image_type
-            mkdir -p "$outdir"
-            python3 "$SCRIPT_DIR"/heatmap2labelme.py "$fold_dir"/y_pred_$image_type.mha "$fold_dir"/test_$image_type.ndjson "$outdir" --save_ndjson "$outdir"/all_heatmap_keypoints.ndjson
-            python3 "$SCRIPT_DIR"/fit_spine_model.py "$outdir"/all_heatmap_keypoints.ndjson "$fold_dir"/y_pred_$image_type.mha --output "$outdir"/all_pca_keypoints.ndjson -m "$fold_dir"/pca_${image_type}_L4.npz "$fold_dir"/pca_${image_type}_L5.npz --sigma 0.5 --max_iter 400 --l2_reg 0.001 --device cpu --skipped "$outdir"/skipped.txt
+
+            infile="$fold_dir"/y_pred_$image_type.mha
+            outfile="$result_dir"/heatmap_images.sqlite3
+            if [ $infile -nt $outfile ]; then
+                python3 "$SCRIPT_DIR"/../script/hm2db.py $infile "$outdir"/all_heatmap_keypoints.ndjson $outfile
+            fi
+
+            infile="$fold_dir"/y_pred_$image_type.mha
+            outfile="$outdir"/all_heatmap_keypoints.ndjson
+            if [ $infile -nt $outfile ]; then
+                python3 "$SCRIPT_DIR"/heatmap2labelme.py $infile "$fold_dir"/test_$image_type.ndjson "$outdir" --save_ndjson $outfile
+            fi
+
+            infile="$outdir"/all_heatmap_keypoints.ndjson
+            outfile="$outdir"/all_pca_keypoints.ndjson
+            if [ $infile -nt $outfile ]; then
+                python3 "$SCRIPT_DIR"/fit_spine_model.py $infile "$fold_dir"/y_pred_$image_type.mha --output $outfile -m "$fold_dir"/pca_${image_type}_L4.npz "$fold_dir"/pca_${image_type}_L5.npz "$fold_dir"/pca_${image_type}_L6.npz --sigma 1 --max_iter 400 --l2_reg 0.001 --device cpu --skipped "$outdir"/skipped.txt --jobs 8 --skip_complete
+            fi
         done
     ) &
 done
