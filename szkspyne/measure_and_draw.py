@@ -2,19 +2,19 @@
 import argparse
 import json
 import re
-import sys
-from pathlib import Path
-from typing import Any, List, Tuple, Optional
 import sqlite3
+import sys
 from io import BytesIO
+from pathlib import Path
+from typing import Any, List, Optional, Tuple
 
 import logzero
 import numpy as np
 import yaml
 from jinja2 import Environment, FileSystemLoader
 from logzero import logger
-from skspatial.objects import Line, LineSegment
 from PIL import Image
+from skspatial.objects import Line, LineSegment
 
 import szkspyne.utils.measure as utils
 from szkspyne.utils.measure import (
@@ -33,14 +33,10 @@ PERP_BOX_SIZE = (20, 20)  # perpendicular sign
 
 def measure_json(lm_data: Any, height: int, config_filename: str,
                  draw_points: bool, draw_vertebral_number: bool,
-                 image_type: Optional[str],
-                 image_filename: Optional[Path], html_filename: Optional[Path],
+                 image_type: Optional[str], html_filename: Optional[Path],
                  measure_filename: Optional[Path], template_directory: str,
-                 html_title: str, hide: List[str], embed_svg: bool,
+                 html_title: str, hide: List[str],
                  image_dir: Path, calc_slopes: bool, curve_algo: str, imagedb: Optional[str]):
-
-    if not embed_svg and not str(image_filename).endswith('.svg'):
-        raise RuntimeError('.svg output is required to link external svg')
 
     dwg = SpinalDrawing(lm_data, image_dir, height)
     kps, text_attrs, image_size = dwg.kps, dwg.text_attrs, dwg.size
@@ -1054,15 +1050,6 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
             measures[name + '_x'] = pts[0][0]
             measures[name + '_y'] = pts[0][1]
 
-    if image_filename:
-        filename = Path(image_filename)
-        if filename.suffix == '.svg':
-            dwg.saveas(filename)
-        elif filename.suffix == '.png':
-            raise NotImplementedError
-        else:
-            raise NotImplementedError
-
     if measure_filename:
         with open(measure_filename, 'w') as f:
             json.dump(measures, f, ensure_ascii=False)
@@ -1079,18 +1066,12 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
                 t_cb.render(name=name,
                             label=label,
                             checked='' if name in hide else 'checked'))
-        if embed_svg:
-            svg_tag = dwg.tostring()
-        else:
-            assert image_filename is not None
-            svg_tag = '<object id="svgfile" type="image/svg+xml" data="{}"></object>'.format(
-                Path(image_filename).name)
+        svg_tag = dwg.tostring()
         with open(html_filename, 'w', encoding='utf8') as f:
             f.write(
                 template.render(
                     svg=svg_tag,
-                    svg_container='document' if embed_svg else
-                    'document.getElementById("svgfile").contentDocument',
+                    svg_container='document',
                     checkboxes='\n'.join(cbs),
                     title=html_title))
     return measures
@@ -1139,9 +1120,6 @@ def main():
                         help='Draw vertebral numbers',
                         action='store_true')
     parser.add_argument('--verbose', help='Print logs', action='store_true')
-    parser.add_argument('--external_svg',
-                        help='Use external svg file for html output.',
-                        action='store_true')
 
     subparsers = parser.add_subparsers()
     sub_single = subparsers.add_parser('single',
@@ -1152,7 +1130,6 @@ def main():
                             type=Path)
     sub_single.add_argument('--measure', help='Save measurements json')
     sub_single.add_argument('--html', help='Save html')
-    sub_single.add_argument('--image', help='Save image (svg or png)')
 
     def command_single(args):
         if args.parent_dir:
@@ -1162,9 +1139,8 @@ def main():
         with open(args.input) as f:
             lm_data = json.load(f)
         measure_json(lm_data, args.height, args.config, args.points,
-                     args.numbers, args.image_type, args.image, args.html,
-                     args.measure, args.template, args.title, args.hide,
-                     not args.external_svg, image_dir, args.slopes, args.algo, args.imagedb)
+                     args.numbers, args.image_type, args.html,
+                     args.measure, args.template, args.title, args.hide, image_dir, args.slopes, args.algo, args.imagedb)
 
     sub_single.set_defaults(handler=command_single)
 
@@ -1206,7 +1182,6 @@ def main():
         def do(fn: Path):
             stem = re.sub(r"\.json$", "", fn.name)
             measure = outdir / (stem + '.json') if args.measure else None
-            image = outdir / (stem + args.image) if args.image else None
             html = outdir / (stem + '.html') if args.html else None
             if args.parent_dir:
                 image_dir = Path(args.parent_dir)
@@ -1216,26 +1191,25 @@ def main():
                 lm_data = json.load(f)
                 lm_data['filename'] = fn.stem
             return measure_json(lm_data, args.height, args.config, args.points,
-                                args.numbers, args.image_type, image, html,
+                                args.numbers, args.image_type, html,
                                 measure, args.template,
                                 '{} - {}'.format(fn.stem, args.title),
-                                args.hide, not args.external_svg, image_dir,
+                                args.hide, image_dir,
                                 args.slopes, args.algo, args.imagedb)
 
         def do_ndjson(fn: Path, lm_data):
             stem = re.sub(r"\.json$", "", Path(lm_data['filename']).name)
             measure = outdir / (stem + '.json') if args.measure else None
-            image = outdir / (stem + args.image) if args.image else None
             html = outdir / (stem + '.html') if args.html else None
             if args.parent_dir:
                 image_dir = Path(args.parent_dir)
             else:
                 image_dir = fn.parent
             return measure_json(lm_data, args.height, args.config, args.points,
-                                args.numbers, args.image_type, image, html,
+                                args.numbers, args.image_type, html,
                                 measure, args.template,
                                 '{} - {}'.format(stem, args.title),
-                                args.hide, not args.external_svg, image_dir,
+                                args.hide, image_dir,
                                 args.slopes, args.algo, args.imagedb)
 
         if Path(args.input).is_dir():
