@@ -37,12 +37,17 @@ EPSILON = np.finfo(float).eps
 
 def trim_bottom_right(arr: np.ndarray, margin):
     '''
+    Crop top-left corner of 2d images.
+    When input is 3d ndarray with (ch, y, x) dims, bottom-right empty spaces in (y, x) dims are removed.
+    Likewise, when input is 4d ndarray with (batch, ch, y, x) dims, bottom-right spaces are removed while (batch, ch) dims are kept intact.
+
     Args:
-        arr: 3d ndarray with (ch, y, x) dims. ch dimension will be kept intact
+        arr: ndarray
     '''
-    bbox = boundingbox.bbox(arr.max(axis=0)>0)
-    bbox = (np.insert(bbox[0], [0], 0), np.insert(bbox[1], [0], arr.shape[0]-1)) # no cropping in channel axis
-    topleft_bbox = (np.zeros_like(bbox[0]), bbox[1])
+    n_keep_dims = arr.ndim-2
+    xy_bbox = boundingbox.bbox(arr.max(axis=tuple(range(n_keep_dims)))>0)
+    bbox_max = np.concatenate([arr.shape[:n_keep_dims], xy_bbox[1]], axis=0)
+    topleft_bbox = (np.zeros_like(bbox_max), bbox_max)
     return boundingbox.crop(arr, topleft_bbox, margin=margin)
 
 
@@ -65,6 +70,7 @@ class TorchPCA(nn.Module):
         components = pca['components']
         components = np.flip(components.reshape(components.shape[0], -1, 2),
                              axis=-1).reshape(components.shape)
+        self.components = torch.from_numpy(components.astype(np.float32))
         scaled_components = components * np.sqrt(
             pca['explained_variance'])[:, np.newaxis]
         self.scaled_components = nn.parameter.Parameter(torch.from_numpy(
@@ -111,28 +117,66 @@ class PointAlignModel(nn.Module):
         self.top_anchor = top_anchor
         self.bottom_anchor = bottom_anchor
         self.use_bicubic = use_bicubic
-        mat_ref2pt = PointsPCA(pca.pca['ref_height']).to_target_mat(
-            top_anchor[::-1], bottom_anchor[::-1]).astype(np.float32)
+        self.space_map = PointsPCA(pca.pca['ref_height'])
         # convert (x, y) to (y, x)
-        mat_ref2pt[0, 0], mat_ref2pt[1, 1] = mat_ref2pt[1, 1], mat_ref2pt[0, 0]
-        t = mat_ref2pt[:2, 2].copy()
-        mat_ref2pt[0, 2], mat_ref2pt[1, 2] = t[1], t[0]
+        def trans_mat(mat):
+            yx_mat = np.zeros_like(mat)
+            yx_mat[2, 2] = 1
+            yx_mat[:2, :2] = mat[:2, :2].T
+            yx_mat[0, 2], yx_mat[1, 2] = mat[1, 2], mat[0, 2]
+            # yx_mat[:, 0], yx_mat[:, 1] = mat[:, 1], mat[:, 0]
+            # yx_mat[:2, 2] = mat[:2, 2]
+            return yx_mat
+        mat_ref2pt = trans_mat(self.space_map.to_target_mat(
+            top_anchor[::-1], bottom_anchor[::-1]).astype(np.float32))
         self.mat_ref2pt = nn.parameter.Parameter(torch.from_numpy(mat_ref2pt))
         self.mat_ref2pt.requires_grad = False
+        mat_pt2ref = trans_mat(self.space_map.to_ref_mat(
+            top_anchor[::-1], bottom_anchor[::-1]).astype(np.float32))
+        self.mat_pt2ref = nn.parameter.Parameter(torch.from_numpy(mat_pt2ref))
+        self.mat_pt2ref.requires_grad = False
 
     def ref2pt(self, vec):
         '''
         Map points from reference space to patient space
+
+        Args:
+            vec: 2d tensor of (y, x) points
         '''
         vec2d = vec.reshape(-1, 2)
-        pt_vec2d = vec2d @ self.mat_ref2pt[:2, :2] + self.mat_ref2pt[:2, 2]
-        return pt_vec2d.ravel()
+        pt_vec2d = self.mat_ref2pt[:2, :2] @ vec2d.T + self.mat_ref2pt[:2, 2].unsqueeze(1)
+        return pt_vec2d.T.ravel()
+    
+    def pt2ref(self, vec):
+        '''
+        Map points from patient space to reference space
+        '''
+        vec2d = vec.reshape(-1, 2)
+        ref_vec2d = self.mat_pt2ref[:2, :2] @ vec2d.T + self.mat_pt2ref[:2, 2].unsqueeze(1)
+        return ref_vec2d.T
+
 
     def warp(self):
         '''
         warp model in the patient space
         '''
         return self.ref2pt(self.pca.warp(self.coefs))
+    
+    def reduce(self, vec: torch.Tensor):
+        '''
+        Calculate and update pc coefficients
+
+        Args:
+            vec: 2d tensor of (y, x) points in reference space
+        '''
+        ref_points = self.pt2ref(vec.ravel())
+        ref_points = ref_points#.detach().cpu().numpy()
+        # ref_points = torch.flip(ref_points, dims=(1,)) # (y, x) to (x, y)
+        flat_points = ref_points.ravel() - self.pca.mean
+        projs = torch.matmul(flat_points, self.pca.components.T)#pca['components'])
+        projs = projs / torch.sqrt(torch.Tensor(self.pca.pca['explained_variance']))
+        self.coefs = torch.nn.parameter.Parameter(torch.Tensor(projs[:len(self.coefs)]))
+
 
     def parameters(self):
         return [self.coefs]
@@ -154,14 +198,17 @@ class PointAlignModel(nn.Module):
         assert len(points) == len(warped)
         for ref, pts in zip(points, warped):
             m_dist = torch.cdist(ref, pts, p=2)
-            # `dim=1` to only count ref to pts distances
-            min_dists = torch.min(m_dist, dim=1, keepdim=False)[0] # [0] to ignore returned indices
+            if len(pts)>=len(ref):
+                # `dim=1` to only count ref to pts distances
+                min_dists = torch.min(m_dist, dim=1, keepdim=False)[0] # [0] to ignore returned indices
+            else:
+                min_dists = torch.min(m_dist, dim=0, keepdim=False)[0]
             distances.append(min_dists)
         return distances
 
     def icp(self, t_points: List[torch.Tensor], lr, max_iter, patience):
         '''
-        t_points: list of (y, x) coordinates
+        t_points: list of (y, x) coordinates in patient space
         '''
         optimizer = Adam([self.coefs],
                             lr=lr, weight_decay=0.1)
@@ -303,12 +350,10 @@ def main():
     def fit(original_json: dict, heatmaps: np.ndarray):
         logger.setLevel(os.environ.get('LOGLEVEL', 'INFO').upper())
         kps = measure_utils.get_point_dict(original_json)
-        if not channel_first:
-            heatmaps = heatmaps.transpose(2, 0, 1)
         heatmap_height = heatmaps.shape[1]
         s = heatmap_height / original_json['imageHeight'] # scale to heatmap
         vert_points = [s * np.flip(kps[l], 1).copy() for l in settings.VERTEBRA_LABEL_NAMES] # (x, y) to (y, x)
-        vert_points = [np.sort(vp, axis=0) for vp in vert_points] # sort by y
+        vert_points = [vp[vp[:, 0].argsort()] for vp in vert_points] # sort by y
         vert_points_count = np.array([len(p) for p in vert_points])
         if args.skip_complete:
             for pca in pca_models:
@@ -333,40 +378,52 @@ def main():
         top_anchor, bottom_anchor = calculate_anchors(anchor_maps)
         if top_anchor is None or bottom_anchor is None:
             raise RuntimeError("No anchor found")
-        t_vert_points = [torch.Tensor(p).to(device) for p in vert_points]
 
         results = []
         histories = []
+        d_t_heatmaps = {}
+        for blur_sigma in args.sigma:
+            if blur_sigma == 0:
+                blurred_hm = heatmaps[:len(pca_models[0].labels)]
+            else:
+                blurred_hm = np.array([
+                    gaussian_filter(hm, blur_sigma)
+                    for hm in heatmaps[:len(pca_models[0].labels)]
+                ])
+            blurred_hm = (blurred_hm / settings.PROB_MAX).astype(
+                np.float32)
+            blurred_hm = np.clip(blurred_hm, 0.001, None)
+            t_heatmaps = torch.FloatTensor(blurred_hm).to(device)
+            t_heatmaps.requires_grad = True
+            d_t_heatmaps[blur_sigma] = t_heatmaps
+
         for pca in pca_models:
             # Skip model if detected points exceed the number of model's points
-            if args.skip_model and np.any(np.array([len(p) for p in t_vert_points]) > np.array(pca.pca['point_counts'])):
+            if args.skip_model and np.any(np.array([len(p) for p in vert_points]) > np.array(pca.pca['point_counts'])):
                 logger.debug('Skip model: %s', pca.model_name)
                 continue
             name = pca.model_name
             n_comps = pca.calc_n_comps(args.contr_rate)
             pt_pca = PointAlignModel(pca, n_comps, top_anchor, bottom_anchor)
             pt_pca.to(device)
-            best_loss = pt_pca.icp(t_vert_points, args.icp_lr, args.max_iter, args.patience)
-            histories.append({'history':[], 'name':f'{name}-icp', 'coefs': pt_pca.coefs.detach().numpy().tolist()})
+            # t_vert_points = [pt_pca.pt2ref(torch.Tensor(p).to(device)) for p in vert_points]
+            t_vert_points = [torch.Tensor(p).to(device) for p in vert_points]
+            if np.all(vert_points_count == np.array(pca.pca['point_counts'])):
+                pt_pca.reduce(torch.concatenate(t_vert_points, dim=0))
+                histories.append({'name':f'{name}-reduce', 'history':[], 'coefs': pt_pca.coefs.detach().numpy().tolist()})
+                results.append((name, 0, pt_pca.coefs.detach().cpu(), pca, []))
+                continue
+            else:
+                best_loss = pt_pca.icp(t_vert_points, args.icp_lr, args.max_iter, args.patience)
+                histories.append({'name':f'{name}-icp', 'history':[], 'coefs': pt_pca.coefs.detach().numpy().tolist()})
+                results.append((name, best_loss, pt_pca.coefs.detach().cpu(), pca, []))
 
             optimizer = Adam([pt_pca.coefs],
                              lr=args.lr,
                              weight_decay=args.l2_reg)
             try:
                 for blur_sigma in args.sigma:
-                    if blur_sigma == 0:
-                        blurred_hm = heatmaps[:len(pca.labels)]
-                    else:
-                        blurred_hm = np.array([
-                            gaussian_filter(hm, blur_sigma)
-                            for hm in heatmaps[:len(pca.labels)]
-                        ])
-                    blurred_hm = (blurred_hm / settings.PROB_MAX).astype(
-                        np.float32)
-                    blurred_hm = np.clip(blurred_hm, 0.001, None)
-                    t_heatmaps = torch.FloatTensor(blurred_hm).to(device)
-                    t_heatmaps.requires_grad = True
-
+                    t_heatmaps = d_t_heatmaps[blur_sigma]
                     history = []
                     best_loss = np.finfo(np.float64).max
                     best_coefs = None
@@ -392,9 +449,9 @@ def main():
                     assert best_coefs is not None
                     if True:  # save history
                         d_history = {}
-                        d_history['history'] = [None if np.isnan(h) else h for h in history]
                         d_history['name'] = name
                         d_history['sigma'] = blur_sigma
+                        d_history['history'] = [None if np.isnan(h) else h for h in history]
                         d_history['coefs'] = best_coefs.numpy().tolist()
                         histories.append(d_history)
             except IndexError:  # updated coefs become really big when warped points completely miss the heatmaps
@@ -449,6 +506,8 @@ def main():
             torch.set_num_threads(args.threads)
             file_id = fn.stem
             heatmaps, h = mhd.read(str(data_dir / f'{file_id}.mha'))
+            if not channel_first:
+                heatmaps = heatmaps.transpose(2, 0, 1)
             with open(str(data_dir / f'{file_id}.json')) as f:
                 original_json = json.load(f)
             try:
@@ -477,6 +536,11 @@ def main():
         if ndjson_fn.suffix != '.ndjson':
             logger.error('Invalid input ndjson filename', ndjson_fn.name)
         all_heatmaps, h = mhd.read(hm_filename)
+        if not channel_first:
+            all_heatmaps = all_heatmaps.transpose(0, 3, 1, 2)
+        # all_heatmaps = all_heatmaps[:, :len(pca_models[0].labels)]
+        all_heatmaps = trim_bottom_right(all_heatmaps, margin=32).copy()
+        
         ndjson = []
         with open(ndjson_fn) as f:
             for line in f:

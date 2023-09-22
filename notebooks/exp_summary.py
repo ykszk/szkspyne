@@ -85,8 +85,11 @@ flex-wrap: wrap;
 }
 #control {
 position: fixed;
-right:0;
-top:0;
+right:0.1em;
+top:0.1m;
+background: #FFFFFFAA;
+padding: 0.5em;
+border-radius: 0.2em;
 }
 </style>
 '''
