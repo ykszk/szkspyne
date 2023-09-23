@@ -33,7 +33,7 @@ for fold_dir in "$result_dir"/?; do
             infile="$outdir"/all_heatmap_keypoints.ndjson
             outfile="$outdir"/all_pca_keypoints.ndjson
             if [ $infile -nt $outfile ]; then
-                python3 "$SCRIPT_DIR"/fit_spine_model.py $infile "$fold_dir"/y_pred_$image_type.mha --output $outfile -m "$fold_dir"/pca_${image_type}_L4.npz "$fold_dir"/pca_${image_type}_L5.npz "$fold_dir"/pca_${image_type}_L6.npz --sigma 1 --max_iter 400 --l2_reg 0.001 --device cpu --skipped "$outdir"/skipped.txt --jobs 8 --skip_complete
+                python3 "$SCRIPT_DIR"/fit_spine_model.py $infile "$fold_dir"/y_pred_$image_type.mha --output $outfile -m "$fold_dir"/pca_${image_type}_L4.npz "$fold_dir"/pca_${image_type}_L5.npz "$fold_dir"/pca_${image_type}_L6.npz --sigma 1 --max_iter 400 --l2_reg 0.001 --device cpu --skipped "$outdir"/skipped.txt --jobs 8
             fi
         done
     ) &

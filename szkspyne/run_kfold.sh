@@ -14,5 +14,5 @@ python3 "$SCRIPT_DIR"/preexp.py --fold "$N_SPLIT" --output "$result_dir" --ndjso
 
 for fold_dir in "$result_dir"/?; do
     echo "$fold_dir"
-    python3 "$SCRIPT_DIR"/exp_single.py --clahe --encoder_name efficientnet-b4 --batch_size 6 --lr 0.001 --sigma 3 --max-epochs 128 --input "$fold_dir" || break
+    python3 "$SCRIPT_DIR"/exp_single.py --encoder_name efficientnet-b4 --batch_size 6 --lr 0.001 --sigma 3 --max-epochs 128 --input "$fold_dir"
 done

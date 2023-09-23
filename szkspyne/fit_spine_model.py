@@ -411,8 +411,8 @@ def main():
             if np.all(vert_points_count == np.array(pca.pca['point_counts'])):
                 pt_pca.reduce(torch.concatenate(t_vert_points, dim=0))
                 histories.append({'name':f'{name}-reduce', 'history':[], 'coefs': pt_pca.coefs.detach().numpy().tolist()})
-                results.append((name, 0, pt_pca.coefs.detach().cpu(), pca, []))
-                continue
+                results.append((name, 100, pt_pca.coefs.detach().cpu(), pca, []))
+                # continue
             else:
                 best_loss = pt_pca.icp(t_vert_points, args.icp_lr, args.max_iter, args.patience)
                 histories.append({'name':f'{name}-icp', 'history':[], 'coefs': pt_pca.coefs.detach().numpy().tolist()})
