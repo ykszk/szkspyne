@@ -1,4 +1,5 @@
 # %%
+import json
 import os
 from collections import defaultdict
 from datetime import datetime
@@ -10,6 +11,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
+import sklearn.metrics
 from bs4 import BeautifulSoup
 from IPython.display import HTML, display
 from jinja2 import Environment, FileSystemLoader
@@ -151,6 +153,23 @@ for d in [d_ap, d_lateral]:
     df_flags = df[FLAG_COLS]
     df_flag_stats = pd.DataFrame(df_flags.sum(), columns=["count"])
     display(df_flag_stats.T)
+
+    ref_auto_flags = []
+    for datatype in ['reference', 'auto']:
+        with open(result_dir/f'{datatype}/measures_{name}_whole.ndjson') as f:
+            jsons = [json.loads(l) for l in f]
+            flags = [[(obj['filename'], k) for k in obj['flags'].keys() if k.startswith('L')] for obj in jsons]
+            flags = {f[0][0]:f[0][1] for f in flags if f}
+            ref_auto_flags.append(flags)
+    ref_flags, pred_flags = ref_auto_flags
+    file_id_set = set(ref_auto_flags[0].keys()).intersection(ref_auto_flags[1].keys())
+    labels = ['L4','L5','L6']
+    d_labels = {l:i for i,l in enumerate(labels)}
+    true_l, pred_l = zip(*[(ref_flags[fid], pred_flags[fid]) for fid in file_id_set])
+    cm = pd.DataFrame(sklearn.metrics.confusion_matrix(true_l, pred_l, labels=labels), columns=labels, index=labels)
+    cm.index.name, cm.columns.name ='true', 'pred'
+    print('Confusion matrix')
+    display(cm)
 
     df_flag_stats["flag"] = df_flag_stats.apply(
         lambda row: "{}\n({})".format(row.name, row["count"]), axis=1)
