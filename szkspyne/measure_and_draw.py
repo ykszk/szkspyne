@@ -4,6 +4,7 @@ import json
 import re
 import sqlite3
 import sys
+from collections import defaultdict
 from io import BytesIO
 from pathlib import Path
 from typing import Any, List, Optional, Tuple
@@ -56,6 +57,8 @@ def measure_json(
     label_colors = color_data['label_colors']
 
     line_colors = utils.read_default_line_colors()
+    d_visibility = defaultdict(lambda: 'visible')
+    d_visibility.update({gid: 'hidden' for gid in hide})
 
     drawings = []
 
@@ -332,16 +335,21 @@ def measure_json(
         if pt_sup is not None:
             drawings += [('PT', 'PT Cobb (p.49)')]
             gid = 'PT'
-            visibility = 'hidden' if gid in hide else 'visible'
             grp = dwg.add(
-                dwg.g(id=gid, class_=gid, stroke='red', stroke_width=LINE_WIDTH, fill='none', visibility=visibility)
+                dwg.g(
+                    id=gid,
+                    class_=gid,
+                    stroke='red',
+                    stroke_width=LINE_WIDTH,
+                    fill='none',
+                    visibility=d_visibility[gid],
+                )
             )
             measures[gid] = dwg.draw_cobb(
                 vert_sup_cnrs[pt_sup], vert_inf_cnrs[pt_inf], grp, title=gid, text_attrs=text_attrs
             )
         drawings += [('MT', 'MT Cobb (p.49)'), ('LT', 'LT Cobb (p.49)')]
         gid = 'MT'
-        visibility = 'hidden' if gid in hide else 'visible'
         grp = dwg.add(
             dwg.g(
                 id=gid,
@@ -349,7 +357,7 @@ def measure_json(
                 stroke=line_colors[gid],
                 stroke_width=LINE_WIDTH,
                 fill='none',
-                visibility=visibility,
+                visibility=d_visibility[gid],
             )
         )
         measures[gid] = dwg.draw_cobb(
@@ -357,7 +365,6 @@ def measure_json(
         )
         if lt_sup is not None and lt_inf is not None:
             gid = 'LT'
-            visibility = 'hidden' if gid in hide else 'visible'
             grp = dwg.add(
                 dwg.g(
                     id=gid,
@@ -365,7 +372,7 @@ def measure_json(
                     stroke=line_colors[gid],
                     stroke_width=LINE_WIDTH,
                     fill='none',
-                    visibility=visibility,
+                    visibility=d_visibility[gid],
                 )
             )
             measures[gid] = dwg.draw_cobb(
@@ -374,22 +381,22 @@ def measure_json(
         # Curve apex
         if apex_corners:
             gid = 'CurveApex'
-            visibility = 'hidden' if gid in hide else 'visible'
             drawings.append((gid, 'Curve Apex(es)'))
-            color = 'orange'
+            color = line_colors[gid]
             grp = dwg.add(
-                dwg.g(id=gid, class_=gid, stroke=color, stroke_width=LINE_WIDTH, fill='none', visibility=visibility)
+                dwg.g(
+                    id=gid,
+                    class_=gid,
+                    stroke=color,
+                    stroke_width=LINE_WIDTH,
+                    fill='none',
+                    visibility=d_visibility[gid],
+                )
             )
             for vert_apex in apex_corners:
                 grp.add(
-                    dwg.path(
-                        (
-                            ['M']
-                            + [
-                                vc.tolist()
-                                for vc in [vert_apex[0], vert_apex[1], vert_apex[3], vert_apex[2], vert_apex[0]]
-                            ]
-                        )
+                    dwg.polygon(
+                        points=[vc.tolist() for vc in [vert_apex[0], vert_apex[1], vert_apex[3], vert_apex[2]]]
                     )
                 )
             for v in vert_centroids:
@@ -398,20 +405,24 @@ def measure_json(
         # apical translation
         if False:
             gid = 'APT'
-            visibility = 'hidden' if gid in hide else 'visible'
             drawings.append((gid, 'Apical Translation (p.53)'))
             logger.debug(drawings[-1][1])
             vert_apex = vert_centroids[i_apex]
             color = line_colors[gid]
             grp = dwg.add(
-                dwg.g(id=gid, class_=gid, stroke=color, stroke_width=LINE_WIDTH, fill='none', visibility=visibility)
+                dwg.g(
+                    id=gid,
+                    class_=gid,
+                    stroke=color,
+                    stroke_width=LINE_WIDTH,
+                    fill='none',
+                    visibility=d_visibility[gid],
+                )
             )
             grp.add(dwg.path((['M'] + sacrum_center.tolist() + [sacrum_center[0]] + [vert_corners[:, :, 1].min()])))
             grp.add(dwg.path((['M'] + vert_apex.tolist() + [sacrum_center[0]] + [vert_centroids[i_apex, 1]])))
             grp.add(dwg.circle(center=vert_apex.tolist(), r=POINT_RADIUS, stroke=color, fill=color))
-            text_elm = dwg.text(
-                '{:.1f} pixels'.format(vert_apex[0] - sacrum_center[0]), insert=vert_apex, **text_attrs
-            )
+            text_elm = dwg.text('{:.1f} px'.format(vert_apex[0] - sacrum_center[0]), insert=vert_apex, **text_attrs)
             text_elm.set_desc(title=gid)
             grp.add(text_elm)
             grp.add(dwg.path((['M'] + sacrum_tltr.ravel().tolist())))
@@ -420,12 +431,11 @@ def measure_json(
 
         # coronal balance
         gid = 'CoronalBalance'
-        visibility = 'hidden' if gid in hide else 'visible'
         drawings.append((gid, 'Coronal Balance (p.54)'))
         logger.debug(drawings[-1][1])
         color = line_colors[gid]
         grp = dwg.add(
-            dwg.g(id=gid, class_=gid, stroke=color, stroke_width=LINE_WIDTH, fill='none', visibility=visibility)
+            dwg.g(id=gid, class_=gid, stroke=color, stroke_width=LINE_WIDTH, fill='none', visibility=d_visibility[gid])
         )
 
         grp.add(
@@ -441,7 +451,7 @@ def measure_json(
         y_cb = lerp(sacrum_center[1], c7_centroid[1], 0.5)
         grp.add(dwg.path((['M'] + [c7_centroid[0], y_cb] + [sacrum_center[0], y_cb])))
         text_elm = dwg.text(
-            '{:.1f} pixels'.format(c7_centroid[0] - sacrum_center[0]),
+            '{:.1f} px'.format(c7_centroid[0] - sacrum_center[0]),
             insert=[max(c7_centroid[0], sacrum_center[0]), y_cb],
             **text_attrs,
         )
@@ -450,12 +460,11 @@ def measure_json(
         measures['CoronalBalance'] = c7_centroid[0] - sacrum_center[0]
         # T1 tilt
         gid = 'T1Tilt'
-        visibility = 'hidden' if gid in hide else 'visible'
         drawings.append((gid, 'T1 Tilt Angle (p.55)'))
         logger.debug(drawings[-1][1])
         color = line_colors[gid]
         grp = dwg.add(
-            dwg.g(id=gid, class_=gid, stroke=color, stroke_width=LINE_WIDTH, fill='none', visibility=visibility)
+            dwg.g(id=gid, class_=gid, stroke=color, stroke_width=LINE_WIDTH, fill='none', visibility=d_visibility[gid])
         )
 
         c7pl = np.array((c7_centroid, (c7_centroid[0], image_size[1])))
@@ -504,7 +513,7 @@ def measure_json(
                     stroke=color,
                     stroke_width=LINE_WIDTH,
                     fill='none',
-                    visibility='hidden' if gid in hide else 'visible',
+                    visibility=d_visibility[gid],
                 )
             )
             assert kps['Clavicle'].shape == (2, 2)
@@ -548,7 +557,7 @@ def measure_json(
                     stroke=color,
                     stroke_width=LINE_WIDTH,
                     fill='none',
-                    visibility='hidden' if gid in hide else 'visible',
+                    visibility=d_visibility[gid],
                 )
             )
             shoulder_kps = kps['Shoulder']
@@ -572,7 +581,7 @@ def measure_json(
                     stroke=color,
                     stroke_width=LINE_WIDTH,
                     fill='none',
-                    visibility='hidden' if gid in hide else 'visible',
+                    visibility=d_visibility[gid],
                 )
             )
             pelvic_kps = kps['Pelvis']
@@ -613,7 +622,7 @@ def measure_json(
                     stroke=color,
                     stroke_width=LINE_WIDTH,
                     fill='none',
-                    visibility='hidden' if gid in hide else 'visible',
+                    visibility=d_visibility[gid],
                 )
             )
             femoral_kps = kps['FemoralHead']
@@ -638,7 +647,7 @@ def measure_json(
                     stroke=color,
                     stroke_width=LINE_WIDTH,
                     fill='none',
-                    visibility='hidden' if gid in hide else 'visible',
+                    visibility=d_visibility[gid],
                 )
             )
             (_, y_pos1), (_, y_pos2) = dwg.draw_line(sacrum_tltr[0], sacrum_tltr[1], grp, xrange=(x_pos1, x_pos2))
@@ -654,9 +663,8 @@ def measure_json(
         gid = 'ThoracicKyphosis'
         drawings.append((gid, 'Thoracic kyphosis (p.87)'))
         color = line_colors[gid]
-        visibility = 'hidden' if gid in hide else 'visible'
         grp = dwg.add(
-            dwg.g(id=gid, class_=gid, stroke=color, stroke_width=LINE_WIDTH, fill='none', visibility=visibility)
+            dwg.g(id=gid, class_=gid, stroke=color, stroke_width=LINE_WIDTH, fill='none', visibility=d_visibility[gid])
         )
         sup = vert_sup_cnrs[1]
         inf = vert_inf_cnrs[11]
@@ -667,9 +675,8 @@ def measure_json(
         gid = 'Mid/LowerThoracicKyphosis'
         drawings.append((gid, 'Mid/Lower thoracic kyphosis (p.87)'))
         color = line_colors[gid]
-        visibility = 'hidden' if gid in hide else 'visible'
         grp = dwg.add(
-            dwg.g(id=gid, class_=gid, stroke=color, stroke_width=LINE_WIDTH, fill='none', visibility=visibility)
+            dwg.g(id=gid, class_=gid, stroke=color, stroke_width=LINE_WIDTH, fill='none', visibility=d_visibility[gid])
         )
         sup = vert_sup_cnrs[4]
         inf = vert_inf_cnrs[11]
@@ -681,9 +688,8 @@ def measure_json(
         gid = 'ProximalThoracicKyphosis'
         drawings.append((gid, 'Proximal thoracic kyphosis (p.87)'))
         color = line_colors[gid]
-        visibility = 'hidden' if gid in hide else 'visible'
         grp = dwg.add(
-            dwg.g(id=gid, class_=gid, stroke=color, stroke_width=LINE_WIDTH, fill='none', visibility=visibility)
+            dwg.g(id=gid, class_=gid, stroke=color, stroke_width=LINE_WIDTH, fill='none', visibility=d_visibility[gid])
         )
         sup = vert_sup_cnrs[1]
         inf = vert_inf_cnrs[4]
@@ -695,9 +701,8 @@ def measure_json(
         gid = 'LumbarLordosis'
         drawings.append((gid, 'Lumbar lordosis (T12/S) '))
         color = line_colors[gid]
-        visibility = 'hidden' if gid in hide else 'visible'
         grp = dwg.add(
-            dwg.g(id=gid, class_=gid, stroke=color, stroke_width=LINE_WIDTH, fill='none', visibility=visibility)
+            dwg.g(id=gid, class_=gid, stroke=color, stroke_width=LINE_WIDTH, fill='none', visibility=d_visibility[gid])
         )
         sup = vert_sup_cnrs[11]
         inf = sacrum_tltr
@@ -710,7 +715,7 @@ def measure_json(
         logger.debug(gid)
         drawings.append((gid, 'Sacral Slope (p.99)'))
         color = line_colors[gid]
-        grp = dwg.add(dwg.g(id=gid, class_=gid, stroke=color, visibility='hidden' if gid in hide else 'visible'))
+        grp = dwg.add(dwg.g(id=gid, class_=gid, stroke=color, visibility=d_visibility[gid]))
         grp.add(dwg.path((['M'] + sacrum_tltr.ravel().tolist())))
         sacrum_width = np.linalg.norm(sacrum_tltr[1] - sacrum_tltr[0])
         sacrum_hl = sacrum_tltr[0] + sacrum_width * np.array((np.sign(sacrum_tltr[1, 0] - sacrum_tltr[0, 0]), 0))
@@ -728,7 +733,7 @@ def measure_json(
         logger.debug(gid)
         drawings.append((gid, 'Sagittal Balance (p.67)'))
         color = line_colors[gid]
-        grp = dwg.add(dwg.g(id=gid, class_=gid, stroke=color, visibility='hidden' if gid in hide else 'visible'))
+        grp = dwg.add(dwg.g(id=gid, class_=gid, stroke=color, visibility=d_visibility[gid]))
 
         sacrum_tr = sacrum_tltr[1]
         grp.add(dwg.path((['M'] + sacrum_tr.tolist() + [sacrum_tr[0]] + [lerp(sacrum_tr[1], c7_centroid[1], 0.7)])))
@@ -741,7 +746,7 @@ def measure_json(
         balance = sacrum_tr[0] - c7_centroid[0]
         grp.add(dwg.path((['M'] + [c7_centroid[0], y_cb] + [sacrum_tr[0], y_cb])))
         text_elm = dwg.text(
-            '{:.1f} pixels'.format(balance), insert=[max(c7_centroid[0], sacrum_tr[0]), y_cb], **text_attrs
+            '{:.1f} px'.format(balance), insert=[max(c7_centroid[0], sacrum_tr[0]), y_cb], **text_attrs
         )
         text_elm.set_desc(title=gid)
         grp.add(text_elm)
@@ -754,9 +759,7 @@ def measure_json(
             logger.debug(gid)
             drawings.append((gid, 'Pelvic Incidence (p.97)'))
             color = line_colors[gid]
-            grp = dwg.add(
-                dwg.g(id=gid, class_=gid, stroke=color, fill='none', visibility='hidden' if gid in hide else 'visible')
-            )
+            grp = dwg.add(dwg.g(id=gid, class_=gid, stroke=color, fill='none', visibility=d_visibility[gid]))
             femoral_heads = np.array(circles['FemoralHead'])
             grp.add(dwg.path((['M'] + sacrum_tltr.ravel().tolist())))
             for femoral_head in femoral_heads:
@@ -783,7 +786,7 @@ def measure_json(
             logger.debug(gid)
             drawings.append((gid, 'Pelvic Radius Angle (p.101)'))
             color = line_colors[gid]
-            grp = dwg.add(dwg.g(id=gid, class_=gid, stroke=color, visibility='hidden' if gid in hide else 'visible'))
+            grp = dwg.add(dwg.g(id=gid, class_=gid, stroke=color, visibility=d_visibility[gid]))
             grp.add(dwg.path((['M'] + sacrum_tltr.ravel().tolist())))
             grp.add(dwg.path((['M'] + femoral_center.tolist() + sacrum_tltr[1].tolist())))
             angle = np.abs(calc_angle(sacrum_tltr, (femoral_center, sacrum_tltr[1])))
@@ -798,7 +801,7 @@ def measure_json(
             logger.debug(gid)
             drawings.append((gid, 'L5 Incidence Angle (p.102)'))
             color = line_colors[gid]
-            grp = dwg.add(dwg.g(id=gid, class_=gid, stroke=color, visibility='hidden' if gid in hide else 'visible'))
+            grp = dwg.add(dwg.g(id=gid, class_=gid, stroke=color, visibility=d_visibility[gid]))
             l5_sup = vert_sup_cnrs[-1]
             l5_sup_center = l5_sup.mean(axis=0)
             l5_perp = perp(l5_sup[1] - l5_sup[0])
@@ -818,9 +821,15 @@ def measure_json(
             logger.debug(gid)
             drawings.append((gid, 'Lumbosacral Angle (p.105)'))
             color = line_colors[gid]
-            visibility = 'hidden' if gid in hide else 'visible'
             grp = dwg.add(
-                dwg.g(id=gid, class_=gid, stroke=color, stroke_width=LINE_WIDTH, fill='none', visibility=visibility)
+                dwg.g(
+                    id=gid,
+                    class_=gid,
+                    stroke=color,
+                    stroke_width=LINE_WIDTH,
+                    fill='none',
+                    visibility=d_visibility[gid],
+                )
             )
             angle_deg = dwg.draw_cobb(vert_inf_cnrs[-1], sacrum_tltr, grp, title=gid, text_attrs=text_attrs)
             measures[gid] = angle_deg
@@ -830,7 +839,7 @@ def measure_json(
         for ul, name in [('upper', 'Upper slope'), ('lower', 'Lower slope')]:
             gid = f'{ul}_slope'
             color = line_colors[gid]
-            grp = dwg.add(dwg.g(id=gid, class_=gid, stroke=color, visibility='hidden' if gid in hide else 'visible'))
+            grp = dwg.add(dwg.g(id=gid, class_=gid, stroke=color, visibility=d_visibility[gid]))
             grps[gid] = grp
             drawings.append((gid, name))
         for i, corners in enumerate(vert_corners_w_c7, 1):
