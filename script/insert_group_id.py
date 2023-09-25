@@ -40,6 +40,24 @@ class DictMapper(ABC):
     def finalize(self):
         pass
 
+def filepath2groupid(filepath: str) -> str:
+    filepath = Path(filepath.replace('\\', '/')).name
+    if filepath.startswith("OSC"):
+        group_id = filepath.split("_")[0]
+    elif filepath.startswith("CMCAISY"):
+        m = re.search(r"\d+", filepath)
+        if m is None:
+            raise RuntimeError("No number found in: " + filepath)
+        group_id = "CMCAISY" + m.group()
+    elif filepath.startswith('DELAISY'):
+        m = re.search(r'DE?L?(\d+)', filepath.upper())
+        if m is None:
+            group_id = re.split(r"-|=|\.|,| |_|yr", filepath)[0]
+        else:
+            group_id = 'DE' + m[1]
+    else:
+        group_id = re.split(r"-|=|\.|,| |_|yr", filepath)[0]
+    return group_id
 
 class InsertGroupId(DictMapper):
 
@@ -73,23 +91,7 @@ class InsertGroupId(DictMapper):
     def map(self, data: dict) -> dict:
         args = self.args
         filepath: str = data[args.src_key]
-        filepath = Path(filepath.replace('\\', '/')).name
-        if filepath.startswith("OSC"):
-            group_id = filepath.split("_")[0]
-        elif filepath.startswith("CMCAISY"):
-            m = re.search(r"\d+", filepath)
-            if m is None:
-                raise RuntimeError("No number found in: " + filepath)
-            group_id = "CMCAISY" + m.group()
-        elif filepath.startswith('DELAISY'):
-            m = re.search(r'DE?L?(\d+)', filepath.upper())
-            if m is None:
-                group_id = re.split(r"-|=|\.|,| |_|yr", filepath)[0]
-            else:
-                group_id = 'DE' + m[1]
-        else:
-            group_id = re.split(r"-|=|\.|,| |_|yr", filepath)[0]
-        self.path2id.append((filepath, group_id))
+        group_id = filepath2groupid(filepath)
         data[args.id_key] = group_id
         return data
 
