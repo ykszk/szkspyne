@@ -19,6 +19,7 @@ from scipy import stats
 
 import szkspyne
 from szkspyne.utils.measure import pearsonr_ci
+import szkspyne.labelme_utils as labelme_utils
 
 
 mpl.rcParams["figure.dpi"] = 100
@@ -36,20 +37,16 @@ include_visualization = not ('NO_VIS' in os.environ)
 from collections import namedtuple
 
 
-STORED_CURVE = 'STORED_CURVE' in os.environ
-ap_filename = 'ap_whole_w_curve_indices.csv' if STORED_CURVE else 'ap_whole.csv'
+DATA_SUFFIX = os.environ.get('DATA_SUFFIX', '')
+ap_filename = f'ap_whole{DATA_SUFFIX}.csv' if DATA_SUFFIX else 'ap_whole.csv'
 dir_suffix = os.environ.get("DIR_SUFFIX", '_whole')
 # df_birthday = pd.read_csv('../../data/anonymized_birthday.csv')
 # dict_sex_bday = {row.PatientID:(row.PatientSex, datetime.strptime(str(row.Birthday), '%Y%m%d')) for _, row in df_birthday.iterrows()}
-ImageType = namedtuple("ImageType",
-                       ["name", "filename", "angle_cols", "key_cols"])
+ImageType = namedtuple("ImageType", ["name", "filename", "angle_cols", "key_cols"])
 d_ap = ImageType(
     name="ap",
     filename=ap_filename,
-    angle_cols=[
-        "PT", "MT", "LT", "T1Tilt", "ClavicleAngle", "PelvicObliquity",
-        "SacralObliquity"
-    ],
+    angle_cols=["PT", "MT", "LT", "T1Tilt", "ClavicleAngle", "PelvicObliquity", "SacralObliquity"],
     key_cols=["MT", "PelvicObliquity"],
 )
 
@@ -120,6 +117,9 @@ JAVASCRIPT = '''
 FLAG_COLS = ['術後', 'EOS', 'L4', 'L5', "L6"]
 DELETE_COLS = ["除外", "左屈", "右屈", "先天性側彎"]
 
+manual_annotations = labelme_utils.load_ndjson(result_dir / 'manual_annotation.ndjson')
+d_group_id = {Path(a['filepath']).stem: a['group_id'] for a in manual_annotations}
+
 for d in [d_ap, d_lateral]:
     name, filename, angle_cols, key_cols = d
     filename = str(result_dir / filename)
@@ -132,19 +132,19 @@ for d in [d_ap, d_lateral]:
 
     df_dropped = df.dropna()
 
-    pids = df["filename"].map(lambda e: e.split("_")[0])
-    print("# of images", len(df))
+    pids = df["filename"].map(lambda e: d_group_id[e])
+    print("# of non-flex images", len(df))
     print("# of unique patients", len(set(pids)))
 
     # sexes, ages = [], []
     # for fn in df["filename"]:
     #     pid = fn.split("_")[0].split("-")[0]
-        # pid, study_date = fn.split('_')[:2]
-        # study_date = datetime.strptime(study_date, '%Y%m%d')
-        # sex, bdate = dict_sex_bday[pid]
-        # age = (study_date - bdate).days/365
-        # sexes.append(sex)
-        # ages.append(age)
+    # pid, study_date = fn.split('_')[:2]
+    # study_date = datetime.strptime(study_date, '%Y%m%d')
+    # sex, bdate = dict_sex_bday[pid]
+    # age = (study_date - bdate).days/365
+    # sexes.append(sex)
+    # ages.append(age)
     # display(pd.DataFrame(sexes, columns=['PatientSex']).value_counts())
     # display(pd.DataFrame(ages, columns=['PatientAge']).describe().T)
 
@@ -155,43 +155,40 @@ for d in [d_ap, d_lateral]:
     display(df_flag_stats.T)
 
     ref_auto_flags = []
+    filename_set = set(df.index.to_list())
     for datatype in ['reference', 'auto']:
-        with open(result_dir/f'{datatype}/measures_{name}_whole.ndjson') as f:
+        with open(result_dir / f'{datatype}/measures_{name}_whole.ndjson') as f:
             jsons = [json.loads(l) for l in f]
-            flags = [[(obj['filename'], k) for k in obj['flags'].keys() if k.startswith('L')] for obj in jsons]
-            flags = {f[0][0]:f[0][1] for f in flags if f}
-            ref_auto_flags.append(flags)
+        flags = [[(obj['filename'], k) for k in obj['flags'].keys() if k.startswith('L')] for obj in jsons]
+        flags = {f[0][0]: f[0][1] for f in flags if f and f[0][0] in filename_set}
+        ref_auto_flags.append(flags)
     ref_flags, pred_flags = ref_auto_flags
     file_id_set = set(ref_auto_flags[0].keys()).intersection(ref_auto_flags[1].keys())
-    labels = ['L4','L5','L6']
-    d_labels = {l:i for i,l in enumerate(labels)}
+    labels = ['L4', 'L5', 'L6']
+    d_labels = {l: i for i, l in enumerate(labels)}
     true_l, pred_l = zip(*[(ref_flags[fid], pred_flags[fid]) for fid in file_id_set])
     cm = pd.DataFrame(sklearn.metrics.confusion_matrix(true_l, pred_l, labels=labels), columns=labels, index=labels)
-    cm.index.name, cm.columns.name ='true', 'pred'
+    cm.index.name, cm.columns.name = 'true', 'pred'
     print('Confusion matrix')
     display(cm)
 
-    df_flag_stats["flag"] = df_flag_stats.apply(
-        lambda row: "{}\n({})".format(row.name, row["count"]), axis=1)
+    df_flag_stats["flag"] = df_flag_stats.apply(lambda row: "{}\n({})".format(row.name, row["count"]), axis=1)
     # sns.barplot(data=df_flag_stats, x='flag', y='count')
     # plt.show()
 
-    df_true = df[[
-        c for c in df.columns
-        if (c.startswith("true") and not c.endswith("curve_indices"))
-    ]]
+    df_true = df[[c for c in df.columns if (c.startswith("true") and not c.endswith("curve_indices"))]]
     display(HTML(f"<h2>Reference</h2>"))
     display(df_true.describe())
-    pred_col_order = [
-        "pred " + c.replace("true ", "") for c in df_true.columns
-    ]
+    display(HTML(f"<h2>|Reference|</h2>"))
+    display(df_true.abs().describe())
+
+    pred_col_order = ["pred " + c.replace("true ", "") for c in df_true.columns]
     # df_pred = df[[c for c in df.columns if c.startswith('pred')]]
     df_pred = df[pred_col_order]
     display(HTML(f"<h2>AI</h2>"))
     display(df_pred.describe())
 
-    df_diff = pd.DataFrame(df_true.values - df_pred.values,
-                           columns=[c.replace("true ", "") for c in df_true])
+    df_diff = pd.DataFrame(df_true.values - df_pred.values, columns=[c.replace("true ", "") for c in df_true])
     df_diff.index = df_true.index
     display(HTML(f"<h2>Reference - AI</h2>"))
     desc = df_diff.describe()
@@ -199,8 +196,7 @@ for d in [d_ap, d_lateral]:
     new_rows = defaultdict(list)
     for col_true in df_true.columns:
         col_pred = col_true.replace("true", "pred")
-        r, p, lo, hi = pearsonr_ci(df_diff_dropped[col_true],
-                                   df_diff_dropped[col_pred])
+        r, p, lo, hi = pearsonr_ci(df_diff_dropped[col_true], df_diff_dropped[col_pred])
         new_rows["r"].append(r)
         new_rows["R^2"].append(r**2)
         df_cmp = df[[col_true, col_pred]]
@@ -230,10 +226,14 @@ for d in [d_ap, d_lateral]:
     ]:
         cbs.append(t_cb.render(name=col_name, label=col_name, checked='checked'))
     cbs = '\n'.join(cbs)
-    cbs = '<h2>Show/Hide</h2>' + cbs + '''
+    cbs = (
+        '<h2>Show/Hide</h2>'
+        + cbs
+        + '''
         <button onclick="change_all('visible')">Show All</button>
         <button onclick="change_all('hidden')">Hide All</button>
 '''
+    )
 
     display(HTML(f"<h2>Plots</h2>"))
     for col in angle_cols:
@@ -244,11 +244,7 @@ for d in [d_ap, d_lateral]:
         df_sub = df_sub.dropna()
         plt.figure(figsize=(10, 4))
         plt.subplot(1, 2, 1)
-        ax = sns.scatterplot(data=df_sub,
-                             x=col_x,
-                             y=col_y,
-                             hue=hue,
-                             alpha=min(1, 100 / len(df_sub)))
+        ax = sns.scatterplot(data=df_sub, x=col_x, y=col_y, hue=hue, alpha=min(1, 100 / len(df_sub)))
         x0, x1 = ax.get_xlim()
         y0, y1 = ax.get_ylim()
         lims = [max(x0, y0), min(x1, y1)]
@@ -257,25 +253,28 @@ for d in [d_ap, d_lateral]:
         ax.set_ylabel("AI")
         # r, p = stats.pearsonr(df_dropped[col_x], df_dropped[col_y])
         r, p, lo, hi = pearsonr_ci(df_dropped[col_x], df_dropped[col_y])
-        ax.set_title("{} (r={:.03f} [{:.03f} - {:.03f}])".format(
-            col, r, lo, hi))
+        ax.set_title("{} (r={:.03f} [{:.03f} - {:.03f}])".format(col, r, lo, hi))
         plt.legend()
         plt.subplot(1, 2, 2)
         df_d = df_diff[[col]].dropna().copy()
         df_d[col_type] = df.loc[df_d.index][col_type]
         sns.histplot(data=df_d, x=col, hue=hue, hue_order=hue_order)
-        plt.title("(μ={:.2f}, σ={:.2f}, RMS={:.2f})".format(
-            df_d[col].mean(), df_d[col].std(),
-            np.sqrt((df_d[col].to_numpy()**2).mean())))
+        plt.title(
+            "(μ={:.2f}, σ={:.2f}, RMS={:.2f})".format(
+                df_d[col].mean(), df_d[col].std(), np.sqrt((df_d[col].to_numpy() ** 2).mean())
+            )
+        )
         plt.show()
 
-        axes = sns.lmplot(data=df_sub,
-                          x=col_x,
-                          y=col_y,
-                          col=hue,
-                          col_order=hue_order,
-                          scatter_kws=(dict(alpha=min(1, 100 / len(df_sub)))))
-        for ax in axes.axes_dict.values():  #ax = plt.gca()
+        axes = sns.lmplot(
+            data=df_sub,
+            x=col_x,
+            y=col_y,
+            col=hue,
+            col_order=hue_order,
+            scatter_kws=(dict(alpha=min(1, 100 / len(df_sub)))),
+        )
+        for ax in axes.axes_dict.values():  # ax = plt.gca()
             x0, x1 = ax.get_xlim()
             y0, y1 = ax.get_ylim()
             lims = [max(x0, y0), min(x1, y1)]
@@ -295,27 +294,21 @@ for d in [d_ap, d_lateral]:
             # for best_worst, sls in [('Best',slice(N)), ('Median',slice(len(df_d)//2-N//2,int(len(df_d)//2+np.ceil(N/2)))), ('Worst',slice(-N,None))]:
             third_q = (
                 "Third quartile",
-                slice(3 * (len(df_d) // 4) - N // 2,
-                      int(3 * (len(df_d) // 4) + np.ceil(N / 2))),
+                slice(3 * (len(df_d) // 4) - N // 2, int(3 * (len(df_d) // 4) + np.ceil(N / 2))),
             )
             p_90 = (
                 "90 percentile",
-                slice(9 * (len(df_d) // 10) - N // 2,
-                      int(9 * (len(df_d) // 10) + np.ceil(N / 2))),
+                slice(9 * (len(df_d) // 10) - N // 2, int(9 * (len(df_d) // 10) + np.ceil(N / 2))),
             )
             p_95 = (
                 "95 percentile",
-                slice(95 * (len(df_d) // 100) - N // 2,
-                      int(95 * (len(df_d) // 100) + np.ceil(N / 2))),
+                slice(95 * (len(df_d) // 100) - N // 2, int(95 * (len(df_d) // 100) + np.ceil(N / 2))),
             )
             for best_worst, sls in [
-                ("Median",
-                 slice(
-                     len(df_d) // 2 - N // 2,
-                     int(len(df_d) // 2 + np.ceil(N / 2)))),
-                    # third_q,
-                    # p_90,
-                    p_95,
+                ("Median", slice(len(df_d) // 2 - N // 2, int(len(df_d) // 2 + np.ceil(N / 2)))),
+                # third_q,
+                # p_90,
+                p_95,
                 ("Worst", slice(-N, None)),
             ]:
                 # for best_worst, sls in [('Median',slice(len(df_d)//2-N//2,int(len(df_d)//2+np.ceil(N/2)))), ('Worst',slice(-N,None))]:
@@ -324,37 +317,26 @@ for d in [d_ap, d_lateral]:
                 display(df_reps)
                 if include_visualization:
                     d_vis = {}
-                    for subdir, label in [("reference", "Reference"),
-                                          ("auto", "AI")]:
+                    for subdir, label in [("reference", "Reference"), ("auto", "AI")]:
                         display(HTML(f"<h5>{label}</h5>"))
                         svgs = []
                         for file_id, row in df_reps.iterrows():
-                            if STORED_CURVE and name == 'ap' and subdir == 'auto':
-                                svg_filename = result_dir / subdir / 'ap_whole_w_curve_indices' / f"{file_id}.svg"
+                            if DATA_SUFFIX and name == 'ap' and subdir == 'auto':
+                                svg_filename = result_dir / subdir / f'ap_whole{DATA_SUFFIX}' / f"{file_id}.svg"
                             else:
                                 svg_filename = result_dir / subdir / f"{name}_whole" / f"{file_id}.svg"
                             if svg_filename.exists():
                                 with open(svg_filename) as f:
-                                    svgs.append(
-                                        '<div class="sample" title="{}">{}</div>'
-                                        .format(file_id, f.read()))
+                                    svgs.append('<div class="sample" title="{}">{}</div>'.format(file_id, f.read()))
                             else:
-                                with open(svg_filename.with_suffix(
-                                        '.html')) as f:
-                                    soup = BeautifulSoup(
-                                        f.read(), 'html.parser')
+                                with open(svg_filename.with_suffix('.html')) as f:
+                                    soup = BeautifulSoup(f.read(), 'html.parser')
                                 svg = str(soup.select_one('svg'))
                                 d_vis[(file_id, label)] = svg
-                                svgs.append(
-                                    '<div class="sample" title="{}">{}</div>'.
-                                    format(file_id, svg))
-                        display(
-                            HTML('<div style="{}">{}</div>'.format(
-                                flex_style, "\n".join(svgs))))
+                                svgs.append('<div class="sample" title="{}">{}</div>'.format(file_id, svg))
+                        display(HTML('<div style="{}">{}</div>'.format(flex_style, "\n".join(svgs))))
                     # Create independent html
-                    html = [
-                        f'<html><head><meta charset="utf-8">{STYLE}{JAVASCRIPT}</head><body>'
-                    ]
+                    html = [f'<html><head><meta charset="utf-8">{STYLE}{JAVASCRIPT}</head><body>']
                     html.append(f'<div id="control">{cbs}</div>')
                     for file_id, row in df_reps.iterrows():
                         html.append('<div class="patient">')
@@ -366,9 +348,7 @@ for d in [d_ap, d_lateral]:
                             html.append(elm)
                         html.append('</div></div>')
                     html.append('</body></html>')
-                    sbs_dir = result_dir / (
-                        'side_by_side' +
-                        ('_w_curve_indices' if STORED_CURVE else ''))
+                    sbs_dir = result_dir / ('side_by_side' + DATA_SUFFIX)
                     sbs_dir.mkdir(parents=True, exist_ok=True)
                     with open(sbs_dir / f'{col}_{best_worst}.html', 'w') as f:
                         f.write('\n'.join(html))

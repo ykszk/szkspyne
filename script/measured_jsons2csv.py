@@ -1,4 +1,4 @@
-#%%
+# %%
 import argparse
 import json
 from pathlib import Path
@@ -8,10 +8,7 @@ import pandas as pd
 
 
 parser = argparse.ArgumentParser(description='Exp output to csv.')
-parser.add_argument(
-    'root',
-    help='root directory with ap_whole and lateral_whole directory',
-    metavar='<input>')
+parser.add_argument('root', help='root directory with ap_whole and lateral_whole directory', metavar='<input>')
 args = parser.parse_args()
 data_root = Path(args.root)
 IMAGE_TYPES = ['ap_whole', 'lateral_whole']
@@ -32,7 +29,7 @@ def merge_ndjsons(ndjson_filenames: List[Path], prefixes: List[str]):
                 flags = {f: f in set_flags for f in flags_required}
                 data.update(flags)
             data.update({prefix + k: v for k, v in json_data.items()})
-            rows[i] = data # update
+            rows[i] = data  # update
         df = pd.DataFrame(rows)
         df.set_index('filename', drop=True, inplace=True)
         dfs.append(df)
@@ -40,15 +37,25 @@ def merge_ndjsons(ndjson_filenames: List[Path], prefixes: List[str]):
     df_merged.sort_index(inplace=True)
     return df_merged
 
+
+PREFIXES = ['true ', 'pred ']
 for image_type in IMAGE_TYPES:
-    ndjsons, prefixes = [], []
-    for prefix, subdir in [('true ', 'reference'), ('pred ', 'auto')]:
+    ndjsons = []
+    for subdir in ['reference', 'auto']:
         indir = data_root / subdir
-        ndjsons.append(indir/f'measures_{image_type}.ndjson')
-        prefixes.append(prefix)
-    df_merged = merge_ndjsons(ndjsons, prefixes)
+        ndjsons.append(indir / f'measures_{image_type}.ndjson')
+    df_merged = merge_ndjsons(ndjsons, PREFIXES)
     df_merged.to_csv(data_root / f'{image_type}.csv', encoding='cp932')
 
-suffix = '_w_curve_indices'
-df_merged = merge_ndjsons([data_root/'reference'/'measures_ap_whole.ndjson', data_root/'auto'/f'measures_ap_whole{suffix}.ndjson'], ['true ', 'pred '])
-df_merged.to_csv(data_root / f'ap_whole{suffix}.csv', encoding='cp932')
+for suffix in ['_w_curve_indices', '_w_closest_indices']:
+    suffixed_filename = data_root / 'auto' / f'measures_ap_whole{suffix}.ndjson'
+    if not suffixed_filename.exists():
+        continue
+    df_merged = merge_ndjsons(
+        [
+            data_root / 'reference' / 'measures_ap_whole.ndjson',
+            suffixed_filename,
+        ],
+        PREFIXES,
+    )
+    df_merged.to_csv(data_root / f'ap_whole{suffix}.csv', encoding='cp932')
