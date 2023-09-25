@@ -25,7 +25,7 @@ OUTPUT_DIR = Path(args.output)
 
 DATASET_PREFIX = 'mydata'
 
-with open(DATA_DIR/'metadata.json') as f:
+with open(DATA_DIR / 'metadata.json') as f:
     dataset_metadata = json.load(f)
 dataset_names = {}
 for train_or_val in ['train', 'val']:
@@ -34,7 +34,7 @@ for train_or_val in ['train', 'val']:
     ndjson_filename = DATA_DIR / f'{train_or_val}.ndjson'
     DatasetCatalog.register(dataset_name, functools.partial(load_ndjson, ndjson_filename))
     MetadataCatalog.get(dataset_name).set(**dataset_metadata)
-    
+
 
 from detectron2.config import get_cfg
 from detectron2.engine import DefaultTrainer
@@ -51,7 +51,7 @@ cfg.MODEL.WEIGHTS = "detectron2://COCO-Keypoints/keypoint_rcnn_R_50_FPN_3x/13784
 cfg.SOLVER.IMS_PER_BATCH = 8
 cfg.SOLVER.BASE_LR = 0.00025  # pick a good LR
 cfg.SOLVER.MAX_ITER = BIG_NUMBER
-cfg.SOLVER.STEPS = []        # do not decay learning rate
+cfg.SOLVER.STEPS = []  # do not decay learning rate
 cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = 64
 cfg.MODEL.ROI_HEADS.NUM_CLASSES = len(dataset_metadata['thing_classes'])
 cfg.MODEL.ROI_KEYPOINT_HEAD.NUM_KEYPOINTS = len(dataset_metadata['keypoint_names'])
@@ -60,10 +60,10 @@ cfg.merge_from_list(args.opts)
 
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 cfg.OUTPUT_DIR = str(OUTPUT_DIR)
-with open(OUTPUT_DIR/'cfg.yaml', 'w') as f:
+with open(OUTPUT_DIR / 'cfg.yaml', 'w') as f:
     f.write(cfg.dump())
 
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-trainer = DefaultTrainer(cfg) 
+trainer = DefaultTrainer(cfg)
 trainer.resume_or_load(resume=False)
 trainer.train()

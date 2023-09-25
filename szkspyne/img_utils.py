@@ -9,8 +9,7 @@ import torch
 from szkmipy import boundingbox as bb
 
 
-def pad_to_shape(x: np.ndarray, shape: Sequence[int],
-                 constant_value: float) -> np.ndarray:
+def pad_to_shape(x: np.ndarray, shape: Sequence[int], constant_value: float) -> np.ndarray:
     '''
     Add zero padding to bottom right.
 
@@ -27,8 +26,7 @@ def pad_to_shape(x: np.ndarray, shape: Sequence[int],
     return np.pad(x, [(0, d) for d in ds], constant_values=constant_value)
 
 
-def pad_to_next_pow2(x: np.ndarray, axis: Sequence[int],
-                     constant_value: float) -> np.ndarray:
+def pad_to_next_pow2(x: np.ndarray, axis: Sequence[int], constant_value: float) -> np.ndarray:
     '''
     Args:
         axis: list of axis
@@ -41,18 +39,14 @@ def pad_to_next_pow2(x: np.ndarray, axis: Sequence[int],
            [1., 1., 1., 0.]])
     '''
     new_shape = np.power(2, np.ceil(np.log2(x.shape))).astype(int)
-    new_shape = [
-        ns if i in axis else os
-        for i, (ns, os) in enumerate(zip(new_shape, x.shape))
-    ]
+    new_shape = [ns if i in axis else os for i, (ns, os) in enumerate(zip(new_shape, x.shape))]
     return pad_to_shape(x, new_shape, constant_value)
 
 
-def pad_to_next_multiple(m: int, x: np.ndarray, axis: Sequence[int],
-                         constant_value: float) -> np.ndarray:
+def pad_to_next_multiple(m: int, x: np.ndarray, axis: Sequence[int], constant_value: float) -> np.ndarray:
     '''
     shape a*m+b -> (a+1)*m
-    
+
     Args:
         m: specified axis of returned shape will be multiple of this
         axis: list of axis
@@ -66,17 +60,12 @@ def pad_to_next_multiple(m: int, x: np.ndarray, axis: Sequence[int],
            [0., 0., 0.]])
     '''
     new_shape = (m * np.ceil(np.array(x.shape) / m)).astype(np.int64)
-    new_shape = [
-        ns if i in axis else os
-        for i, (ns, os) in enumerate(zip(new_shape, x.shape))
-    ]
+    new_shape = [ns if i in axis else os for i, (ns, os) in enumerate(zip(new_shape, x.shape))]
     return pad_to_shape(x, new_shape, constant_value)
 
 
 def resize_height(
-    height: int,
-    img: np.ndarray,
-    kps: Union[np.ndarray, List[np.ndarray], None] = None
+    height: int, img: np.ndarray, kps: Union[np.ndarray, List[np.ndarray], None] = None
 ) -> Union[Tuple[np.ndarray, List[np.ndarray]], np.ndarray]:
     '''
     Resize image to the height. Width is dynamically determined (i.e. aspect ratio is kept.)
@@ -111,17 +100,12 @@ def resize_height(
 
 
 class CropCollate:
-
-    def __init__(self,
-                 margin=0,
-                 p=.5,
-                 multiple=None,
-                 thresh: float = 1 / 1000):
+    def __init__(self, margin=0, p=0.5, multiple=None, thresh: float = 1 / 1000):
         '''
         Crop images by the heatmap
 
         Args:
-            multiple (integer): 
+            multiple (integer):
         '''
         self.p = p
         self.margin = margin

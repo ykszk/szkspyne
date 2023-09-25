@@ -16,7 +16,7 @@ from szkspyne import settings
 
 
 def pearsonr_ci(x, y, alpha=0.05):
-    ''' calculate Pearson correlation along with the confidence interval using scipy and numpy
+    '''calculate Pearson correlation along with the confidence interval using scipy and numpy
     Parameters
     ----------
     x, y : iterable object such as a list or np.array
@@ -54,9 +54,12 @@ def img2b64(img: Image.Image, format=None):
 
 def corners2midpoints(corners: np.ndarray) -> np.ndarray:
     assert corners.shape == (4, 2)
-    midpoints = corners[[0, 1]].mean(axis=0), corners[[
-        2, 3
-    ]].mean(axis=0), corners[[0, 2]].mean(axis=0), corners[[1, 3]].mean(axis=0)
+    midpoints = (
+        corners[[0, 1]].mean(axis=0),
+        corners[[2, 3]].mean(axis=0),
+        corners[[0, 2]].mean(axis=0),
+        corners[[1, 3]].mean(axis=0),
+    )
     return np.array(midpoints)
 
 
@@ -102,8 +105,7 @@ def calc_angle(line1, line2):
     return a
 
 
-def calc_intersection(A: np.ndarray, B: np.ndarray, C: np.ndarray,
-                      D: np.ndarray) -> np.ndarray:
+def calc_intersection(A: np.ndarray, B: np.ndarray, C: np.ndarray, D: np.ndarray) -> np.ndarray:
     '''
 
     https://stackoverflow.com/a/57821199
@@ -139,8 +141,7 @@ def calc_centroid(corners: np.ndarray) -> np.ndarray:
     return calc_intersection(*midpoints)
 
 
-def _get_shape_dict(json_data,
-                    shape_type) -> Dict[str, List[List[List[float]]]]:
+def _get_shape_dict(json_data, shape_type) -> Dict[str, List[List[List[float]]]]:
     shapes = defaultdict(list)
     for shape in json_data['shapes']:
         label = shape['label']
@@ -173,32 +174,24 @@ def sort_kps(points: Dict[str, Any]) -> Dict[str, np.ndarray]:
 
     returns Dict[str, np.ndarray]
     '''
-    kps = {
-        k: np.array(sorted(v, key=lambda e: e[1]))
-        for k, v in points.items()
-    }
+    kps = {k: np.array(sorted(v, key=lambda e: e[1])) for k, v in points.items()}
     return kps
 
 
 def get_vert_corners(kps):
     n_vertebrae = len(kps['BR'])
     sacrum_tltr = np.array((kps['TL'][-1], kps['TR'][-1]))
-    vert_corners = np.array([
-        kps[l][:n_vertebrae] for l in settings.VERTEBRA_LABEL_NAMES
-    ]).transpose((1, 0, 2))
+    vert_corners = np.array([kps[l][:n_vertebrae] for l in settings.VERTEBRA_LABEL_NAMES]).transpose((1, 0, 2))
     return sacrum_tltr, vert_corners
 
 
 def get_vert_and_disc_corners(kps):
     n_vertebrae = len(kps['BR'])
     sacrum_tltr = np.array((kps['TL'][-1], kps['TR'][-1]))
-    vert_corners = np.array([
-        kps[l][:n_vertebrae] for l in settings.VERTEBRA_LABEL_NAMES
-    ]).transpose((1, 0, 2))
-    disc_corners = np.array([
-        kps[l][(1 if l in ['TL', 'TR'] else 0):]
-        for l in settings.VERTEBRA_LABEL_NAMES
-    ]).transpose((1, 0, 2))
+    vert_corners = np.array([kps[l][:n_vertebrae] for l in settings.VERTEBRA_LABEL_NAMES]).transpose((1, 0, 2))
+    disc_corners = np.array(
+        [kps[l][(1 if l in ['TL', 'TR'] else 0) :] for l in settings.VERTEBRA_LABEL_NAMES]
+    ).transpose((1, 0, 2))
     return sacrum_tltr, vert_corners, disc_corners
 
 
@@ -213,7 +206,6 @@ def read_default_line_colors() -> Dict[str, str]:
 
 
 class SpinalDrawing(svgwrite.Drawing):
-
     def __init__(self, lm_data: Dict, image_dir: Path, height: int):
         lm_data = lm_data.copy()
         img_fn = Path(image_dir) / Path(lm_data['imagePath']).name
@@ -221,29 +213,22 @@ class SpinalDrawing(svgwrite.Drawing):
         original_image_shape = (lm_data['imageWidth'], lm_data['imageHeight'])
         scale = height / original_image_shape[1]
         image_size = (scale * lm_data['imageWidth'] * pixel_size, height * pixel_size)
-        super().__init__('output.svg',
-                         size=image_size,
-                         viewBox=('0 0 {} {}'.format(*image_size)))
+        super().__init__('output.svg', size=image_size, viewBox=('0 0 {} {}'.format(*image_size)))
         if img_fn.exists():
             img = Image.open(img_fn)
-            img.thumbnail(
-                (100000,
-                height))  # specify height. width argument is just a big number
+            img.thumbnail((100000, height))  # specify height. width argument is just a big number
             w, h = img.size
             image_size = (w * pixel_size, h * pixel_size)
-            self.add(
-                self.image('data:image/jpg;base64,' + img2b64(img), size=img.size))
+            self.add(self.image('data:image/jpg;base64,' + img2b64(img), size=img.size))
         else:
             img = None
-            
 
         for shape in lm_data['shapes']:
             shape['points'] = [[scale * e for e in p] for p in shape['points']]
 
-        text_attrs = dict(stroke='black',
-                          stroke_width='1px',
-                          fill='white',
-                          style="font-size:24px; font-family:sans-serif")
+        text_attrs = dict(
+            stroke='black', stroke_width='1px', fill='white', style="font-size:24px; font-family:sans-serif"
+        )
 
         points = get_point_dict(lm_data)
         kps = sort_kps(points)
@@ -254,12 +239,9 @@ class SpinalDrawing(svgwrite.Drawing):
         self.kps = kps
         self.img = img
 
-        if len(kps['TL']) != len(kps['TR']) or len(kps['BL']) != len(
-                kps['BR']):
-            raise ValueError(
-                'Invalid set of number of points for TL, TR, BL and BR')
-        sacrum_tltr, vert_corners, disc_corners = get_vert_and_disc_corners(
-            kps)
+        if len(kps['TL']) != len(kps['TR']) or len(kps['BL']) != len(kps['BR']):
+            raise ValueError('Invalid set of number of points for TL, TR, BL and BR')
+        sacrum_tltr, vert_corners, disc_corners = get_vert_and_disc_corners(kps)
         vert_corners_w_c7 = vert_corners.copy()
         c7_corners = vert_corners[0].copy()
         c7_centroid = calc_centroid(c7_corners)
@@ -292,19 +274,21 @@ class SpinalDrawing(svgwrite.Drawing):
         self.vert_sup_vecs = vert_sup_vecs
         self.vert_inf_cnrs = vert_inf_cnrs
 
-    def draw_line(self,
-                  a: np.ndarray,
-                  b: np.ndarray,
-                  grp,
-                  xrange: Union[Tuple[float, float], None] = None,
-                  yrange: Union[Tuple[float, float], None] = None):
+    def draw_line(
+        self,
+        a: np.ndarray,
+        b: np.ndarray,
+        grp,
+        xrange: Union[Tuple[float, float], None] = None,
+        yrange: Union[Tuple[float, float], None] = None,
+    ):
         d = b - a
-        if d[1] == 0: # horizontal line
+        if d[1] == 0:  # horizontal line
             p0 = [0, a[1]]
             p1 = [self.size[0], a[1]]
             grp.add(self.path((['M'] + p0 + p1)))
             return p0, p1
-        if d[0] == 0: # vertical line
+        if d[0] == 0:  # vertical line
             p0 = [a[0], self.size[0]]
             p1 = [a[0], self.size[1]]
             grp.add(self.path((['M'] + p0 + p1)))
@@ -332,19 +316,20 @@ class SpinalDrawing(svgwrite.Drawing):
         grp.add(self.path((['M'] + p1 + p2)))
         return p1, p2
 
-    def draw_cobb(self,
-                  sup_cnrs: np.ndarray,
-                  inf_cnrs: np.ndarray,
-                  grp,
-                  aux_dist: float = 3,
-                  title: str = '',
-                  text_attrs: dict = {}) -> float:
+    def draw_cobb(
+        self,
+        sup_cnrs: np.ndarray,
+        inf_cnrs: np.ndarray,
+        grp,
+        aux_dist: float = 3,
+        title: str = '',
+        text_attrs: dict = {},
+    ) -> float:
         up_line = Line.from_points(sup_cnrs[0], sup_cnrs[1])
         low_line = Line.from_points(inf_cnrs[0], inf_cnrs[1])
         try:
             up_low_cross = up_line.intersect_line(low_line)
-            angle_rad = -calc_angle((sup_cnrs[0], sup_cnrs[1]),
-                                    (inf_cnrs[0], inf_cnrs[1]))
+            angle_rad = -calc_angle((sup_cnrs[0], sup_cnrs[1]), (inf_cnrs[0], inf_cnrs[1]))
             if angle_rad > 0:
                 up_end = sup_cnrs[1]
                 low_end = inf_cnrs[1]
@@ -355,20 +340,13 @@ class SpinalDrawing(svgwrite.Drawing):
                 pts = up_end + aux_dist * (sup_cnrs[1] - sup_cnrs[0])
 
             aux_cross = Point(rotate_around(pts, angle_rad / 2, up_low_cross))
-            is_inside = np.linalg.norm(
-                aux_cross - sup_cnrs[0]) > np.linalg.norm(up_low_cross -
-                                                          sup_cnrs[0])
+            is_inside = np.linalg.norm(aux_cross - sup_cnrs[0]) > np.linalg.norm(up_low_cross - sup_cnrs[0])
             if is_inside:
                 text_pos = up_low_cross
-                grp.add(
-                    self.path(
-                        (['M'] + up_end.tolist() + up_low_cross.tolist())))
-                grp.add(
-                    self.path(
-                        (['M'] + low_end.tolist() + up_low_cross.tolist())))
+                grp.add(self.path((['M'] + up_end.tolist() + up_low_cross.tolist())))
+                grp.add(self.path((['M'] + low_end.tolist() + up_low_cross.tolist())))
             else:
-                aux_cross = Point(
-                    rotate_around(pts, angle_rad / 2, up_low_cross))
+                aux_cross = Point(rotate_around(pts, angle_rad / 2, up_low_cross))
                 up_aux1 = up_line.project_point(aux_cross)
                 up_aux2 = up_aux1 + 1.5 * (aux_cross - up_aux1)
                 up_auxs = np.array((up_aux1, up_aux2))
@@ -377,35 +355,23 @@ class SpinalDrawing(svgwrite.Drawing):
                 low_auxs = np.array((low_aux1, low_aux2))
                 text_pos = aux_cross
 
-                grp.add(
-                    self.path((['M'] + up_end.tolist() + up_auxs[0].tolist())))
+                grp.add(self.path((['M'] + up_end.tolist() + up_auxs[0].tolist())))
                 grp.add(self.path((['M'] + up_auxs.tolist())))
-                grp.add(
-                    self.path(
-                        (['M'] + low_end.tolist() + low_auxs[0].tolist())))
+                grp.add(self.path((['M'] + low_end.tolist() + low_auxs[0].tolist())))
                 grp.add(self.path((['M'] + low_auxs.tolist())))
         except ValueError:
             angle_rad = 0
-            text_pos = np.concatenate([sup_cnrs, inf_cnrs],
-                                      axis=0).mean(axis=0)
-            grp.add(
-                self.path(
-                    (['M'] + sup_cnrs[0].tolist() + sup_cnrs[1].tolist())))
-            grp.add(
-                self.path(
-                    (['M'] + inf_cnrs[0].tolist() + inf_cnrs[1].tolist())))
-            grp.add(
-                self.path((['M'] + sup_cnrs.mean(axis=0).tolist() +
-                           inf_cnrs.mean(axis=1).tolist())))
+            text_pos = np.concatenate([sup_cnrs, inf_cnrs], axis=0).mean(axis=0)
+            grp.add(self.path((['M'] + sup_cnrs[0].tolist() + sup_cnrs[1].tolist())))
+            grp.add(self.path((['M'] + inf_cnrs[0].tolist() + inf_cnrs[1].tolist())))
+            grp.add(self.path((['M'] + sup_cnrs.mean(axis=0).tolist() + inf_cnrs.mean(axis=1).tolist())))
 
         angle_deg = np.rad2deg(angle_rad)
         text_angle = '{:.1f}°'.format(angle_deg)
         text_anchor = 'end' if angle_deg < 0 else 'start'
-        text_elm = self.text(text_angle,
-                             insert=tuple(text_pos),
-                             text_anchor=text_anchor,
-                             dominant_baseline="central",
-                             **text_attrs)
+        text_elm = self.text(
+            text_angle, insert=tuple(text_pos), text_anchor=text_anchor, dominant_baseline="central", **text_attrs
+        )
         if title:
             text_elm.set_desc(title=title)
         grp.add(text_elm)

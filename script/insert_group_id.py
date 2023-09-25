@@ -11,7 +11,6 @@ import numpy as np
 
 
 class DictMapper(ABC):
-
     def __init__(self, args):
         self.args = args
 
@@ -40,6 +39,7 @@ class DictMapper(ABC):
     def finalize(self):
         pass
 
+
 def filepath2groupid(filepath: str) -> str:
     filepath = Path(filepath.replace('\\', '/')).name
     if filepath.startswith("OSC"):
@@ -59,8 +59,8 @@ def filepath2groupid(filepath: str) -> str:
         group_id = re.split(r"-|=|\.|,| |_|yr", filepath)[0]
     return group_id
 
-class InsertGroupId(DictMapper):
 
+class InsertGroupId(DictMapper):
     def __init__(self, *args):
         super().__init__(*args)
         self.path2id = []
@@ -78,15 +78,10 @@ class InsertGroupId(DictMapper):
     @classmethod
     def add_arguments(cls, parser: ArgumentParser):
         parser.add_argument(
-            "--src_key",
-            help="Extract group id from this key. default: %(default)s",
-            default="filepath")
-        parser.add_argument(
-            "--id_key",
-            help="Insert group id into this key. default: %(default)s",
-            default="group_id")
-        parser.add_argument(
-            "--map", help="Save resulting key to gorup_id map as a csv.")
+            "--src_key", help="Extract group id from this key. default: %(default)s", default="filepath"
+        )
+        parser.add_argument("--id_key", help="Insert group id into this key. default: %(default)s", default="group_id")
+        parser.add_argument("--map", help="Save resulting key to gorup_id map as a csv.")
 
     def map(self, data: dict) -> dict:
         args = self.args
@@ -105,7 +100,6 @@ class InsertGroupId(DictMapper):
 
 
 class AddAnchor(DictMapper):
-
     @classmethod
     @property
     def name(cls) -> str:
@@ -135,9 +129,7 @@ class AddAnchor(DictMapper):
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description=
-        "Read ndjson of exp data from stdin and apply mapping functions.")
+    parser = argparse.ArgumentParser(description="Read ndjson of exp data from stdin and apply mapping functions.")
     sub_parsers = parser.add_subparsers(dest='command_name')
     for c in [InsertGroupId, AddAnchor]:
         p = sub_parsers.add_parser(c.name, help=c.help)

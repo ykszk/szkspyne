@@ -1,4 +1,4 @@
-#%%
+# %%
 from pathlib import Path
 
 import numpy as np
@@ -9,7 +9,7 @@ import scipy.io
 data_dir = Path('../../data')
 sw_dir = data_dir / 'spineweb'
 label_names = ['TL', 'TR', 'BL', 'BR']
-#%%
+# %%
 rows = []
 for subd in ['test', 'training']:
     indir = sw_dir / 'labels' / subd

@@ -9,6 +9,7 @@ from sklearn.decomposition import PCA
 from scipy.interpolate import CubicSpline
 from szkspyne import settings
 
+
 class PointConfig(NamedTuple):
     name: str
     image_type: str
@@ -17,7 +18,6 @@ class PointConfig(NamedTuple):
 
 
 class PointsPCA(PCA):
-
     def __init__(self, ref_height: float):
         super().__init__()
         self.ref_height = ref_height
@@ -54,8 +54,7 @@ class PointsPCA(PCA):
         padded = np.pad(points, ((0, 0), (0, 1)), constant_values=1)
         return (mat @ padded.T).T[:, :2]
 
-    def save(self, filename: Union[str, Path], model_name: str,
-             labels: List[str], point_counts: List[int]):
+    def save(self, filename: Union[str, Path], model_name: str, labels: List[str], point_counts: List[int]):
         assert 2 * sum(point_counts) == self.mean_.shape[0]  # type: ignore
         np.savez(
             filename,
@@ -64,47 +63,45 @@ class PointsPCA(PCA):
             mean=self.mean_,  # type: ignore
             components=self.components_,  # type: ignore
             explained_variance=self.explained_variance_,  # type: ignore
-            explained_variance_ratio_=self.
-            explained_variance_ratio_,  # type: ignore
+            explained_variance_ratio_=self.explained_variance_ratio_,  # type: ignore
             point_format='xy',
             labels=labels,
-            point_counts=point_counts)
+            point_counts=point_counts,
+        )
+
 
 def extrapolate(pts: np.ndarray):
     '''
     Append one extra point using extrapolation
     '''
-    pts = pts[pts[:, 1].argsort()] # sort by y
-    bc_type='natural'
+    pts = pts[pts[:, 1].argsort()]  # sort by y
+    bc_type = 'natural'
 
     xs = np.arange(len(pts))
     sp_x = CubicSpline(xs, pts[:, 0], bc_type=bc_type)
     sp_y = CubicSpline(xs, pts[:, 1], bc_type=bc_type)
     tl_xs = sp_x(len(pts))
     tl_ys = sp_y(len(pts))
-    new_pts = np.zeros((pts.shape[0]+1, 2), dtype=pts.dtype)
+    new_pts = np.zeros((pts.shape[0] + 1, 2), dtype=pts.dtype)
     new_pts[:-1] = pts
     new_pts[-1, 0] = tl_xs
     new_pts[-1, 1] = tl_ys
     return new_pts
 
+
 if __name__ == '__main__':
     import argparse
-    parser = argparse.ArgumentParser(
-        description='Create PCA model(s) for 2D points.')
-    parser.add_argument('input',
-                        help='Input ndjson/csv filename',
-                        metavar='<input>',
-                        nargs='?',
-                        default='../script/manual_annotation.ndjson')
-    parser.add_argument('output',
-                        help='Output directory',
-                        metavar='<output>',
-                        nargs='?',
-                        default='.')
-    parser.add_argument('--mirror',
-                        help='Add horizontally mirrored point set to the dataset',
-                        action='store_true')
+
+    parser = argparse.ArgumentParser(description='Create PCA model(s) for 2D points.')
+    parser.add_argument(
+        'input',
+        help='Input ndjson/csv filename',
+        metavar='<input>',
+        nargs='?',
+        default='../script/manual_annotation.ndjson',
+    )
+    parser.add_argument('output', help='Output directory', metavar='<output>', nargs='?', default='.')
+    parser.add_argument('--mirror', help='Add horizontally mirrored point set to the dataset', action='store_true')
 
     args, unknown = parser.parse_known_args()
     if unknown:
@@ -135,9 +132,10 @@ if __name__ == '__main__':
     logger.info('Original data: %d', len(all_data))
     if args.mirror:
         from settings import FLIP_PAIRS, LABEL_NAMES
+
         mirrored = []
         for d in all_data:
-            if d['image_type']!='ap_whole':
+            if d['image_type'] != 'ap_whole':
                 continue
             d = copy.deepcopy(d)
             width = d['imageWidth']
@@ -155,9 +153,7 @@ if __name__ == '__main__':
                     kps[k1] = kps.pop(k2)
             mirrored.append(d)
 
-
         all_data += mirrored
-        
 
     # preprocess
     for d in all_data:

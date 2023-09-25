@@ -17,6 +17,7 @@ import torch
 from szkspyne.dtron2 import utils
 from szkspyne.labelme_utils import load_ndjson
 
+
 def setup_cfg(args):
     # load config from file and command-line arguments
     cfg = get_cfg()
@@ -43,8 +44,7 @@ def get_parser():
     parser.add_argument(
         "--input",
         nargs="+",
-        help="A list of space separated input images; "
-        "or a single glob pattern such as 'directory/*.jpg'",
+        help="A list of space separated input images; " "or a single glob pattern such as 'directory/*.jpg'",
     )
     parser.add_argument(
         "--output",
@@ -56,14 +56,8 @@ def get_parser():
         "--metadata",
         help="Load metadata json file",
     )
-    parser.add_argument(
-        "--ndjson",
-        help='Save one ndjson instaed of json files'
-    )
-    parser.add_argument(
-        "--verbose",
-        help="Verbose mode", action='store_true'
-    )
+    parser.add_argument("--ndjson", help='Save one ndjson instaed of json files')
+    parser.add_argument("--verbose", help="Verbose mode", action='store_true')
     parser.add_argument(
         "--confidence-threshold",
         type=float,
@@ -79,20 +73,22 @@ def get_parser():
     return parser
 
 
-
 if __name__ == "__main__":
     args = get_parser().parse_args()
     logger = setup_logger()
     logger.info("Arguments: " + str(args))
     dataset_name = 'scoliosis_val'
-    metadata = dict(thing_classes = ["vertebra"],
-                                        keypoint_names=['TL', 'TR', 'BL', 'BR'],
-                                        keypoint_flip_map=[('TL','TR'), ('BL','BR')])
+    metadata = dict(
+        thing_classes=["vertebra"],
+        keypoint_names=['TL', 'TR', 'BL', 'BR'],
+        keypoint_flip_map=[('TL', 'TR'), ('BL', 'BR')],
+    )
     if args.metadata:
         with open(args.metadata) as f:
             metadata = json.load(f)
-    
+
     from detectron2.data import MetadataCatalog
+
     MetadataCatalog.get(dataset_name).set(**metadata)
 
     cfg = setup_cfg(args)
@@ -102,7 +98,7 @@ if __name__ == "__main__":
     if len(args.input) == 1:
         args.input = glob.glob(os.path.expanduser(args.input[0]))
         assert args.input, "The input path(s) was not found"
-    if len(args.input)==1 and args.input[0].endswith('.ndjson'):
+    if len(args.input) == 1 and args.input[0].endswith('.ndjson'):
         args.input = [e['file_name'] for e in load_ndjson(args.input[0])]
     ndjson = []
     for path in tqdm.tqdm(args.input, disable=not args.output):
@@ -132,8 +128,8 @@ if __name__ == "__main__":
             assert len(args.input) == 1, "Please specify a directory with args.output"
             out_filename = args.output
         visualized_output.save(out_filename)
-        
-        filename = os.path.splitext(os.path.basename(path))[0]+'.json'
+
+        filename = os.path.splitext(os.path.basename(path))[0] + '.json'
         if args.ndjson:
             predictions['filename'] = filename
             ndjson.append(json.dumps(predictions, cls=utils.PredictionEncoder))

@@ -1,4 +1,4 @@
-#%%
+# %%
 import argparse
 import json
 from pathlib import Path
@@ -13,13 +13,9 @@ from szkspyne import img_utils, labelme_utils
 
 
 parser = argparse.ArgumentParser(description='Modify AI annotation.')
-parser.add_argument('image_type',
-                    help='image_type',
-                    choices=['ap_whole', 'lateral_whole'])
+parser.add_argument('image_type', help='image_type', choices=['ap_whole', 'lateral_whole'])
 parser.add_argument('input', help='input directory')
-parser.add_argument('-o',
-                    '--output',
-                    help='output directory. input is used by default')
+parser.add_argument('-o', '--output', help='output directory. input is used by default')
 args = parser.parse_args()
 root_dir = Path(args.input)
 
@@ -27,9 +23,7 @@ AP_ONLY = set(['Shoulder', 'Clavicle', 'Pelvis', 'Iliac'])
 
 
 class JsonsDirIO:
-
     class JsonIO:
-
         def __init__(self, infile: Path, outfile: Path):
             self.infile = infile
             self.outfile = outfile
@@ -71,9 +65,7 @@ class JsonsDirIO:
 
 
 class NDJsonIO:
-
     class LineIO:
-
         def __init__(self, data: str, ndjson: dict, i: int):
             self.data = data
             self.ndjson = ndjson
@@ -116,8 +108,7 @@ if args.output:
 else:
     output = input
 
-with JsonsDirIO(input, output) if input.is_dir() else NDJsonIO(input,
-                                                               output) as ios:
+with JsonsDirIO(input, output) if input.is_dir() else NDJsonIO(input, output) as ios:
     if args.image_type == 'lateral_whole':
         # convert FemoralHead points to circles based on average vertebra sizes
         logger.info('lateral')
@@ -128,17 +119,14 @@ with JsonsDirIO(input, output) if input.is_dir() else NDJsonIO(input,
             shapes = list(filter(lambda e: e['label'] not in AP_ONLY, shapes))
             data['shapes'] = shapes
             for shape in data['shapes']:
-                if shape['shape_type'] == 'point' and shape[
-                        'label'] == 'FemoralHead':
+                if shape['shape_type'] == 'point' and shape['label'] == 'FemoralHead':
                     fhs.append(shape)
             if len(fhs) > 0:
                 shapes = labelme_utils.conv2shape_dict(data)
                 # calculate median disk width
                 disk_widths = []
                 for pair in [('TL', 'TR'), ('BL', 'BR')]:
-                    l, r = np.array(
-                        shapes['point'][pair[0]]).squeeze(), np.array(
-                            shapes['point'][pair[1]]).squeeze()
+                    l, r = np.array(shapes['point'][pair[0]]).squeeze(), np.array(shapes['point'][pair[1]]).squeeze()
                     dists = cdist(l, r)
                     less_axis = 0 if len(l) <= len(r) else 1
                     disk_widths.append(dists.min(axis=less_axis))
@@ -148,7 +136,7 @@ with JsonsDirIO(input, output) if input.is_dir() else NDJsonIO(input,
                     fh['shape_type'] = 'circle'
                     center = np.array(fh['points'][0])
                     arc_top = center.copy()
-                    arc_top[1] -= .8 * median_width
+                    arc_top[1] -= 0.8 * median_width
                     points = np.stack((center, arc_top))
                     fh['points'] = points.tolist()
                 rw.write(data)
@@ -164,9 +152,7 @@ with JsonsDirIO(input, output) if input.is_dir() else NDJsonIO(input,
                     all_points.append(np.array(shapes['point'][label]))
             all_points = np.concatenate(all_points)[:, 0]
             x_middle = all_points[:, 0].mean()
-            for label in [
-                    'Shoulder', 'Clavicle', 'Pelvis', 'Iliac', 'FemoralHead'
-            ]:
+            for label in ['Shoulder', 'Clavicle', 'Pelvis', 'Iliac', 'FemoralHead']:
                 lefts, rights = [], []
                 for p in shapes['point'].get(label, []):
                     if p[0][0] > x_middle:
@@ -183,8 +169,7 @@ with JsonsDirIO(input, output) if input.is_dir() else NDJsonIO(input,
                             ys = side[:, 0, 1]
                             highest = np.argmin(ys)
                             for shape in data['shapes']:
-                                if shape['shape_type'] == 'point' and shape[
-                                        'label'] == label:
+                                if shape['shape_type'] == 'point' and shape['label'] == label:
                                     y = shape['points'][0][1]
                                     if y > highest:
                                         del_shapes.append(shape)

@@ -39,8 +39,7 @@ def flatten_nest(l: List[List[GenericType]]) -> List[GenericType]:
     return list(itertools.chain.from_iterable(l))
 
 
-def partition(lst: List[GenericType],
-              sizes: List[int]) -> List[List[GenericType]]:
+def partition(lst: List[GenericType], sizes: List[int]) -> List[List[GenericType]]:
     '''
     Partition list into sub lists with given sizes
 
@@ -53,16 +52,15 @@ def partition(lst: List[GenericType],
     cs = np.cumsum(sizes)
     cs = np.insert(cs, 0, 0)  # prepend 0
     assert len(lst) == cs[-1]
-    return [lst[cs[i]:cs[i + 1]] for i in range(len(cs) - 1)]
+    return [lst[cs[i] : cs[i + 1]] for i in range(len(cs) - 1)]
 
 
 class ImageDataset(torch.utils.data.Dataset):
     '''
-        Dataset for image without points
+    Dataset for image without points
     '''
 
-    def __init__(self, xs: Sequence[np.ndarray],
-                 transform: Optional[Callable[[np.ndarray], np.ndarray]]):
+    def __init__(self, xs: Sequence[np.ndarray], transform: Optional[Callable[[np.ndarray], np.ndarray]]):
         '''
         Args:
             xs: list of x.
@@ -83,14 +81,18 @@ class ImageDataset(torch.utils.data.Dataset):
 
 class KeypointDataset(torch.utils.data.Dataset):
     '''
-        Dataset for image and keypoints
+    Dataset for image and keypoints
     '''
 
-    def __init__(self, xs: Sequence[np.ndarray], points: Sequence[PointsList],
-                 point_pairs, flip_pairs: List[Tuple[int, int]],
-                 transform: Optional[
-                     Callable[[np.ndarray, PointsList, List[Tuple[int, int]]],
-                              Tuple[np.ndarray, PointsList]]], sigma: float):
+    def __init__(
+        self,
+        xs: Sequence[np.ndarray],
+        points: Sequence[PointsList],
+        point_pairs,
+        flip_pairs: List[Tuple[int, int]],
+        transform: Optional[Callable[[np.ndarray, PointsList, List[Tuple[int, int]]], Tuple[np.ndarray, PointsList]]],
+        sigma: float,
+    ):
         '''
         Args:
             xs: list of x.
@@ -113,8 +115,7 @@ class KeypointDataset(torch.utils.data.Dataset):
         return len(self.xs)
 
     def __getitem__(self, idx):
-        x, points, point_pairs = self.xs[idx], self.points[
-            idx], self.point_pairs[idx]
+        x, points, point_pairs = self.xs[idx], self.points[idx], self.point_pairs[idx]
         if self.transform is not None:
             x, points = self.transform(x, points, self.flip_pairs)
         n_chs = len(points) + len(point_pairs)
@@ -128,11 +129,10 @@ class KeypointDataset(torch.utils.data.Dataset):
         return x, y
 
 
-def multivariate_normal(shape: Sequence[int], mu: np.ndarray,
-                        sigma: float) -> np.ndarray:
+def multivariate_normal(shape: Sequence[int], mu: np.ndarray, sigma: float) -> np.ndarray:
     '''
     Generate PDF(heatmap) for multivariate gaussian
-    
+
     Args:
         shape (array) : output shape
         mu (array) : mean/center
@@ -140,15 +140,9 @@ def multivariate_normal(shape: Sequence[int], mu: np.ndarray,
     '''
     if np.isscalar(mu):
         mu = np.repeat(mu, len(shape))
-    vecs = [
-        scipy.stats.norm.pdf(np.arange(size), m, sigma)
-        for size, m in zip(shape, mu)
-    ]
+    vecs = [scipy.stats.norm.pdf(np.arange(size), m, sigma) for size, m in zip(shape, mu)]
     # prepare for broadcasting
-    vecs = [
-        v.reshape([1 if j != i else s for j in range(len(vecs))])
-        for i, (v, s) in enumerate(zip(vecs, shape))
-    ]
+    vecs = [v.reshape([1 if j != i else s for j in range(len(vecs))]) for i, (v, s) in enumerate(zip(vecs, shape))]
     if len(shape) == 1:
         return vecs[0]
 
@@ -158,11 +152,13 @@ def multivariate_normal(shape: Sequence[int], mu: np.ndarray,
     return output
 
 
-def create_prob_image(shape: Sequence[int],
-                      points: Sequence[PointType],
-                      sigma: float,
-                      normalize: bool = True,
-                      out: Optional[np.ndarray] = None) -> np.ndarray:
+def create_prob_image(
+    shape: Sequence[int],
+    points: Sequence[PointType],
+    sigma: float,
+    normalize: bool = True,
+    out: Optional[np.ndarray] = None,
+) -> np.ndarray:
     '''
     Create heatmap from the given points
     '''
@@ -175,7 +171,7 @@ def create_prob_image(shape: Sequence[int],
     for p in points[1:]:
         np.maximum(out, multivariate_normal(shape, p, sigma), out=out)
     if normalize and out.max() != 0:
-        out *= (1 / out.max())
+        out *= 1 / out.max()
     assert out is not None  # type narrowing
     return out
 
@@ -247,7 +243,7 @@ def extract_center_of_masses(heatmaps):
     return keypoints
 
 
-def local_center_of_masses(heatmaps, min_thresh=.25):
+def local_center_of_masses(heatmaps, min_thresh=0.25):
     '''
 
     Note. Channel axis is 0.
@@ -285,8 +281,7 @@ def local_center_of_masses(heatmaps, min_thresh=.25):
     return local_centers_per_ch
 
 
-def create_dist_image(shape_: Sequence[int], points_: PointsType,
-                      margin: int) -> np.ndarray:
+def create_dist_image(shape_: Sequence[int], points_: PointsType, margin: int) -> np.ndarray:
     '''
     Create distance map from the given points
 
@@ -312,5 +307,5 @@ def create_dist_image(shape_: Sequence[int], points_: PointsType,
     assert isinstance(dist, np.ndarray)  # for type checking
     dist = dist.astype(np.float32)
     out = np.full(shape, dist.max(), dtype=np.float32)
-    out[top_left[0]:btm_right[0], top_left[1]:btm_right[1]] = dist
+    out[top_left[0] : btm_right[0], top_left[1] : btm_right[1]] = dist
     return out

@@ -9,14 +9,15 @@ from torch import nn
 
 
 class LitSMP(pl.LightningModule):
-
     def __init__(self, in_chs, out_chs, hparams):
         super().__init__()
-        kwargs = dict(encoder_name=hparams.encoder_name,
-                      encoder_weights=hparams.encoder_weights,
-                      activation=None,
-                      in_channels=in_chs,
-                      classes=out_chs)
+        kwargs = dict(
+            encoder_name=hparams.encoder_name,
+            encoder_weights=hparams.encoder_weights,
+            activation=None,
+            in_channels=in_chs,
+            classes=out_chs,
+        )
         model = smp.DeepLabV3Plus(**kwargs)
         self.model = model
         # self.loss = torch.nn.MSELoss()
@@ -27,19 +28,13 @@ class LitSMP(pl.LightningModule):
     @staticmethod
     def add_model_specific_args(parent_parser):
         parser = parent_parser.add_argument_group("LitSMP")
-        parser.add_argument('--lr',
-                            help='Learning rate: %(default)s',
-                            metavar='<value>',
-                            type=float,
-                            default=1e-3)
-        parser.add_argument('--encoder_name',
-                            help='encoder name: %(default)s',
-                            metavar='<name>',
-                            default='efficientnet-b4')
-        parser.add_argument('--encoder_weights',
-                            help='encoder weights: %(default)s',
-                            metavar='<name>',
-                            default='imagenet')
+        parser.add_argument('--lr', help='Learning rate: %(default)s', metavar='<value>', type=float, default=1e-3)
+        parser.add_argument(
+            '--encoder_name', help='encoder name: %(default)s', metavar='<name>', default='efficientnet-b4'
+        )
+        parser.add_argument(
+            '--encoder_weights', help='encoder weights: %(default)s', metavar='<name>', default='imagenet'
+        )
         return parent_parser
 
     def forward(self, x):
@@ -63,19 +58,13 @@ class LitSMP(pl.LightningModule):
         self.log('val_loss', loss, sync_dist=True)
         return loss
 
-    def predict_step(self, batch, batch_idx, dataloader_idx = None):
+    def predict_step(self, batch, batch_idx, dataloader_idx=None):
         return torch.sigmoid(self(batch))
 
     def configure_optimizers(self):
         optimizer = optim.Adam(self.parameters(), self.lr)
-        scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer,
-                                                         factor=.1,
-                                                         patience=4)
-        scheduler = {
-            'scheduler': scheduler,
-            'monitor': 'train_loss',
-            'interval': 'epoch'
-        }
+        scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.1, patience=4)
+        scheduler = {'scheduler': scheduler, 'monitor': 'train_loss', 'interval': 'epoch'}
         return {
             'optimizer': optimizer,
             'lr_scheduler': scheduler,
@@ -84,7 +73,9 @@ class LitSMP(pl.LightningModule):
 
     def summary(self, shape):
         from torchinfo import summary
+
         return summary(self.model, shape, device='cpu')
+
 
 def show_summary(args):
     model = LitSMP(1, 6, args)
@@ -118,48 +109,36 @@ def create_onnx(args):
 
     # Export the model
     torch.onnx.export(
-        model,  # model being run 
-        dummy_input,  # model input (or a tuple for multiple inputs) 
-        args.output,  # where to save the model  
-        export_params=
-        True,  # store the trained parameter weights inside the model file 
-        opset_version=12,  # the ONNX version to export the model to 
-        do_constant_folding=
-        True,  # whether to execute constant folding for optimization 
-        input_names=['modelInput'],  # the model's input names 
-        output_names=['modelOutput'],  # the model's output names 
+        model,  # model being run
+        dummy_input,  # model input (or a tuple for multiple inputs)
+        args.output,  # where to save the model
+        export_params=True,  # store the trained parameter weights inside the model file
+        opset_version=12,  # the ONNX version to export the model to
+        do_constant_folding=True,  # whether to execute constant folding for optimization
+        input_names=['modelInput'],  # the model's input names
+        output_names=['modelOutput'],  # the model's output names
         dynamic_axes={
-            'modelInput': {
-                0: 'batch_size',
-                3: 'image_width'
-            },  # variable length axes 
-            'modelOutput': {
-                0: 'batch_size',
-                3: 'image_width'
-            }
-        })
+            'modelInput': {0: 'batch_size', 3: 'image_width'},  # variable length axes
+            'modelOutput': {0: 'batch_size', 3: 'image_width'},
+        },
+    )
     print(" ")
     print('Model has been converted to ONNX')
 
 
 if __name__ == "__main__":
     import argparse
-    parser = argparse.ArgumentParser(
-        description='Pytorch lightning with segmentation_models_pytorch.')
+
+    parser = argparse.ArgumentParser(description='Pytorch lightning with segmentation_models_pytorch.')
     LitSMP.add_model_specific_args(parser)
     subparsers = parser.add_subparsers(help='Commands')
-    parser_summary = subparsers.add_parser(
-        'summary', help="Show the network summary of the specified model.")
+    parser_summary = subparsers.add_parser('summary', help="Show the network summary of the specified model.")
     parser_summary.set_defaults(func=show_summary)
 
     parser_onnx = subparsers.add_parser('onnx', help="Create ONNX model.")
     parser_onnx.set_defaults(func=create_onnx)
-    parser_onnx.add_argument('in_chs',
-                             help='The # of input channels',
-                             type=int)
-    parser_onnx.add_argument('out_chs',
-                             help='The # of output channels',
-                             type=int)
+    parser_onnx.add_argument('in_chs', help='The # of input channels', type=int)
+    parser_onnx.add_argument('out_chs', help='The # of output channels', type=int)
     parser_onnx.add_argument('weights', help='Path of the trained weight')
     parser_onnx.add_argument('output', help='Output onnx filename')
     args = parser.parse_args()
@@ -167,6 +146,7 @@ if __name__ == "__main__":
     has_func = hasattr(args, 'func')
     if not has_func:
         import sys
+
         parser.error('too few arguments')
         sys.exit(1)
     args.func(args)

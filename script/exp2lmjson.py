@@ -1,4 +1,4 @@
-#%%
+# %%
 import argparse
 import json
 import sys
@@ -7,11 +7,8 @@ from pathlib import Path
 from tqdm import tqdm
 
 
-parser = argparse.ArgumentParser(
-    description='From ndjson for exp to ndjson of labelme.')
-parser.add_argument('input',
-                    help='Input ndjson filename. "-" to use stdin',
-                    metavar='<input>')
+parser = argparse.ArgumentParser(description='From ndjson for exp to ndjson of labelme.')
+parser.add_argument('input', help='Input ndjson filename. "-" to use stdin', metavar='<input>')
 parser.add_argument('output', help='Output directory', metavar='<output>')
 args = parser.parse_args()
 outdir = Path(args.output)
@@ -22,7 +19,7 @@ else:
     with open(args.input) as f:
         exp_data = [json.loads(l) for l in f]
 
-if outdir.suffix=='.ndjson':
+if outdir.suffix == '.ndjson':
     # empty the file
     with open(outdir, 'w'):
         pass
@@ -38,27 +35,20 @@ for old in tqdm(exp_data):
             continue
         for k, v in old[shape].items():
             for pts in v:
-                new_shapes.append({
-                    'label': k,
-                    'points': pts,
-                    'group_id': None,
-                    'shape_type': shape,
-                    'flags': {}
-                })
+                new_shapes.append({'label': k, 'points': pts, 'group_id': None, 'shape_type': shape, 'flags': {}})
     filepath = Path(old['filepath'])
     stem = filepath.stem
     new = {
         "version": "4.5.7",
-        'flags': {f: True
-                  for f in flags},
+        'flags': {f: True for f in flags},
         'shapes': new_shapes,
         'imagePath': stem + '.jpg',
         'imageData': None,
         'imageHeight': old['imageHeight'],
-        'imageWidth': old['imageWidth']
+        'imageWidth': old['imageWidth'],
     }
 
-    if outdir.suffix=='.ndjson':
+    if outdir.suffix == '.ndjson':
         new['filename'] = stem
         with open(outdir, 'a') as f:
             f.write(json.dumps(new))

@@ -1,4 +1,4 @@
-#%%
+# %%
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -8,7 +8,7 @@ import pandas as pd
 
 data_dir = Path('../../data')
 label_names = ['TL', 'TR', 'BL', 'BR']
-#%%
+# %%
 from PIL import Image
 
 
@@ -22,9 +22,7 @@ for dataset_name in ['spineweb', 'verse']:
             xs, ys = eval(xs), eval(ys)
             plt.scatter(xs, ys, s=2)
         plt.axis('off')
-        plt.gcf().savefig(dataset_name + '.svg',
-                          transparent=True,
-                          bbox_inches='tight')
+        plt.gcf().savefig(dataset_name + '.svg', transparent=True, bbox_inches='tight')
         plt.close()
         break
 # %%

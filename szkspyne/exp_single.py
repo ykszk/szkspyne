@@ -4,6 +4,7 @@ import sys
 
 if os.name == 'posix':
     import matplotlib
+
     matplotlib.use('Agg')
 import argparse
 import json
@@ -43,63 +44,30 @@ torch.backends.cudnn.benchmark = True  # due to random cropping
 
 def main():
     parser = argparse.ArgumentParser(description='Train and Test a fold.')
-    parser.add_argument('--input',
-                        help='Input fold directory: %(default)s',
-                        metavar='<dirname>',
-                        required=True)
-    parser.add_argument('--patience',
-                        help='The patience for early stopping: %(default)s',
-                        metavar='<n>',
-                        type=int,
-                        default=8)
-    parser.add_argument('--batch_size',
-                        help='Batch size: %(default)s',
-                        metavar='<n>',
-                        type=int,
-                        default=4)
-    parser.add_argument('--height',
-                        help='Image height: %(default)s',
-                        metavar='<int>',
-                        type=int,
-                        default=768)
+    parser.add_argument('--input', help='Input fold directory: %(default)s', metavar='<dirname>', required=True)
     parser.add_argument(
-        '--accelerator',
-        help='Accelerator argument for pl.Trainer. default: %(default)s',
-        default='auto')
+        '--patience', help='The patience for early stopping: %(default)s', metavar='<n>', type=int, default=8
+    )
+    parser.add_argument('--batch_size', help='Batch size: %(default)s', metavar='<n>', type=int, default=4)
+    parser.add_argument('--height', help='Image height: %(default)s', metavar='<int>', type=int, default=768)
     parser.add_argument(
-        '--devices',
-        help='devices argument for pl.Trainer. default: %(default)s',
-        default='auto')
+        '--accelerator', help='Accelerator argument for pl.Trainer. default: %(default)s', default='auto'
+    )
+    parser.add_argument('--devices', help='devices argument for pl.Trainer. default: %(default)s', default='auto')
     parser.add_argument(
         '--strategy',
         help='strategy argument for pl.Trainer. default: %(default)s',
-        default='ddp_find_unused_parameters_true')
-    parser.add_argument('--sigma',
-                        help='Sigma: %(default)s',
-                        metavar='<sigma>',
-                        type=float,
-                        default=10.0)
-    parser.add_argument('--crop',
-                        help='Cropping probability in collation: %(default)s',
-                        metavar='<value>',
-                        type=float,
-                        default=.2)
-    parser.add_argument('--max-epochs',
-                        help='Max epochs: %(default)s',
-                        type=int,
-                        default=128)
-    parser.add_argument('--debug',
-                        help='Run in debug mode',
-                        action='store_true')
-    parser.add_argument('--train_cropped',
-                        help='Train for cropped images',
-                        action='store_true')
-    parser.add_argument('--save_best',
-                        help='Save best weights',
-                        action='store_true')
-    parser.add_argument('--clahe',
-                        help='Use CLAHE for image normalization',
-                        action='store_true')
+        default='ddp_find_unused_parameters_true',
+    )
+    parser.add_argument('--sigma', help='Sigma: %(default)s', metavar='<sigma>', type=float, default=10.0)
+    parser.add_argument(
+        '--crop', help='Cropping probability in collation: %(default)s', metavar='<value>', type=float, default=0.2
+    )
+    parser.add_argument('--max-epochs', help='Max epochs: %(default)s', type=int, default=128)
+    parser.add_argument('--debug', help='Run in debug mode', action='store_true')
+    parser.add_argument('--train_cropped', help='Train for cropped images', action='store_true')
+    parser.add_argument('--save_best', help='Save best weights', action='store_true')
+    parser.add_argument('--clahe', help='Use CLAHE for image normalization', action='store_true')
 
     parser = pretrained_models.LitSMP.add_model_specific_args(parser)
 
@@ -112,8 +80,7 @@ def main():
     with open(outroot / 'args.json', 'w') as f:
         json.dump(args.__dict__, f, indent=2)
 
-    NUM_WORKERS = len(
-        os.sched_getaffinity(0)) - 1  #2 if os.name == 'nt' else 0
+    NUM_WORKERS = len(os.sched_getaffinity(0)) - 1  # 2 if os.name == 'nt' else 0
     NUM_WORKERS = min(NUM_WORKERS, 8)
     logger.info('workers %d', NUM_WORKERS)
     EPOCHS = 1 if DEBUG else args.max_epochs
@@ -127,8 +94,7 @@ def main():
     df_val = pd.read_pickle(indir / 'valset.pkl')
     df_test = pd.read_pickle(indir / 'testset.pkl')
     outdir = indir
-    logger.info('train, val, test = %d, %d, %d', len(df_train), len(df_val),
-                len(df_test))
+    logger.info('train, val, test = %d, %d, %d', len(df_train), len(df_val), len(df_test))
 
     logger.info('Create model')
     n_chs = 1
@@ -140,13 +106,14 @@ def main():
     if os.getenv("LOCAL_RANK", '0') == '0':
         lit_model.summary([BATCH_SIZE, n_chs, height, height])
         import pickle
+
         with open(outdir / 'model_hparams.pickle', 'wb') as f:
             pickle.dump(lit_model.hparams, f)
 
     logger.info('load train set')
-    train_xs, train_kps = exp_utils.load_dataset(df_train, height, data_root,
-                                                 LABEL_NAMES, NUM_WORKERS,
-                                                 down_factor, args.clahe)
+    train_xs, train_kps = exp_utils.load_dataset(
+        df_train, height, data_root, LABEL_NAMES, NUM_WORKERS, down_factor, args.clahe
+    )
     logger.info('Pad to %s', train_xs[0].shape)
 
     assert train_kps[0][0].size != 0, 'no points in the dataset'
@@ -154,26 +121,24 @@ def main():
         train_xs, train_kps = train_xs + train_xs, train_kps + train_kps  # TODO: remove
     logger.info('train size %d', len(train_xs))
     logger.info('load val set')
-    val_xs, val_kps = exp_utils.load_dataset(df_val, height, data_root,
-                                             LABEL_NAMES, NUM_WORKERS,
-                                             down_factor, args.clahe)
+    val_xs, val_kps = exp_utils.load_dataset(
+        df_val, height, data_root, LABEL_NAMES, NUM_WORKERS, down_factor, args.clahe
+    )
     logger.info('Pad to %s', val_xs[0].shape)
     logger.info('val size %d', len(val_xs))
     flip_pairs = FLIP_PAIRS
 
-    loader_kwargs = dict(batch_size=BATCH_SIZE,
-                         pin_memory=True,
-                         num_workers=NUM_WORKERS,
-                         persistent_workers=True,
-                         prefetch_factor=2)
+    loader_kwargs = dict(
+        batch_size=BATCH_SIZE, pin_memory=True, num_workers=NUM_WORKERS, persistent_workers=True, prefetch_factor=2
+    )
     dataset = point_utils.KeypointDataset(
         train_xs,
         train_kps,
         None,
         flip_pairs,
-        transforms.random_crop_transform
-        if args.train_cropped else transforms.random_transform,
-        sigma=SIGMA)
+        transforms.random_crop_transform if args.train_cropped else transforms.random_transform,
+        sigma=SIGMA,
+    )
     train_loader = DataLoader(
         dataset,
         shuffle=True,
@@ -189,33 +154,30 @@ def main():
         val_kps,
         None,
         flip_pairs,
-        transforms.base_crop_transform
-        if args.train_cropped else transforms.base_kps_transform,
-        sigma=SIGMA)
-    val_loader = DataLoader(dataset,
-                            shuffle=False,
-                            drop_last=True,
-                            **loader_kwargs)
+        transforms.base_crop_transform if args.train_cropped else transforms.base_kps_transform,
+        sigma=SIGMA,
+    )
+    val_loader = DataLoader(dataset, shuffle=False, drop_last=True, **loader_kwargs)
 
     import pytorch_lightning as pl
     from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
     from pytorch_lightning.loggers import CSVLogger, WandbLogger
-    early_stop_callback = EarlyStopping(monitor='val_loss',
-                                        patience=args.patience,
-                                        verbose=False,
-                                        mode='min')
+
+    early_stop_callback = EarlyStopping(monitor='val_loss', patience=args.patience, verbose=False, mode='min')
     mc = ModelCheckpoint(monitor='val_loss', dirpath=outdir / 'checkpoint')
     csv_logger = CSVLogger(str(outdir), name='logs')
     wandb_logger = WandbLogger(project='scoliosis', name='/'.join(outdir.parts[-2:]), config=args)
     precision = 16 if args.accelerator != 'cpu' else 32
-    trainer = pl.Trainer(accelerator=args.accelerator,
-                         devices=args.devices,
-                         precision=precision,
-                         strategy=args.strategy,
-                         max_epochs=EPOCHS,
-                         logger=[wandb_logger, csv_logger],
-                         log_every_n_steps=len(train_loader) // 8,
-                         callbacks=[early_stop_callback, mc])
+    trainer = pl.Trainer(
+        accelerator=args.accelerator,
+        devices=args.devices,
+        precision=precision,
+        strategy=args.strategy,
+        max_epochs=EPOCHS,
+        logger=[wandb_logger, csv_logger],
+        log_every_n_steps=len(train_loader) // 8,
+        callbacks=[early_stop_callback, mc],
+    )
 
     logger.info('Compile model')
     torch.compile(lit_model, mode="reduce-overhead")
@@ -234,23 +196,18 @@ def main():
         if len(df_logs) > 1:
             df_logs = df_logs.iloc[1:]
         exp_utils.plot_history(df_logs)
-        plt.gcf().savefig(str(outdir / 'history.png'),
-                          transparent=True,
-                          bbox_inches='tight')
+        plt.gcf().savefig(str(outdir / 'history.png'), transparent=True, bbox_inches='tight')
         plt.clf()
     except Exception as e:
         logger.error('Failed to plot history: %s', e)
 
-    test_xs, test_kps = exp_utils.load_dataset(df_test, height, data_root,
-                                               LABEL_NAMES, NUM_WORKERS,
-                                               down_factor, args.clahe)
+    test_xs, test_kps = exp_utils.load_dataset(
+        df_test, height, data_root, LABEL_NAMES, NUM_WORKERS, down_factor, args.clahe
+    )
     logger.info('test size %d', len(test_xs))
 
     dataset = point_utils.ImageDataset(test_xs, transforms.test_transform)
-    test_loader = DataLoader(dataset,
-                             shuffle=False,
-                             drop_last=False,
-                             **loader_kwargs)
+    test_loader = DataLoader(dataset, shuffle=False, drop_last=False, **loader_kwargs)
     # xs = next(iter(test_loader))
     # mhd.write('tmp_test_xs.mha', xs.cpu().numpy())
     logger.info('Load weight:%s', mc.best_model_path)
@@ -258,16 +215,11 @@ def main():
     logger.info('Start test')
 
     # create new trainer with `devices=1`
-    trainer = pl.Trainer(
-        accelerator=args.accelerator,
-        devices=1,  #args.devices,
-        precision=precision)
+    trainer = pl.Trainer(accelerator=args.accelerator, devices=1, precision=precision)  # args.devices,
     #  logger=csv_logger,
     #  log_every_n_steps=len(train_loader)//8,
     #  callbacks=[early_stop_callback, mc])
-    y_preds = trainer.predict(model=lit_model,
-                              dataloaders=test_loader,
-                              ckpt_path=None)
+    y_preds = trainer.predict(model=lit_model, dataloaders=test_loader, ckpt_path=None)
     # y_preds = []
     # with torch.no_grad():
     #     y_preds.append(trainer.predict(dataloaders=test_loader, ckpt_path=None))
@@ -276,19 +228,13 @@ def main():
     from szkspyne.settings import PROB_MAX
 
     # to channel last
-    y_preds = [
-        (PROB_MAX * y_pred).permute(
-            (0, 2, 3, 1)).type(torch.ShortTensor)  # type: ignore
-        for y_pred in y_preds
-    ]
+    y_preds = [(PROB_MAX * y_pred).permute((0, 2, 3, 1)).type(torch.ShortTensor) for y_pred in y_preds]  # type: ignore
     logger.info('minmax after prob_max: %s, %s', y_preds[0].min(), y_preds[1].max())
     y_preds = torch.cat(y_preds, 0).cpu().numpy().astype(np.int16)
     # y_preds = np.concatenate(y_preds, axis=0)
     logger.info('End test')
     if args.save_best:
-        torch.save(
-            lit_model.model.to('cpu').state_dict(),
-            outdir / 'best_weights.pth')
+        torch.save(lit_model.model.to('cpu').state_dict(), outdir / 'best_weights.pth')
     # y_preds = np.moveaxis(y_preds, 1, -1).copy()  # to channel last
     test_data = labelme_utils.load_ndjson(outdir / 'test.ndjson')
     for image_type in ['ap_whole', 'lateral_whole']:
@@ -298,8 +244,7 @@ def main():
             if data['image_type'] == image_type:
                 indices.append(i)
         y_preds_it = y_preds[indices].copy()
-        mhd.write(outdir / f'y_pred_{image_type}.mha', y_preds_it,
-                  {'ElementNumberOfChannels': y_preds_it.shape[-1]})
+        mhd.write(outdir / f'y_pred_{image_type}.mha', y_preds_it, {'ElementNumberOfChannels': y_preds_it.shape[-1]})
         it_data = [test_data[i] for i in indices]
         labelme_utils.save_ndjson(it_data, outdir / f'test_{image_type}.ndjson')
     logger.info('End saving results')

@@ -15,29 +15,18 @@ from sklearn.model_selection import KFold
 
 def main():
     parser = argparse.ArgumentParser(description='Train and Test.')
-    parser.add_argument('--output',
-                        help='Output directory',
-                        metavar='<dirname>',
-                        required=True)
-    parser.add_argument('--fold',
-                        help='The number of folds in k-fold CV: %(default)s',
-                        metavar='<n>',
-                        type=int,
-                        default=5)
-    parser.add_argument('--debug',
-                        help='Run in debug mode',
-                        action='store_true')
-    parser.add_argument('--ndjson',
-                        help='Specify input ndjson',
-                        default='script/manual_annotation.ndjson')
-    parser.add_argument('--seed',
-                        help='random state for splitting',
-                        default=2022)
+    parser.add_argument('--output', help='Output directory', metavar='<dirname>', required=True)
+    parser.add_argument(
+        '--fold', help='The number of folds in k-fold CV: %(default)s', metavar='<n>', type=int, default=5
+    )
+    parser.add_argument('--debug', help='Run in debug mode', action='store_true')
+    parser.add_argument('--ndjson', help='Specify input ndjson', default='script/manual_annotation.ndjson')
+    parser.add_argument('--seed', help='random state for splitting', default=2022)
     parser.add_argument(
         '--holdout',
-        help=
-        'Perform hold-out cross validation. Test fold is used as validation fold. Use this to train a model for deployment',
-        action='store_true')
+        help='Perform hold-out cross validation. Test fold is used as validation fold. Use this to train a model for deployment',
+        action='store_true',
+    )
 
     args = parser.parse_args()
     DEBUG = args.debug
@@ -67,8 +56,7 @@ def main():
     logger.info('Unique pid count %d', len(pids))
     K_FOLD = args.fold
     df_all['set_id'] = -1
-    kfold = KFold(n_splits=K_FOLD, shuffle=True,
-                  random_state=args.seed)  #None if args.debug else 2022)
+    kfold = KFold(n_splits=K_FOLD, shuffle=True, random_state=args.seed)  # None if args.debug else 2022)
     for set_id, (_, test_index) in enumerate(kfold.split(pids)):
         idset = set(pids[test_index])
         df_all.loc[df_all['pid'].map(lambda e: e in idset), 'set_id'] = set_id
@@ -90,13 +78,9 @@ def main():
             non_test_pids = df_train['pid'].unique()
             test_pids = set(pids) - set(non_test_pids)
             rng = np.random.RandomState(args.seed)
-            val_pids = set(
-                rng.choice(non_test_pids,
-                           size=int(0.1 * len(non_test_pids)),
-                           replace=False))
+            val_pids = set(rng.choice(non_test_pids, size=int(0.1 * len(non_test_pids)), replace=False))
             train_pids = set(pids) - val_pids
-            print('sizes pids, train_pids, val_pids', len(pids),
-                  len(train_pids), len(val_pids))
+            print('sizes pids, train_pids, val_pids', len(pids), len(train_pids), len(val_pids))
             df_val = df_train[df_train['pid'].map(lambda e: e in val_pids)]
             df_train = df_train[df_train['pid'].map(lambda e: e in train_pids)]
         if True:  # create ndjson files for post processing
@@ -107,8 +91,7 @@ def main():
                 all_data = [json.loads(l) for l in f.readlines()]
             valid_imgs = set(df_all['filepath'])
             print('all raw data', len(all_data))
-            all_data = list(
-                filter(lambda d: d['filepath'] in valid_imgs, all_data))
+            all_data = list(filter(lambda d: d['filepath'] in valid_imgs, all_data))
             print('all filtered data', len(all_data))
             # all_data = list(
             #     filter(
@@ -137,12 +120,13 @@ def main():
         assert df_test['pid'].nunique() == len(
             test_pids
         ), f'Size mismatch {df_test["pid"].nunique()} vs {len(test_pids)}'
-        assert isinstance(df_train, pd.DataFrame) and isinstance(
-            df_val, pd.DataFrame) and isinstance(df_test, pd.DataFrame)
-        logger.info('train, val, test = %d, %d, %d', len(df_train),
-                    len(df_val), len(df_test))
-        for df_sub, name in ((df_train, 'train'), (df_val, 'val'), (df_test,
-                                                                    'test')):
+        assert (
+            isinstance(df_train, pd.DataFrame)
+            and isinstance(df_val, pd.DataFrame)
+            and isinstance(df_test, pd.DataFrame)
+        )
+        logger.info('train, val, test = %d, %d, %d', len(df_train), len(df_val), len(df_test))
+        for df_sub, name in ((df_train, 'train'), (df_val, 'val'), (df_test, 'test')):
             df_sub.to_csv(outdir / f'{name}set.csv', index=False)
             df_sub.to_pickle(outdir / f'{name}set.pkl')
         # df_train.to_csv(outdir / 'trainset.csv', index=False)

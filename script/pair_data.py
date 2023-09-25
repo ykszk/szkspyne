@@ -1,4 +1,4 @@
-#%%
+# %%
 import argparse
 import json
 import sys
@@ -11,22 +11,17 @@ import pandas as pd
 
 
 parser = argparse.ArgumentParser(description='Pair pre-op left-right bend.')
-parser.add_argument(
-    'root',
-    help='root directory',
-    metavar='<input>')
+parser.add_argument('root', help='root directory', metavar='<input>')
 args = parser.parse_args()
 data_dir = Path(args.root)
 
 with open(data_dir / 'manual_annotation.ndjson') as f:
     all_data = [json.loads(l) for l in f]
 exclude_flags = set(['除外', '側面右向き'])
+all_data = list(filter(lambda d: len(exclude_flags.intersection(d['flags'])) == 0, all_data))
 all_data = list(
-    filter(lambda d: len(exclude_flags.intersection(d['flags'])) == 0,
-           all_data))
-all_data = list(
-    filter(lambda d: (not d['filepath'].startswith('SSS')) and (not d['filepath'].startswith('CLO')),
-           all_data))
+    filter(lambda d: (not d['filepath'].startswith('SSS')) and (not d['filepath'].startswith('CLO')), all_data)
+)
 print('all data', len(all_data))
 # %%
 ap_data = [d for d in all_data if d['image_type'] == 'ap_whole']
@@ -43,10 +38,9 @@ for d in ap_data:
     d.pop('imageWidth', None)
     d.pop('imageHeight', None)
 print('ap data', len(ap_data))
-#%% flexion pairs
+# %% flexion pairs
 df = pd.DataFrame(ap_data)
-df.sort_values('filepath',
-               inplace=True)  # sort by PatientID, StudyDate, SeriesID
+df.sort_values('filepath', inplace=True)  # sort by PatientID, StudyDate, SeriesID
 required_flags = set(['術前', '左屈', '右屈'])
 complete_pids = []
 completes = []
@@ -73,22 +67,17 @@ def flags2id(flgs: List[str]):
 
 
 df_complete['pose_id'] = df_complete['flags'].map(lambda flgs: flags2id(flgs))
-df_complete['gai'] = df_complete['flags'].map(lambda flgs: 0
-                                              if '臥位' in flgs else 1)
+df_complete['gai'] = df_complete['flags'].map(lambda flgs: 0 if '臥位' in flgs else 1)
 df_complete.sort_values(['PatientID', 'pose_id', 'gai'], inplace=True)
 df_complete.reset_index(drop=True, inplace=True)
-df_complete.drop_duplicates(['PatientID', 'StudyDate', 'pose_id'],
-                            inplace=True)
+df_complete.drop_duplicates(['PatientID', 'StudyDate', 'pose_id'], inplace=True)
 del df_complete['gai']
 print('complete pids', len(complete_pids))
-df_complete.to_csv(data_dir / 'ap_flex_completed_set.csv',
-                   index=False,
-                   encoding='utf8')
+df_complete.to_csv(data_dir / 'ap_flex_completed_set.csv', index=False, encoding='utf8')
 df_complete.head(10)
 
-#%% pre-/post-op pairs
-df = pd.DataFrame(
-    [d for d in ap_data if '左屈' not in d['flags'] and '右屈' not in d['flags']])
+# %% pre-/post-op pairs
+df = pd.DataFrame([d for d in ap_data if '左屈' not in d['flags'] and '右屈' not in d['flags']])
 required_flags = set(['術前', '術後'])
 complete_pids = []
 completes = []
@@ -109,10 +98,9 @@ for pid, df_pid in df.groupby('PatientID'):
         pairs = list(itertools.product(pre_indices, post_indices))
         diffs = []
         for pre_idx, post_idx in pairs:
-            post, pre = datetime.strptime(df_pid.loc[post_idx, 'StudyDate'],
-                                          '%Y%m%d'), datetime.strptime(
-                                              df_pid.loc[pre_idx, 'StudyDate'],
-                                              '%Y%m%d')
+            post, pre = datetime.strptime(df_pid.loc[post_idx, 'StudyDate'], '%Y%m%d'), datetime.strptime(
+                df_pid.loc[pre_idx, 'StudyDate'], '%Y%m%d'
+            )
             d = post - pre
             diffs.append(d)
         # print(diffs, np.min(diffs))
@@ -123,8 +111,6 @@ for pid, df_pid in df.groupby('PatientID'):
     complete_pids.append(pid)
 df_complete = pd.concat(completes, axis=0, ignore_index=True)
 df_complete.sort_values(['PatientID', 'StudyDate'], inplace=True)
-df_complete.to_csv(data_dir / 'ap_op_completed_set.csv',
-                   index=False,
-                   encoding='utf8')
+df_complete.to_csv(data_dir / 'ap_op_completed_set.csv', index=False, encoding='utf8')
 
 sys.exit(0)

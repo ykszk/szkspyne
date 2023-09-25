@@ -11,8 +11,7 @@ import argparse
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description='Convert heatmap to png images in sqlite3 database.')
+    parser = argparse.ArgumentParser(description='Convert heatmap to png images in sqlite3 database.')
     parser.add_argument('heatmap', help='heatmap mhd filename')
     parser.add_argument('ndjson', help='ndjson with filename keys')
     parser.add_argument('output', help='output sqlite3 database name')
@@ -23,22 +22,23 @@ def main():
     ndjson = labelme_utils.load_ndjson(args.ndjson)
     conn = sqlite3.connect(args.output)
     cursor = conn.cursor()
-    cursor.execute('''
+    cursor.execute(
+        '''
         CREATE TABLE IF NOT EXISTS image (
             name TEXT PRIMARY KEY,
             binary BLOB
         )
-    ''')
+    '''
+    )
     conn.commit()
 
     for jobj, hm in tqdm(zip(ndjson, heatmaps), total=len(heatmaps)):
-        width = int(
-            round(jobj['imageWidth'] * hm.shape[0] / jobj['imageHeight']))
+        width = int(round(jobj['imageWidth'] * hm.shape[0] / jobj['imageHeight']))
         hm = hm[:, :width]
         hm = hm / hm.max()
-        r = hm[..., :2].max(axis=-1) # TL and TR
-        g = hm[..., 2:4].max(axis=-1) # BL and BR
-        b = hm[..., 4:].max(axis=-1) # others
+        r = hm[..., :2].max(axis=-1)  # TL and TR
+        g = hm[..., 2:4].max(axis=-1)  # BL and BR
+        b = hm[..., 4:].max(axis=-1)  # others
         rgb = np.stack((r, g, b), axis=-1)
         alpha = rgb.max(axis=-1)
         rgba = np.concatenate((rgb, alpha[..., np.newaxis]), axis=-1)
@@ -51,7 +51,9 @@ def main():
         cursor.execute(
             '''
         REPLACE INTO image (name, binary) VALUES (?, ?)
-    ''', (filename, binary))
+    ''',
+            (filename, binary),
+        )
         conn.commit()
 
     conn.close()

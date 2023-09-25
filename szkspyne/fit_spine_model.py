@@ -44,15 +44,14 @@ def trim_bottom_right(arr: np.ndarray, margin):
     Args:
         arr: ndarray
     '''
-    n_keep_dims = arr.ndim-2
-    xy_bbox = boundingbox.bbox(arr.max(axis=tuple(range(n_keep_dims)))>0)
+    n_keep_dims = arr.ndim - 2
+    xy_bbox = boundingbox.bbox(arr.max(axis=tuple(range(n_keep_dims))) > 0)
     bbox_max = np.concatenate([arr.shape[:n_keep_dims], xy_bbox[1]], axis=0)
     topleft_bbox = (np.zeros_like(bbox_max), bbox_max)
     return boundingbox.crop(arr, topleft_bbox, margin=margin)
 
 
 class TorchPCA(nn.Module):
-
     def __init__(self, filename):
         super().__init__()
         with np.load(filename) as a:
@@ -63,19 +62,17 @@ class TorchPCA(nn.Module):
         self.model_name = str(pca['model_name'])
         if pca['point_format'] != 'xy':
             raise NotImplementedError
-        self.mean = nn.parameter.Parameter(torch.from_numpy(
-            np.flip(pca['mean'].reshape(-1, 2),
-                    axis=1).ravel().astype(np.float32)),
-                                           requires_grad=False)
+        self.mean = nn.parameter.Parameter(
+            torch.from_numpy(np.flip(pca['mean'].reshape(-1, 2), axis=1).ravel().astype(np.float32)),
+            requires_grad=False,
+        )
         components = pca['components']
-        components = np.flip(components.reshape(components.shape[0], -1, 2),
-                             axis=-1).reshape(components.shape)
+        components = np.flip(components.reshape(components.shape[0], -1, 2), axis=-1).reshape(components.shape)
         self.components = torch.from_numpy(components.astype(np.float32))
-        scaled_components = components * np.sqrt(
-            pca['explained_variance'])[:, np.newaxis]
-        self.scaled_components = nn.parameter.Parameter(torch.from_numpy(
-            scaled_components.astype(np.float32)),
-                                                        requires_grad=False)
+        scaled_components = components * np.sqrt(pca['explained_variance'])[:, np.newaxis]
+        self.scaled_components = nn.parameter.Parameter(
+            torch.from_numpy(scaled_components.astype(np.float32)), requires_grad=False
+        )
         point_counts = pca['point_counts']
         self.split = [0] + np.cumsum(2 * point_counts).tolist()
 
@@ -91,9 +88,7 @@ class TorchPCA(nn.Module):
         '''
         warp model in the reference space
         '''
-        return self.mean + torch.sum(
-            torch.unsqueeze(coefs, 1) * self.scaled_components[:len(coefs)],
-            dim=0)
+        return self.mean + torch.sum(torch.unsqueeze(coefs, 1) * self.scaled_components[: len(coefs)], dim=0)
 
     def unravel(self, vec):
         '''
@@ -108,16 +103,15 @@ class TorchPCA(nn.Module):
 
 
 class PointAlignModel(nn.Module):
-
     def __init__(self, pca: TorchPCA, n_comps: int, top_anchor, bottom_anchor, use_bicubic=False):
         super().__init__()
-        self.coefs = nn.parameter.Parameter(
-            torch.zeros([n_comps], dtype=torch.float32, requires_grad=True))
+        self.coefs = nn.parameter.Parameter(torch.zeros([n_comps], dtype=torch.float32, requires_grad=True))
         self.pca = pca
         self.top_anchor = top_anchor
         self.bottom_anchor = bottom_anchor
         self.use_bicubic = use_bicubic
         self.space_map = PointsPCA(pca.pca['ref_height'])
+
         # convert (x, y) to (y, x)
         def trans_mat(mat):
             yx_mat = np.zeros_like(mat)
@@ -127,12 +121,11 @@ class PointAlignModel(nn.Module):
             # yx_mat[:, 0], yx_mat[:, 1] = mat[:, 1], mat[:, 0]
             # yx_mat[:2, 2] = mat[:2, 2]
             return yx_mat
-        mat_ref2pt = trans_mat(self.space_map.to_target_mat(
-            top_anchor[::-1], bottom_anchor[::-1]).astype(np.float32))
+
+        mat_ref2pt = trans_mat(self.space_map.to_target_mat(top_anchor[::-1], bottom_anchor[::-1]).astype(np.float32))
         self.mat_ref2pt = nn.parameter.Parameter(torch.from_numpy(mat_ref2pt))
         self.mat_ref2pt.requires_grad = False
-        mat_pt2ref = trans_mat(self.space_map.to_ref_mat(
-            top_anchor[::-1], bottom_anchor[::-1]).astype(np.float32))
+        mat_pt2ref = trans_mat(self.space_map.to_ref_mat(top_anchor[::-1], bottom_anchor[::-1]).astype(np.float32))
         self.mat_pt2ref = nn.parameter.Parameter(torch.from_numpy(mat_pt2ref))
         self.mat_pt2ref.requires_grad = False
 
@@ -146,7 +139,7 @@ class PointAlignModel(nn.Module):
         vec2d = vec.reshape(-1, 2)
         pt_vec2d = self.mat_ref2pt[:2, :2] @ vec2d.T + self.mat_ref2pt[:2, 2].unsqueeze(1)
         return pt_vec2d.T.ravel()
-    
+
     def pt2ref(self, vec):
         '''
         Map points from patient space to reference space
@@ -155,13 +148,12 @@ class PointAlignModel(nn.Module):
         ref_vec2d = self.mat_pt2ref[:2, :2] @ vec2d.T + self.mat_pt2ref[:2, 2].unsqueeze(1)
         return ref_vec2d.T
 
-
     def warp(self):
         '''
         warp model in the patient space
         '''
         return self.ref2pt(self.pca.warp(self.coefs))
-    
+
     def reduce(self, vec: torch.Tensor):
         '''
         Calculate and update pc coefficients
@@ -170,13 +162,12 @@ class PointAlignModel(nn.Module):
             vec: 2d tensor of (y, x) points in reference space
         '''
         ref_points = self.pt2ref(vec.ravel())
-        ref_points = ref_points#.detach().cpu().numpy()
+        ref_points = ref_points  # .detach().cpu().numpy()
         # ref_points = torch.flip(ref_points, dims=(1,)) # (y, x) to (x, y)
         flat_points = ref_points.ravel() - self.pca.mean
-        projs = torch.matmul(flat_points, self.pca.components.T)#pca['components'])
+        projs = torch.matmul(flat_points, self.pca.components.T)  # pca['components'])
         projs = projs / torch.sqrt(torch.Tensor(self.pca.pca['explained_variance']))
-        self.coefs = torch.nn.parameter.Parameter(torch.Tensor(projs[:len(self.coefs)]))
-
+        self.coefs = torch.nn.parameter.Parameter(torch.Tensor(projs[: len(self.coefs)]))
 
     def parameters(self):
         return [self.coefs]
@@ -191,16 +182,16 @@ class PointAlignModel(nn.Module):
             else:
                 probas.append(bicubic(ch, pts))
         return probas
-    
+
     def icp_loss(self, points):
         warped = self.pca.unravel(self.warp())
         distances = []
         assert len(points) == len(warped)
         for ref, pts in zip(points, warped):
             m_dist = torch.cdist(ref, pts, p=2)
-            if len(pts)>=len(ref):
+            if len(pts) >= len(ref):
                 # `dim=1` to only count ref to pts distances
-                min_dists = torch.min(m_dist, dim=1, keepdim=False)[0] # [0] to ignore returned indices
+                min_dists = torch.min(m_dist, dim=1, keepdim=False)[0]  # [0] to ignore returned indices
             else:
                 min_dists = torch.min(m_dist, dim=0, keepdim=False)[0]
             distances.append(min_dists)
@@ -210,8 +201,7 @@ class PointAlignModel(nn.Module):
         '''
         t_points: list of (y, x) coordinates in patient space
         '''
-        optimizer = Adam([self.coefs],
-                            lr=lr, weight_decay=0.1)
+        optimizer = Adam([self.coefs], lr=lr, weight_decay=0.1)
 
         history = []
         best_loss = np.finfo(np.float64).max
@@ -232,7 +222,8 @@ class PointAlignModel(nn.Module):
             loss.backward()
             optimizer.step()
         return loss.detach()
-    
+
+
 def calculate_anchors(anchor_maps):
     '''
     Args:
@@ -255,79 +246,54 @@ def calculate_anchors(anchor_maps):
 
 def main():
     import argparse
-    parser = argparse.ArgumentParser(
-        description='Fit PCA point model to the given heatmap.')
+
+    parser = argparse.ArgumentParser(description='Fit PCA point model to the given heatmap.')
     parser.add_argument(
         'input',
-        help=
-        'Either (1) an input data directory containing json and mha pairs or (2) an input njson and a mha',
+        help='Either (1) an input data directory containing json and mha pairs or (2) an input njson and a mha',
         metavar='<input>',
-        nargs='+')
+        nargs='+',
+    )
+    parser.add_argument('--output', help='Output directory. Use input directory by default.')
+    parser.add_argument('-m', '--model', help='PCA model filename(s).', nargs='+')
+    parser.add_argument('--sigma', help='Sigma value(s) for heatmap blurring.', nargs='+', type=float, default=[10, 1])
+    parser.add_argument('--lr', help='Initial learning rate. default: %(default)s', type=float, default=0.1)
     parser.add_argument(
-        '--output', help='Output directory. Use input directory by default.')
-    parser.add_argument('-m',
-                        '--model',
-                        help='PCA model filename(s).',
-                        nargs='+')
-    parser.add_argument('--sigma',
-                        help='Sigma value(s) for heatmap blurring.',
-                        nargs='+',
-                        type=float,
-                        default=[10, 1])
-    parser.add_argument('--lr',
-                        help='Initial learning rate. default: %(default)s',
-                        type=float,
-                        default=0.1)
-    parser.add_argument('--icp_lr',
-                        help='Initial learning rate for ICP. default: %(default)s',
-                        type=float,
-                        default=0.1)
+        '--icp_lr', help='Initial learning rate for ICP. default: %(default)s', type=float, default=0.1
+    )
     parser.add_argument(
-        '--max_iter',
-        help=
-        'The maximum number of iteration for fitting. default: %(default)s',
-        type=int,
-        default=200)
+        '--max_iter', help='The maximum number of iteration for fitting. default: %(default)s', type=int, default=200
+    )
+    parser.add_argument('--patience', help='Patience for early stopping. default: %(default)s', type=int, default=20)
     parser.add_argument(
-        '--patience',
-        help='Patience for early stopping. default: %(default)s',
-        type=int,
-        default=20)
-    parser.add_argument('--contr_rate',
-                        help='Contribution rate for PCA. default: %(default)s',
-                        type=float,
-                        default=0.999)
+        '--contr_rate', help='Contribution rate for PCA. default: %(default)s', type=float, default=0.999
+    )
     parser.add_argument(
         '--l2_reg',
-        help=
-        'Coefficient for the L2 regularization term (weight decay). default: %(default)s',
+        help='Coefficient for the L2 regularization term (weight decay). default: %(default)s',
         type=float,
-        default=0.01)
-    parser.add_argument('--skipped',
-                        help='Optional argument',
-                        metavar='<name>')
+        default=0.01,
+    )
+    parser.add_argument('--skipped', help='Optional argument', metavar='<name>')
     parser.add_argument('--device', help='Device for pytorch')
-    parser.add_argument('--channel_first',
-                        help='Heatmap is in channel-first format',
-                        action='store_true')
-    parser.add_argument('--bicubic',
-                        help='Use bicubic interpolation instead of bilinear interpolation',
-                        action='store_true')
-    parser.add_argument('--skip_complete',
-                        help='Skip fitting if given set of points is complete (i.e. the number of points matches expected number of points).',
-                        action='store_true')
-    parser.add_argument('--skip_model',
-                        help='Skip model that has less points than the number of points in the json.',
-                        action='store_true')
+    parser.add_argument('--channel_first', help='Heatmap is in channel-first format', action='store_true')
     parser.add_argument(
-        '--threads',
-        help='Integer value for torch.set_num_threads(). default: %(default)d',
-        type=int,
-        default=1)
-    parser.add_argument('--jobs',
-                        help='The number of jobs. default: %(default)d',
-                        type=int,
-                        default=4)
+        '--bicubic', help='Use bicubic interpolation instead of bilinear interpolation', action='store_true'
+    )
+    parser.add_argument(
+        '--skip_complete',
+        help='Skip fitting if given set of points is complete (i.e. the number of points matches expected number of points).',
+        action='store_true',
+    )
+    parser.add_argument(
+        '--skip_model',
+        help='Skip model that has less points than the number of points in the json.',
+        action='store_true',
+    )
+    parser.add_argument(
+        '--threads', help='Integer value for torch.set_num_threads(). default: %(default)d', type=int, default=1
+    )
+    parser.add_argument('--jobs', help='The number of jobs. default: %(default)d', type=int, default=4)
 
     logger.setLevel(os.environ.get('LOGLEVEL', 'INFO').upper())
     args, unknown = parser.parse_known_args()
@@ -351,9 +317,9 @@ def main():
         logger.setLevel(os.environ.get('LOGLEVEL', 'INFO').upper())
         kps = measure_utils.get_point_dict(original_json)
         heatmap_height = heatmaps.shape[1]
-        s = heatmap_height / original_json['imageHeight'] # scale to heatmap
-        vert_points = [s * np.flip(kps[l], 1).copy() for l in settings.VERTEBRA_LABEL_NAMES] # (x, y) to (y, x)
-        vert_points = [vp[vp[:, 0].argsort()] for vp in vert_points] # sort by y
+        s = heatmap_height / original_json['imageHeight']  # scale to heatmap
+        vert_points = [s * np.flip(kps[l], 1).copy() for l in settings.VERTEBRA_LABEL_NAMES]  # (x, y) to (y, x)
+        vert_points = [vp[vp[:, 0].argsort()] for vp in vert_points]  # sort by y
         vert_points_count = np.array([len(p) for p in vert_points])
         if args.skip_complete:
             for pca in pca_models:
@@ -362,15 +328,15 @@ def main():
                     kps = measure_utils.get_point_dict(original_json)
                     kps = measure_utils.sort_kps(kps)
                     for label in kps.keys():
-                        kps[label] = np.flip(kps[label], axis=1) # xy -> yx because kps2shapes's input is in yx format
+                        kps[label] = np.flip(kps[label], axis=1)  # xy -> yx because kps2shapes's input is in yx format
                     [kps.pop(label, None) for label in ['C7-TL', 'C7-TR', 'S-TL', 'S-TR']]
                     original_json['shapes'] = labelme_utils.kps2shapes(list(kps.values()), list(kps.keys()))
                     original_json['flags'][pca.model_name] = True
                     original_json['flags']['PCA'] = False
                     original_json['pca'] = {}
-                        
+
                     return original_json
-        if h_flip:  #h_flip:  # horizontal flip
+        if h_flip:  # h_flip:  # horizontal flip
             heatmaps = np.flip(heatmaps, axis=2)
         heatmaps = trim_bottom_right(heatmaps, 4)
 
@@ -384,14 +350,12 @@ def main():
         d_t_heatmaps = {}
         for blur_sigma in args.sigma:
             if blur_sigma == 0:
-                blurred_hm = heatmaps[:len(pca_models[0].labels)]
+                blurred_hm = heatmaps[: len(pca_models[0].labels)]
             else:
-                blurred_hm = np.array([
-                    gaussian_filter(hm, blur_sigma)
-                    for hm in heatmaps[:len(pca_models[0].labels)]
-                ])
-            blurred_hm = (blurred_hm / settings.PROB_MAX).astype(
-                np.float32)
+                blurred_hm = np.array(
+                    [gaussian_filter(hm, blur_sigma) for hm in heatmaps[: len(pca_models[0].labels)]]
+                )
+            blurred_hm = (blurred_hm / settings.PROB_MAX).astype(np.float32)
             blurred_hm = np.clip(blurred_hm, 0.001, None)
             t_heatmaps = torch.FloatTensor(blurred_hm).to(device)
             t_heatmaps.requires_grad = True
@@ -410,17 +374,19 @@ def main():
             t_vert_points = [torch.Tensor(p).to(device) for p in vert_points]
             if np.all(vert_points_count == np.array(pca.pca['point_counts'])):
                 pt_pca.reduce(torch.concatenate(t_vert_points, dim=0))
-                histories.append({'name':f'{name}-reduce', 'history':[], 'coefs': pt_pca.coefs.detach().numpy().tolist()})
+                histories.append(
+                    {'name': f'{name}-reduce', 'history': [], 'coefs': pt_pca.coefs.detach().numpy().tolist()}
+                )
                 results.append((name, 100, pt_pca.coefs.detach().cpu(), pca, []))
                 # continue
             else:
                 best_loss = pt_pca.icp(t_vert_points, args.icp_lr, args.max_iter, args.patience)
-                histories.append({'name':f'{name}-icp', 'history':[], 'coefs': pt_pca.coefs.detach().numpy().tolist()})
+                histories.append(
+                    {'name': f'{name}-icp', 'history': [], 'coefs': pt_pca.coefs.detach().numpy().tolist()}
+                )
                 results.append((name, best_loss, pt_pca.coefs.detach().cpu(), pca, []))
 
-            optimizer = Adam([pt_pca.coefs],
-                             lr=args.lr,
-                             weight_decay=args.l2_reg)
+            optimizer = Adam([pt_pca.coefs], lr=args.lr, weight_decay=args.l2_reg)
             try:
                 for blur_sigma in args.sigma:
                     t_heatmaps = d_t_heatmaps[blur_sigma]
@@ -433,7 +399,7 @@ def main():
                         probas = pt_pca(t_heatmaps)
                         loss = -torch.log(torch.concat(probas)).mean()
                         history.append(loss.detach().cpu().item())
-                        if len(history)==1 or history[-1] <= best_loss:
+                        if len(history) == 1 or history[-1] <= best_loss:
                             best_loss = history[-1]
                             best_coefs = pt_pca.coefs.detach().cpu()
                             best_probas = [p.detach().cpu() for p in probas]
@@ -467,12 +433,10 @@ def main():
         logger.debug('results: %s', results)
         logger.debug('best loss: %s', best_loss)
         pca = best_pca
-        pt_pca = PointAlignModel(pca, pca.calc_n_comps(args.contr_rate),
-                                 top_anchor, bottom_anchor).to(device)
+        pt_pca = PointAlignModel(pca, pca.calc_n_comps(args.contr_rate), top_anchor, bottom_anchor).to(device)
         warped = pca.unravel(pt_pca.ref2pt(pca.warp(best_coefs.to(device))))
         s = original_json['imageHeight'] / heatmap_height
-        scaled_warped = [(s * w.detach().cpu().numpy()).tolist()
-                         for w in warped]
+        scaled_warped = [(s * w.detach().cpu().numpy()).tolist() for w in warped]
         # if h_flip:
         #     scaled_warped = [[(e[0], original_json['imageWidth']-e[1]) for e in sw] for sw in scaled_warped]
         # for sw in scaled_warped:
@@ -481,9 +445,8 @@ def main():
         original_shapes = result_json['shapes']
         for l in pca.labels + settings.ANCHOR_LABEL_NAMES:
             original_shapes = list(
-                filter(
-                    lambda shape: shape['label'] != l or shape['shape_type'] !=
-                    'point', original_shapes))
+                filter(lambda shape: shape['label'] != l or shape['shape_type'] != 'point', original_shapes)
+            )
         result_shapes = labelme_utils.kps2shapes(scaled_warped, pca.labels)
         result_shapes.extend(original_shapes)
         result_json['shapes'] = result_shapes
@@ -521,9 +484,8 @@ def main():
 
         fns = sorted((data_dir).glob('*.json'))
         logger.info('Fit')
-        skipped = Parallel(n_jobs=n_jobs)(delayed(do_dirin)(fn)
-                                          for fn in tqdm(fns))
-        if skipped: # remove None
+        skipped = Parallel(n_jobs=n_jobs)(delayed(do_dirin)(fn) for fn in tqdm(fns))
+        if skipped:  # remove None
             skipped = [s for s in skipped if s]
         logger.info('Done')
 
@@ -540,14 +502,13 @@ def main():
             all_heatmaps = all_heatmaps.transpose(0, 3, 1, 2)
         # all_heatmaps = all_heatmaps[:, :len(pca_models[0].labels)]
         all_heatmaps = trim_bottom_right(all_heatmaps, margin=32).copy()
-        
+
         ndjson = []
         with open(ndjson_fn) as f:
             for line in f:
                 ndjson.append(json.loads(line))
 
-        def do(original_json,
-               heatmaps):
+        def do(original_json, heatmaps):
             torch.set_num_threads(args.threads)
             file_id = original_json['filename']
             try:
@@ -559,8 +520,8 @@ def main():
 
         logger.info('Fit')
         result_skipped = Parallel(n_jobs=n_jobs)(
-            delayed(do)(*args)
-            for args in tqdm(zip(ndjson, all_heatmaps), total=len(ndjson)))
+            delayed(do)(*args) for args in tqdm(zip(ndjson, all_heatmaps), total=len(ndjson))
+        )
         assert result_skipped is not None
         results = [r for r in result_skipped if isinstance(r, dict)]
         logger.info('Save ndjson')

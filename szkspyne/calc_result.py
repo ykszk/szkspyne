@@ -1,4 +1,4 @@
-#%%
+# %%
 import argparse
 import itertools
 import os
@@ -27,8 +27,7 @@ def h2p_affinity(heatmap):
             scores, pairs = [], []
             for c1, c2 in itertools.product(c1s, c2s):
                 line = np.zeros_like(ch)
-                ic1, ic2 = tuple(np.round(c1).astype(int)), tuple(
-                    np.round(c2).astype(int))
+                ic1, ic2 = tuple(np.round(c1).astype(int)), tuple(np.round(c2).astype(int))
                 line = cv2.line(line, ic2, ic1, 1, 1)
                 line_sum = np.sum(ch * line) / np.sum(line)
                 scores.append(line_sum)
@@ -49,17 +48,15 @@ def main():
         '--result',
         help='Result directory. default: %(default)s',
         metavar='<dir>',
-        default=
-        '/poseidon/users/suzuki/projects/scoliosis/result/pre_spineweb_verse')
+        default='/poseidon/users/suzuki/projects/scoliosis/result/pre_spineweb_verse',
+    )
     # default='../result')
     # args = parser.parse_args()
     args, unknown = parser.parse_known_args()
 
     resultdir = Path(args.result)
     df = pd.read_csv(resultdir / 'dataset.csv')
-    point_cols = [
-        c for c in df.columns if (c.endswith(' x') or c.endswith(' y'))
-    ]
+    point_cols = [c for c in df.columns if (c.endswith(' x') or c.endswith(' y'))]
     PRED_PREFIX = 'pred '
     for c in point_cols:
         df[PRED_PREFIX + c] = None
@@ -75,14 +72,13 @@ def main():
         y_preds = np.moveaxis(y_preds, -1, 1)  # to channel first
         keypoints_per_ch_per_img = Parallel(n_jobs=os.cpu_count())(
             delayed(point_utils.local_center_of_masses)(y_pred)
-            for y_pred in tqdm(y_preds, desc='set {}'.format(set_id)))
+            for y_pred in tqdm(y_preds, desc='set {}'.format(set_id))
+        )
         for i, keypoints_per_ch in enumerate(keypoints_per_ch_per_img):
             for ch, kps in enumerate(keypoints_per_ch):
                 kps = np.array(kps)
-                df.at[df_set.index[i],
-                      PRED_PREFIX + point_cols[ch]] = tuple(kps[:, 0])
-                df.at[df_set.index[i],
-                      PRED_PREFIX + point_cols[ch + 1]] = tuple(kps[:, 1])
+                df.at[df_set.index[i], PRED_PREFIX + point_cols[ch]] = tuple(kps[:, 0])
+                df.at[df_set.index[i], PRED_PREFIX + point_cols[ch + 1]] = tuple(kps[:, 1])
         df.loc[df_set.index, 'slice_pos'] = list(range(len(df_set)))
         break
     logger.info('end calc landmarks')
@@ -91,4 +87,5 @@ def main():
 
 if __name__ == "__main__":
     import sys
+
     sys.exit(main())

@@ -1,4 +1,4 @@
-#%%
+# %%
 import json
 import os
 import sys
@@ -25,11 +25,7 @@ def conv2shape_dict(json_data: dict) -> dict:
     for shape in json_data['shapes']:
         shape_dict[shape['shape_type']][shape['label']].append(shape['points'])
     # defaultdict -> dict
-    shape_dict = {
-        k: {kk: vv
-            for kk, vv in v.items()}
-        for k, v in shape_dict.items()
-    }
+    shape_dict = {k: {kk: vv for kk, vv in v.items()} for k, v in shape_dict.items()}
     return shape_dict
 
 
@@ -44,13 +40,9 @@ def kps2shapes(kps, label_names) -> list:
     for kps, label in zip(kps, label_names):
         for kp in kps:
             if len(kp) >= 2:
-                shapes.append({
-                    "label": label,
-                    "points": [[kp[1], kp[0]]],
-                    "group_id": None,
-                    "shape_type": "point",
-                    "flags": {}
-                })
+                shapes.append(
+                    {"label": label, "points": [[kp[1], kp[0]]], "group_id": None, "shape_type": "point", "flags": {}}
+                )
     return shapes
 
 
@@ -65,7 +57,7 @@ def kps2labelme(kps, image_path, image_hw, label_names, flags={}) -> dict:
         "imagePath": image_path,
         "imageData": None,
         "imageHeight": image_hw[0],
-        "imageWidth": image_hw[1]
+        "imageWidth": image_hw[1],
     }
     return json_data
 
@@ -76,12 +68,10 @@ def remove_shapes(labelme_json, shape_labels: List[str]):
     '''
     shapes = labelme_json['shapes']
     for l in shape_labels:
-        shapes = list(
-            filter(
-                lambda shape: shape['label'] != l or shape['shape_type'] !=
-                'point', shapes))
+        shapes = list(filter(lambda shape: shape['label'] != l or shape['shape_type'] != 'point', shapes))
     labelme_json['shapes'] = shapes
     return labelme_json
+
 
 def command_remove_shapes(input_dir, output_dir, shape_labels: List[str], n_jobs: int):
     input_dir = Path(input_dir)
@@ -91,12 +81,10 @@ def command_remove_shapes(input_dir, output_dir, shape_labels: List[str], n_jobs
         with open(fn) as f:
             data = json.load(f)
         data = remove_shapes(data, shape_labels)
-        with open(output_dir/fn.name, 'w') as f:
+        with open(output_dir / fn.name, 'w') as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
 
-    Parallel(n_jobs=n_jobs)(delayed(do)(fn)
-                                    for fn in tqdm(input_dir.glob('*.json')))
-
+    Parallel(n_jobs=n_jobs)(delayed(do)(fn) for fn in tqdm(input_dir.glob('*.json')))
 
 
 def reset(input_dir, n_jobs: int):
@@ -113,9 +101,7 @@ def reset(input_dir, n_jobs: int):
         with open(fn, 'w') as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
 
-    Parallel(n_jobs=n_jobs)(delayed(do)(fn)
-                                    for fn in tqdm(input_dir.glob('*.json')))
-
+    Parallel(n_jobs=n_jobs)(delayed(do)(fn) for fn in tqdm(input_dir.glob('*.json')))
 
 
 def labelme2ndjson(input_dir, output, n_jobs: int):
@@ -129,8 +115,7 @@ def labelme2ndjson(input_dir, output, n_jobs: int):
         l = json.dumps(data, ensure_ascii=False)
         return l
 
-    lines = Parallel(n_jobs=n_jobs)(delayed(do)(fn)
-                                    for fn in tqdm(input_dir.glob('*.json')))
+    lines = Parallel(n_jobs=n_jobs)(delayed(do)(fn) for fn in tqdm(input_dir.glob('*.json')))
     assert lines is not None, 'Empty directory'
     with open(output, 'w') as f:
         f.write('\n'.join(lines))
@@ -193,20 +178,16 @@ def sort_kps(points):
     Args:
         points (Dict[str, points]): keypoints
     '''
-    kps = {
-        k: np.array(sorted(v, key=lambda e: e[1]))
-        for k, v in points.items()
-    }
+    kps = {k: np.array(sorted(v, key=lambda e: e[1])) for k, v in points.items()}
     return kps
 
 
 def main():
     import argparse
-    parser = argparse.ArgumentParser(
-        description='Utility functions for labelme.')
+
+    parser = argparse.ArgumentParser(description='Utility functions for labelme.')
     subparsers = parser.add_subparsers()
-    p_ndjson = subparsers.add_parser(
-        'ndjson', help="Create ndjson from a labelme directory.")
+    p_ndjson = subparsers.add_parser('ndjson', help="Create ndjson from a labelme directory.")
     p_ndjson.add_argument('input', help='Input directory')
     p_ndjson.add_argument('output', help='Output jsonl file')
 
@@ -216,7 +197,8 @@ def main():
     p_ndjson.set_defaults(func=command_ndjson)
 
     p_rm = subparsers.add_parser(
-        'remove', help="Remove shapes with given label[s] from labeme files in the labelme directory.")
+        'remove', help="Remove shapes with given label[s] from labeme files in the labelme directory."
+    )
     p_rm.add_argument('input', help='Input directory')
     p_rm.add_argument('output', help='Output directory')
     p_rm.add_argument('label', help='Shape label[s] to remove', nargs='+')
@@ -227,7 +209,8 @@ def main():
     p_rm.set_defaults(func=command_rm)
 
     p_reset = subparsers.add_parser(
-        'reset', help="Reset (empty flags and shapes) labeme files in the labelme directory.")
+        'reset', help="Reset (empty flags and shapes) labeme files in the labelme directory."
+    )
     p_reset.add_argument('input', help='Input directory')
 
     def command_reset(args):
@@ -236,8 +219,7 @@ def main():
     p_reset.set_defaults(func=command_reset)
 
     p_split = subparsers.add_parser(
-        'split_ndjson',
-        help="Split input ndjson and save as json file in the output directory."
+        'split_ndjson', help="Split input ndjson and save as json file in the output directory."
     )
     p_split.add_argument('input', help='Input ndjson')
     p_split.add_argument('output', help='Output directory')
@@ -261,7 +243,7 @@ def main():
         print('No command was specified.')
         parser.print_help()
         sys.exit(1)
-    return (args.func(args))
+    return args.func(args)
 
 
 if __name__ == '__main__':

@@ -12,12 +12,14 @@ class TensorEncoder(json.JSONEncoder):
         else:
             return super().default(obj)
 
+
 class BoxesEncoder(json.JSONEncoder):
     def default(self, obj):
         if isinstance(obj, detectron2.structures.Boxes):
             return obj.tensor
         else:
             return super().default(obj)
+
 
 class InstancesEncoder(json.JSONEncoder):
     def default(self, obj):
@@ -28,6 +30,7 @@ class InstancesEncoder(json.JSONEncoder):
             return fields
         else:
             return super().default(obj)
+
 
 class PredictionEncoder(TensorEncoder, InstancesEncoder, BoxesEncoder):
     pass

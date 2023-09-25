@@ -3,15 +3,11 @@ import sys
 from pathlib import Path
 
 
-parser = argparse.ArgumentParser(
-    description='Create catalog from measure_and_draw output.')
+parser = argparse.ArgumentParser(description='Create catalog from measure_and_draw output.')
 parser.add_argument('input', help='Input directory', metavar='<input>')
 parser.add_argument('output', help='Output html filename', metavar='<output>')
 parser.add_argument('--title', help='html title')
-parser.add_argument('-s',
-                    '--switch',
-                    help='Switch argument',
-                    action='store_true')
+parser.add_argument('-s', '--switch', help='Switch argument', action='store_true')
 
 args = parser.parse_args()
 

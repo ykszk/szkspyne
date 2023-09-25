@@ -10,7 +10,7 @@ readonly result_dir="$1"
 for fold_dir in "$result_dir"/?; do
     (
         echo "$fold_dir"
-        infile="$fold_dir"/train_val.ndjson 
+        infile="$fold_dir"/train_val.ndjson
         outfile="$fold_dir"/pca_ap_whole_L4.npz
         if [ $infile -nt $outfile ]; then
             python3 "$SCRIPT_DIR"/pca_spine.py $infile "$fold_dir" --mirror

@@ -11,14 +11,11 @@ from logzero import logger
 from szkspyne import labelme_utils
 
 
-parser = argparse.ArgumentParser(
-    description='Convert labelme jsonl to exp format. Input is read from stdin')
-parser.add_argument('--noconv',
-                    help='No dataformat conversion. Just concat input and remove duplicates',
-                    action='store_true')
-parser.add_argument('--check_image',
-                    help='Check image file existence.',
-                    action='store_true')
+parser = argparse.ArgumentParser(description='Convert labelme jsonl to exp format. Input is read from stdin')
+parser.add_argument(
+    '--noconv', help='No dataformat conversion. Just concat input and remove duplicates', action='store_true'
+)
+parser.add_argument('--check_image', help='Check image file existence.', action='store_true')
 
 args = parser.parse_args()
 

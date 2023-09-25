@@ -12,18 +12,15 @@ import tqdm
 
 # https://github.com/ykszk/labelme-rs
 
-parser = argparse.ArgumentParser(
-    description='Create ndjson from a labelme directory.')
+parser = argparse.ArgumentParser(description='Create ndjson from a labelme directory.')
 parser.add_argument('input', help='Input data directory', metavar='<input>')
 parser.add_argument('output', help='Output directory', metavar='<output>')
-parser.add_argument('--annotators',
-                    help='List of annotators. default: %(default)s',
-                    default=['藤森', '中嶋', '蟹江'])
+parser.add_argument('--annotators', help='List of annotators. default: %(default)s', default=['藤森', '中嶋', '蟹江'])
 parser.add_argument(
     '--ruledir',
-    help=
-    'Directory containing rules files such as "rule-spine.txt". default: %(default)s',
-    default='rules')
+    help='Directory containing rules files such as "rule-spine.txt". default: %(default)s',
+    default='rules',
+)
 args = parser.parse_args()
 
 data_dir = Path(args.input)
@@ -52,7 +49,7 @@ def load_rule_file(filename):
 
 
 rule_dict = {}
-for fn in ['L4','L5','L6','congenital','spine', 'lateral-spine']:
+for fn in ['L4', 'L5', 'L6', 'congenital', 'spine', 'lateral-spine']:
     rule_dict[fn] = load_rule_file(ruledir / f'rule-{fn}.txt')
 
 rule_sets = {}
@@ -67,11 +64,11 @@ for kind in ['ap_whole', 'lateral_whole']:
     for ignore in ['L5', 'L4', 'L6', '先天性側彎']:
         ignores = IGNORES.copy()
         ignores.remove(ignore)
-        key=ignore
-        if key=='先天性側彎':
-            key='congenital'
+        key = ignore
+        if key == '先天性側彎':
+            key = 'congenital'
         rule_set = rule_sets[key]
-        if kind=='lateral_whole':
+        if kind == 'lateral_whole':
             rule_set = rule_set + rule_dict['lateral-spine']
         validators.append(lmrspy.Validator(rule_set, args.annotators, ignores))
 
@@ -85,10 +82,10 @@ for kind in ['ap_whole', 'lateral_whole']:
         for validator in validators:
             try:
                 result = validator.validate_jsons(json_str)
-                if result: # passed
+                if result:  # passed
                     valid_json.append(json_data)
                     break
-                else: # skipped
+                else:  # skipped
                     # try next validator
                     continue
             except Exception as e:

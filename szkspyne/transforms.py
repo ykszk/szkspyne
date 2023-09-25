@@ -17,8 +17,7 @@ cv2.ocl.setUseOpenCL(False)
 
 
 def percentile_normalize(x, percentile, clip=False, sampling_step=10):
-    minmax = np.percentile(x.ravel()[::sampling_step],
-                           [percentile, 100 - percentile])
+    minmax = np.percentile(x.ravel()[::sampling_step], [percentile, 100 - percentile])
     x = (x - minmax[0]) / (minmax[1] - minmax[0])
     if clip:
         np.clip(x, 0, 1, out=x)
@@ -29,7 +28,7 @@ def base_transform(x: np.ndarray, kps=None):
     if x.dtype == np.uint8:
         x = x / 255
     else:
-        x = percentile_normalize(x, .1)
+        x = percentile_normalize(x, 0.1)
     if x.ndim == 2:
         x = x[np.newaxis]
     x = x.astype(np.float32)
@@ -39,8 +38,7 @@ def base_transform(x: np.ndarray, kps=None):
         return x, kps
 
 
-def base_kps_transform(
-        img, kps, flip_pairs) -> Tuple[np.ndarray, point_utils.PointsList]:
+def base_kps_transform(img, kps, flip_pairs) -> Tuple[np.ndarray, point_utils.PointsList]:
     img, kps = base_transform(img, kps)
     return img, kps
 
@@ -49,6 +47,7 @@ def test_transform(img) -> np.ndarray:
     img = base_transform(img)
     assert isinstance(img, np.ndarray)
     return img
+
 
 def invert_base(x):
     x = np.clip(x, 0, 1)
@@ -65,12 +64,7 @@ def apply_clahe(img, clipLimit=100, tileGridSize=(32, 32)):
 
 
 class RandomClahe(ImageOnlyTransform):
-
-    def __init__(self,
-                 clipLimitChoices=[10, 100],
-                 gridSizeChoices=[16, 32],
-                 always_apply=False,
-                 p=0.5):
+    def __init__(self, clipLimitChoices=[10, 100], gridSizeChoices=[16, 32], always_apply=False, p=0.5):
         super(RandomClahe, self).__init__(always_apply, p)
         self.clipLimitChoices = clipLimitChoices
         self.gridSizeChoices = gridSizeChoices
@@ -81,10 +75,7 @@ class RandomClahe(ImageOnlyTransform):
         return apply_clahe(image, clipLimit, gridSize)
 
     def get_params(self):
-        return {
-            'clipLimit': random.choice(self.clipLimitChoices),
-            'gridSize': random.choice(self.gridSizeChoices)
-        }
+        return {'clipLimit': random.choice(self.clipLimitChoices), 'gridSize': random.choice(self.gridSizeChoices)}
 
     def get_transform_init_args_names(self):
         return ('clipLimitChoices', 'gridSizeChoices')
@@ -93,45 +84,36 @@ class RandomClahe(ImageOnlyTransform):
 img_tfs = [
     A.HorizontalFlip(p=0.25),
     # RandomClahe(always_apply=True),
-    A.RandomBrightnessContrast(brightness_limit=0.4, contrast_limit=0.2,
-                               p=.25),
-    A.Affine(scale={
-        'x': (.9, 1.1),
-        'y': (.9, 1.1)
-    },
-             rotate=[-30, 30],
-             shear=[-10, 10],
-             p=.25),
-    A.GaussNoise(var_limit=.04, p=.25),
+    A.RandomBrightnessContrast(brightness_limit=0.4, contrast_limit=0.2, p=0.25),
+    A.Affine(scale={'x': (0.9, 1.1), 'y': (0.9, 1.1)}, rotate=[-30, 30], shear=[-10, 10], p=0.25),
+    A.GaussNoise(var_limit=0.04, p=0.25),
     A.Blur(p=0.25),
     # A.Normalize(mean=0.485, std=0.229),
-    ToTensorV2()
+    ToTensorV2(),
 ]
 
 # Use `A.ReplayCompose` to retrospectively access to the `applied` boolean parameter
-album_transform = A.ReplayCompose(img_tfs,
-                                  keypoint_params=A.KeypointParams(
-                                      format='yx', remove_invisible=False))
+album_transform = A.ReplayCompose(img_tfs, keypoint_params=A.KeypointParams(format='yx', remove_invisible=False))
 
 CROP_HEIGHT, CROP_WIDTH = 512, 512
-CROPPER = A.RandomResizedCrop(CROP_HEIGHT, CROP_WIDTH, [.05, .20], [.8, 1.2], p=1)
-album_crop_transform = A.ReplayCompose([CROPPER] + img_tfs,
-                                  keypoint_params=A.KeypointParams(
-                                      format='yx', remove_invisible=False))
+CROPPER = A.RandomResizedCrop(CROP_HEIGHT, CROP_WIDTH, [0.05, 0.20], [0.8, 1.2], p=1)
+album_crop_transform = A.ReplayCompose(
+    [CROPPER] + img_tfs, keypoint_params=A.KeypointParams(format='yx', remove_invisible=False)
+)
 
-album_base_crop_transform = A.ReplayCompose([A.CenterCrop(CROP_HEIGHT, CROP_WIDTH, always_apply=True), A.Normalize(mean=0.485, std=0.229)],
-                                  keypoint_params=A.KeypointParams(
-                                      format='yx', remove_invisible=False))
+album_base_crop_transform = A.ReplayCompose(
+    [A.CenterCrop(CROP_HEIGHT, CROP_WIDTH, always_apply=True), A.Normalize(mean=0.485, std=0.229)],
+    keypoint_params=A.KeypointParams(format='yx', remove_invisible=False),
+)
 
 
 import warnings
 
 
-def _random_transform(x: np.ndarray, keypoints, flip_pairs: List[Tuple[int,
-                                                                      int]], tf_func):
+def _random_transform(x: np.ndarray, keypoints, flip_pairs: List[Tuple[int, int]], tf_func):
     # print(1, x.shape)
     x, keypoints = base_transform(x, keypoints)
-    x = x[0] # remove channel dim
+    x = x[0]  # remove channel dim
     # print(2, x.shape)
     # print(keypoints)
     sizes = [len(ps) for ps in keypoints]
@@ -151,14 +133,14 @@ def _random_transform(x: np.ndarray, keypoints, flip_pairs: List[Tuple[int,
     # print(3, x.shape)
     return x, keypoints
 
-def random_transform(x: np.ndarray, keypoints, flip_pairs: List[Tuple[int,
-                                                                      int]]):
+
+def random_transform(x: np.ndarray, keypoints, flip_pairs: List[Tuple[int, int]]):
     return _random_transform(x, keypoints, flip_pairs, album_transform)
 
-def random_crop_transform(x: np.ndarray, keypoints, flip_pairs: List[Tuple[int,
-                                                                      int]]):
+
+def random_crop_transform(x: np.ndarray, keypoints, flip_pairs: List[Tuple[int, int]]):
     return _random_transform(x, keypoints, flip_pairs, album_crop_transform)
 
-def base_crop_transform(x: np.ndarray, keypoints, flip_pairs: List[Tuple[int,
-                                                                      int]]):
+
+def base_crop_transform(x: np.ndarray, keypoints, flip_pairs: List[Tuple[int, int]]):
     return _random_transform(x, keypoints, flip_pairs, album_base_crop_transform)

@@ -30,8 +30,7 @@ meta_list = [
     'ContentTime',
     'ProtocolName',
     'SeriesDescription',
-    'InstanceNumber'
-    'SeriesNumber',
+    'InstanceNumber' 'SeriesNumber',
     'StudyDescription',
     'SeriesDescription',
     'PixelSpacing',
@@ -40,7 +39,7 @@ meta_list = [
     'ManufacturerModelName',
     'StudyInstanceUID',
     'SeriesInstanceUID',
-    'StudyTime'
+    'StudyTime',
 ]
 
 
@@ -59,20 +58,15 @@ def extract_metadata(zip_filename):
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description='Collect metadata from zipped dicom files.')
-    parser.add_argument('input',
-                        help='Input zipped dicom directory',
-                        metavar='<input>')
-    parser.add_argument('output',
-                        help='Output metadata csv',
-                        metavar='<output>')
+    parser = argparse.ArgumentParser(description='Collect metadata from zipped dicom files.')
+    parser.add_argument('input', help='Input zipped dicom directory', metavar='<input>')
+    parser.add_argument('output', help='Output metadata csv', metavar='<output>')
 
     args = parser.parse_args()
 
     rows = Parallel(n_jobs=8)(
-        delayed(extract_metadata)(arg)
-        for arg in tqdm.tqdm(sorted(Path(args.input).glob('*.zip'))))
+        delayed(extract_metadata)(arg) for arg in tqdm.tqdm(sorted(Path(args.input).glob('*.zip')))
+    )
     if rows is not None:
         rows = itertools.chain.from_iterable(rows)
     logger.info('Saving dataframe')
