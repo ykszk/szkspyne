@@ -324,6 +324,9 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
                     pt_sup, _ = max(candidates, key=lambda e: e[1])
                     pt_inf = inf
 
+            # re-compute apexes
+            mt_apex, mt_apex_corner = find_apex(mt_sup, mt_inf)
+            lt_apex, lt_apex_corner = find_apex(lt_sup, lt_inf)
             apex_corners = [mt_apex_corner, lt_apex_corner]
             if pt_sup is not None:
                 pt_apex, pt_apex_corner = find_apex(pt_sup, pt_inf)
@@ -334,7 +337,7 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
             mt_sup, mt_inf = indices['MT']
             lt_sup, lt_inf = indices['LT']
             if lt_inf >= len(vert_corners):
-                logger.info('Stored index exceeds possible value')
+                logger.info('Stored index exceeds possible value. %s, %s', lm_data['imagePath'], lt_inf)
                 lt_inf = len(vert_corners) - 1
             mt_apex, mt_apex_corner = find_apex(mt_sup, mt_inf)
             lt_apex, lt_apex_corner = find_apex(lt_sup, lt_inf)
@@ -399,11 +402,11 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
                                           grp,
                                           title=gid,
                                           text_attrs=text_attrs)
-        # Major apex
+        # Curve apex
         if apex_corners:
-            gid = 'MajorApex'
+            gid = 'CurveApex'
             visibility = 'hidden' if gid in hide else 'visible'
-            drawings.append((gid, 'Major Apex'))
+            drawings.append((gid, 'Curve Apex(es)'))
             color = 'orange'
             grp = dwg.add(
                 dwg.g(id=gid,
@@ -420,8 +423,8 @@ def measure_json(lm_data: Any, height: int, config_filename: str,
                             vert_apex[2], vert_apex[0]
                         ]
                     ])))
-                for v in vert_centroids:
-                    grp.add(dwg.circle(center=v, r=POINT_RADIUS, fill=color))
+            for v in vert_centroids:
+                grp.add(dwg.circle(center=v, r=POINT_RADIUS, fill=color))
 
         # apical translation
         if False:

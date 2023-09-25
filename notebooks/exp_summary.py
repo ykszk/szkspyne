@@ -225,9 +225,8 @@ for d in [d_ap, d_lateral]:
     hue_order = ['XR & pre', 'XR & post', 'EOS & pre', 'EOS & post']
 
     cbs = []
-    for col_name in ['Heatmap', 'Points', 'VertebralNumber', 'MajorApex'] + [
-            c[5:] for c in df.columns
-            if c.startswith('pred ') and not c.endswith('curve_indices')
+    for col_name in ['Heatmap', 'Points', 'VertebralNumber', 'CurveApex'] + [
+        c[5:] for c in df.columns if c.startswith('pred ') and not c.endswith('curve_indices')
     ]:
         cbs.append(t_cb.render(name=col_name, label=col_name, checked='checked'))
     cbs = '\n'.join(cbs)
