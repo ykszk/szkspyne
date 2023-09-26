@@ -46,7 +46,7 @@ ImageType = namedtuple("ImageType", ["name", "filename", "angle_cols", "key_cols
 d_ap = ImageType(
     name="ap",
     filename=ap_filename,
-    angle_cols=["PT", "MT", "TL/L", "T1Tilt", "ClavicleAngle", "PelvicObliquity", "SacralObliquity"],
+    angle_cols=["MT", "PT", "TL/L", "T1Tilt", "ClavicleAngle", "PelvicObliquity", "SacralObliquity"],
     key_cols=["MT", "PelvicObliquity"],
 )
 
@@ -315,42 +315,42 @@ for d in [d_ap, d_lateral]:
                 display(HTML(f"<h4>{best_worst}</h4>"))
                 df_reps = df_d[[col]].abs().sort_values(col)[sls]
                 display(df_reps)
-                if include_visualization:
-                    d_vis = {}
-                    for subdir, label in [("reference", "Reference"), ("auto", "AI")]:
-                        display(HTML(f"<h5>{label}</h5>"))
-                        svgs = []
-                        for file_id, row in df_reps.iterrows():
-                            if DATA_SUFFIX and name == 'ap' and subdir == 'auto':
-                                svg_filename = result_dir / subdir / f'ap_whole{DATA_SUFFIX}' / f"{file_id}.svg"
-                            else:
-                                svg_filename = result_dir / subdir / f"{name}_whole" / f"{file_id}.svg"
-                            if svg_filename.exists():
-                                with open(svg_filename) as f:
-                                    svgs.append('<div class="sample" title="{}">{}</div>'.format(file_id, f.read()))
-                            else:
-                                with open(svg_filename.with_suffix('.html')) as f:
-                                    soup = BeautifulSoup(f.read(), 'html.parser')
-                                svg = str(soup.select_one('svg'))
-                                d_vis[(file_id, label)] = svg
-                                svgs.append('<div class="sample" title="{}">{}</div>'.format(file_id, svg))
-                        display(HTML('<div style="{}">{}</div>'.format(flex_style, "\n".join(svgs))))
-                    # Create independent html
-                    html = [f'<html><head><meta charset="utf-8">{STYLE}{JAVASCRIPT}</head><body>']
-                    html.append(f'<div id="control">{cbs}</div>')
+                d_vis = {}
+                for subdir, label in [("reference", "Reference"), ("auto", "AI")]:
+                    svgs = []
                     for file_id, row in df_reps.iterrows():
-                        html.append('<div class="patient">')
-                        html.append(f'<h2>{file_id}</h2>')
-                        html.append('<div class="sbs">')
-                        for label in ["Reference", "AI"]:
-                            svg = d_vis[(file_id, label)]
-                            elm = f'<div class="img"><h3>{label}</h3>{svg}</div>'
-                            html.append(elm)
-                        html.append('</div></div>')
-                    html.append('</body></html>')
-                    sbs_dir = result_dir / ('side_by_side' + DATA_SUFFIX)
-                    sbs_dir.mkdir(parents=True, exist_ok=True)
-                    with open(sbs_dir / f'{col}_{best_worst}.html', 'w') as f:
-                        f.write('\n'.join(html))
+                        if DATA_SUFFIX and name == 'ap' and subdir == 'auto':
+                            svg_filename = result_dir / subdir / f'ap_whole{DATA_SUFFIX}' / f"{file_id}.svg"
+                        else:
+                            svg_filename = result_dir / subdir / f"{name}_whole" / f"{file_id}.svg"
+                        if svg_filename.exists():
+                            with open(svg_filename) as f:
+                                svgs.append('<div class="sample" title="{}">{}</div>'.format(file_id, f.read()))
+                        else:
+                            with open(svg_filename.with_suffix('.html')) as f:
+                                soup = BeautifulSoup(f.read(), 'html.parser')
+                            svg = str(soup.select_one('svg'))
+                            d_vis[(file_id, label)] = svg
+                            svgs.append('<div class="sample" title="{}">{}</div>'.format(file_id, svg))
+                    if include_visualization:
+                        display(HTML(f"<h5>{label}</h5>"))
+                        display(HTML('<div style="{}">{}</div>'.format(flex_style, "\n".join(svgs))))
+                # Create independent html
+                html = [f'<html><head><meta charset="utf-8">{STYLE}{JAVASCRIPT}</head><body>']
+                html.append(f'<div id="control">{cbs}</div>')
+                for file_id, row in df_reps.iterrows():
+                    html.append('<div class="patient">')
+                    html.append(f'<h2>{file_id}</h2>')
+                    html.append('<div class="sbs">')
+                    for label in ["Reference", "AI"]:
+                        svg = d_vis[(file_id, label)]
+                        elm = f'<div class="img"><h3>{label}</h3>{svg}</div>'
+                        html.append(elm)
+                    html.append('</div></div>')
+                html.append('</body></html>')
+                sbs_dir = result_dir / ('side_by_side' + DATA_SUFFIX)
+                sbs_dir.mkdir(parents=True, exist_ok=True)
+                with open(sbs_dir / f'{col}_{best_worst}.html', 'w') as f:
+                    f.write('\n'.join(html))
     #         break
     # break
