@@ -315,7 +315,7 @@ def measure_json(
             indices = lm_data['curve_indices']
             pt_sup, pt_inf = indices['PT']
             mt_sup, mt_inf = indices['MT']
-            lt_sup, lt_inf = indices['LT']
+            lt_sup, lt_inf = indices['TL/L']
             if lt_inf >= len(vert_corners):
                 logger.info('Stored index exceeds possible value. %s, %s', lm_data['imagePath'], lt_inf)
                 lt_inf = len(vert_corners) - 1
@@ -328,27 +328,11 @@ def measure_json(
         else:
             raise NotImplemented
 
-        measures['curve_indices'] = {'MT': (mt_sup, mt_inf), 'PT': (pt_sup, pt_inf), 'LT': (lt_sup, lt_inf)}
+        measures['curve_indices'] = {'MT': (mt_sup, mt_inf), 'PT': (pt_sup, pt_inf), 'TL/L': (lt_sup, lt_inf)}
 
         # cobb angles
         logger.debug('Cobb angles')
-        if pt_sup is not None:
-            drawings += [('PT', 'PT Cobb (p.49)')]
-            gid = 'PT'
-            grp = dwg.add(
-                dwg.g(
-                    id=gid,
-                    class_=gid,
-                    stroke='red',
-                    stroke_width=LINE_WIDTH,
-                    fill='none',
-                    visibility=d_visibility[gid],
-                )
-            )
-            measures[gid] = dwg.draw_cobb(
-                vert_sup_cnrs[pt_sup], vert_inf_cnrs[pt_inf], grp, title=gid, text_attrs=text_attrs
-            )
-        drawings += [('MT', 'MT Cobb (p.49)'), ('LT', 'LT Cobb (p.49)')]
+        drawings += [('MT', 'MT Cobb (p.49)'), ('TL/L', 'TL/L Cobb (p.49)')]
         gid = 'MT'
         grp = dwg.add(
             dwg.g(
@@ -364,7 +348,7 @@ def measure_json(
             vert_sup_cnrs[mt_sup], vert_inf_cnrs[mt_inf], grp, title=gid, text_attrs=text_attrs
         )
         if lt_sup is not None and lt_inf is not None:
-            gid = 'LT'
+            gid = 'TL/L'
             grp = dwg.add(
                 dwg.g(
                     id=gid,
@@ -377,6 +361,22 @@ def measure_json(
             )
             measures[gid] = dwg.draw_cobb(
                 vert_sup_cnrs[lt_sup], vert_inf_cnrs[lt_inf], grp, title=gid, text_attrs=text_attrs
+            )
+        if pt_sup is not None:
+            drawings += [('PT', 'PT Cobb (p.49)')]
+            gid = 'PT'
+            grp = dwg.add(
+                dwg.g(
+                    id=gid,
+                    class_=gid,
+                    stroke='red',
+                    stroke_width=LINE_WIDTH,
+                    fill='none',
+                    visibility=d_visibility[gid],
+                )
+            )
+            measures[gid] = dwg.draw_cobb(
+                vert_sup_cnrs[pt_sup], vert_inf_cnrs[pt_inf], grp, title=gid, text_attrs=text_attrs
             )
         # Curve apex
         if apex_corners:

@@ -380,7 +380,7 @@ class SpinalDrawing(svgwrite.Drawing):
     def draw_vertical_dist(self, p1, p2, grp, title=''):
         grp.add(self.path((['M'] + [0, p1[1]] + [self.size[0], p1[1]])))
         grp.add(self.path((['M'] + [0, p2[1]] + [self.size[0], p2[1]])))
-        height_text = '{:.1f} pixels'.format(np.abs(p1[1] - p2[1]))
+        height_text = '{:.1f} px'.format(np.abs(p1[1] - p2[1]))
         text_elm = self.text(height_text, insert=p1, **self.text_attrs)
         if title:
             text_elm.set_desc(title=title)

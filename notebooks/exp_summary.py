@@ -46,7 +46,7 @@ ImageType = namedtuple("ImageType", ["name", "filename", "angle_cols", "key_cols
 d_ap = ImageType(
     name="ap",
     filename=ap_filename,
-    angle_cols=["PT", "MT", "LT", "T1Tilt", "ClavicleAngle", "PelvicObliquity", "SacralObliquity"],
+    angle_cols=["PT", "MT", "TL/L", "T1Tilt", "ClavicleAngle", "PelvicObliquity", "SacralObliquity"],
     key_cols=["MT", "PelvicObliquity"],
 )
 

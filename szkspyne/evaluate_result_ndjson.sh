@@ -9,7 +9,7 @@ readonly result_dir="$1"
 
 export LOGLEVEL=INFO
 echo 'start:' "$(date)"
-"$SCRIPT_DIR"/apply_pca_fitting.sh "$result_dir"
+# "$SCRIPT_DIR"/apply_pca_fitting.sh "$result_dir"
 
 readonly HIDE="CurveApex APT CoronalBalance T1Tilt ClavicleAngle ShoulderHeight Pelvis FemoralHead PelvicObliquity LegLength SacralObliquity Mid/LowerThoracicKyphosis ProximalThoracicKyphosis SacralSlope PelvicIncidence PelvicRadiusAngle L5IncidenceAngle LumbosacralAngle"
 algo="no-cross"
@@ -38,7 +38,7 @@ lmrs join --mode inner "$result_dir"/auto/keypoints/ap_whole/all_final_keypoints
 
 algo="stored"
 python3 "$SCRIPT_DIR"/measure_and_draw.py --hide "$HIDE" --height 1200 --points --numbers --image_type $image_type --parent_dir "$SCRIPT_DIR"/../../data/annotation/images/all --title "${subdir} ${image_type}" --config "$SCRIPT_DIR"/../../data/annotation/config.yaml --algo "$algo" --imagedb "$result_dir"/heatmap_images.sqlite3 batch "$ndjson_w_indices" "$result_dir"/$subdir/${image_type}_whole${suffix}/ --html --ndjson "$result_dir"/$subdir/measures_${image_type}_whole${suffix}.ndjson
-
+exit
 readonly REUSE_CURVE=false
 # reuse curve
 if "${REUSE_CURVE}"; then
