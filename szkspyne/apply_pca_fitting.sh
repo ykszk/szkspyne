@@ -41,8 +41,12 @@ done
 wait
 echo 'end applying and fitting:' "$(date)"
 mkdir -p "$result_dir"/{auto,reference}{,/keypoints}/{ap_whole,lateral_whole}
-echo 'collect ndjson files from all folds and modify them'
-for image_type in ap_whole lateral_whole; do
-    cat "$result_dir"/?/auto/$image_type/all_pca_keypoints.ndjson >"$result_dir"/auto/keypoints/$image_type/all_pca_keypoints.ndjson
-    python3 "$SCRIPT_DIR"/../script/modify_ai_annotation.py $image_type "$result_dir"/auto/keypoints/$image_type/all_pca_keypoints.ndjson --output "$result_dir"/auto/keypoints/$image_type/all_final_keypoints.ndjson
-done
+infile="$result_dir"///auto/$image_type/all_pca_keypoints.ndjson
+outfile="$result_dir"/auto/keypoints/$image_type/all_final_keypoints.ndjson
+if [ $infile -nt $outfile ]; then
+    echo 'collect ndjson files from all folds and modify them'
+    for image_type in ap_whole lateral_whole; do
+        cat "$result_dir"/?/auto/$image_type/all_pca_keypoints.ndjson >"$result_dir"/auto/keypoints/$image_type/all_pca_keypoints.ndjson
+        python3 "$SCRIPT_DIR"/../script/modify_ai_annotation.py $image_type "$result_dir"/auto/keypoints/$image_type/all_pca_keypoints.ndjson --output $outfile
+    done
+fi
