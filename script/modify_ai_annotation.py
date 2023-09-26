@@ -15,7 +15,9 @@ from szkspyne import img_utils, labelme_utils
 parser = argparse.ArgumentParser(description='Modify AI annotation.')
 parser.add_argument('image_type', help='image_type', choices=['ap_whole', 'lateral_whole'])
 parser.add_argument('input', help='input directory')
-parser.add_argument('-o', '--output', help='output directory. input is used by default')
+parser.add_argument(
+    '-o', '--output', help='output directory. input is used by default. Specify "-" to use stdout for ndjson'
+)
 args = parser.parse_args()
 root_dir = Path(args.input)
 
@@ -88,10 +90,14 @@ class NDJsonIO:
         return self
 
     def __exit__(self, *args):
-        with open(self.output, 'w') as f:
+        if str(self.output) == '-':
             for i in sorted(self.ndjson.keys()):
-                f.write(self.ndjson[i])
-                f.write('\n')
+                print(self.ndjson[i])
+        else:
+            with open(self.output, 'w') as f:
+                for i in sorted(self.ndjson.keys()):
+                    f.write(self.ndjson[i])
+                    f.write('\n')
 
     def __len__(self):
         return len(self.data)

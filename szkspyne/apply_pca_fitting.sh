@@ -41,12 +41,16 @@ done
 wait
 echo 'end applying and fitting:' "$(date)"
 mkdir -p "$result_dir"/{auto,reference}{,/keypoints}/{ap_whole,lateral_whole}
-infile="$result_dir"///auto/$image_type/all_pca_keypoints.ndjson
-outfile="$result_dir"/auto/keypoints/$image_type/all_final_keypoints.ndjson
-if [ $infile -nt $outfile ]; then
-    echo 'collect ndjson files from all folds and modify them'
-    for image_type in ap_whole lateral_whole; do
+
+# Extract flags
+cat "$result_dir"/manual_annotation.ndjson | jq -c '.filepath |= (split("/")[-1] |sub(".jpg";""))' | jq -c '{"flags": .flags, "filename": .filepath}' | jq -c '.flags = (.flags - ["L4","L5","L6"])' | jq -c '.flags |= reduce .[] as $flag ({}; .[$flag] = true)' > "$result_dir"/flags.ndjson
+
+echo 'collect ndjson files from all folds and modify them'
+for image_type in ap_whole lateral_whole; do
+    infile="$result_dir"/0/auto/$image_type/all_pca_keypoints.ndjson
+    outfile="$result_dir"/auto/keypoints/$image_type/all_final_keypoints.ndjson
+    if [ $infile -nt $outfile ]; then
         cat "$result_dir"/?/auto/$image_type/all_pca_keypoints.ndjson >"$result_dir"/auto/keypoints/$image_type/all_pca_keypoints.ndjson
-        python3 "$SCRIPT_DIR"/../script/modify_ai_annotation.py $image_type "$result_dir"/auto/keypoints/$image_type/all_pca_keypoints.ndjson --output $outfile
-    done
-fi
+        python3 "$SCRIPT_DIR"/../script/modify_ai_annotation.py $image_type "$result_dir"/auto/keypoints/$image_type/all_pca_keypoints.ndjson --output - | lmrs join --mode left - "$result_dir"/flags.ndjson > $outfile
+    fi
+done

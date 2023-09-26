@@ -240,7 +240,11 @@ for d in [d_ap, d_lateral]:
         display(HTML(f"<h3>{col}</h3>"))
         col_x = "true " + col
         col_y = "pred " + col
-        df_sub = df[[col_type, col_x, col_y]].copy()
+        try:
+            df_sub = df[[col_type, col_x, col_y]].copy()
+        except KeyError as e:
+            print('Skip %s: %s', col, e)
+            continue
         df_sub = df_sub.dropna()
         plt.figure(figsize=(10, 4))
         plt.subplot(1, 2, 1)

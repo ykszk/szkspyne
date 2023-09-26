@@ -951,7 +951,7 @@ def main():
     sub_single.set_defaults(handler=command_single)
 
     sub_batch = subparsers.add_parser('batch', help="measure and draw from given directory")
-    sub_batch.add_argument('input', help='Input json directory')
+    sub_batch.add_argument('input', help='Input json directory or ndjson filename or "-" for stdin in ndjson format')
     sub_batch.add_argument('output', help='Output directory')
     sub_batch.add_argument('--measure', help='Save measurements json', action='store_true')
     sub_batch.add_argument('--ndjson', help='Save all measurements as a ndjson file')
@@ -1033,8 +1033,11 @@ def main():
             json_filenames = sorted(Path(args.input).glob('*.json'))
             all_measures = Parallel(n_jobs=args.workers)(delayed(do)(fn) for fn in tqdm.tqdm(json_filenames))
         else:
-            with open(args.input) as f:
-                ndjson = [json.loads(line) for line in f]
+            if args.input == '-':
+                ndjson = [json.loads(line) for line in sys.stdin]
+            else:
+                with open(args.input) as f:
+                    ndjson = [json.loads(line) for line in f]
             indir = Path(args.input).parent
             json_filenames = [indir / data['filename'] for data in ndjson]
             all_measures = Parallel(n_jobs=args.workers)(
