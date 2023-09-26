@@ -316,9 +316,20 @@ def measure_json(
             pt_sup, pt_inf = indices['PT']
             mt_sup, mt_inf = indices['MT']
             lt_sup, lt_inf = indices['TLL']
-            if lt_inf >= len(vert_corners):
-                logger.info('Stored index exceeds possible value. %s, %s', lm_data['imagePath'], lt_inf)
-                lt_inf = len(vert_corners) - 1
+            apex_corners = []
+            if pt_sup is not None:
+                pt_apex, apex_corner = find_apex(pt_sup, pt_inf)
+                apex_corners.append(apex_corner)
+            if mt_inf is not None:
+                if mt_inf >= len(vert_corners):
+                    logger.info('Stored index exceeds possible value. %s, %s', lm_data['imagePath'], mt_inf)
+                    mt_inf = len(vert_corners) - 1
+                mt_apex, apex_corner = find_apex(mt_sup, mt_inf)
+                apex_corners.append(apex_corner)
+            if lt_inf is not None:
+                if lt_inf >= len(vert_corners):
+                    logger.info('Stored index exceeds possible value. %s, %s', lm_data['imagePath'], lt_inf)
+                    lt_inf = len(vert_corners) - 1
             mt_apex, mt_apex_corner = find_apex(mt_sup, mt_inf)
             lt_apex, lt_apex_corner = find_apex(lt_sup, lt_inf)
             apex_corners = [mt_apex_corner, lt_apex_corner]
@@ -334,6 +345,7 @@ def measure_json(
         logger.debug('Cobb angles')
         drawings += [('MT', 'MT Cobb (p.49)'), ('TLL', 'TL/L Cobb (p.49)')]
         gid = 'MT'
+        drawings.append((gid, 'MT Cobb (p.49)'))
         grp = dwg.add(
             dwg.g(
                 id=gid,
@@ -348,20 +360,21 @@ def measure_json(
             vert_sup_cnrs[mt_sup], vert_inf_cnrs[mt_inf], grp, title=gid, text_attrs=text_attrs
         )
         if lt_sup is not None and lt_inf is not None:
-            gid = 'TLL'
-            grp = dwg.add(
-                dwg.g(
-                    id=gid,
-                    class_=gid,
-                    stroke=line_colors[gid],
-                    stroke_width=LINE_WIDTH,
-                    fill='none',
-                    visibility=d_visibility[gid],
-                )
+        gid = 'TLL'
+        drawings.append((gid, 'TL/L Cobb (p.49)'))
+        grp = dwg.add(
+            dwg.g(
+                id=gid,
+                class_=gid,
+                stroke=line_colors[gid],
+                stroke_width=LINE_WIDTH,
+                fill='none',
+                visibility=d_visibility[gid],
             )
-            measures[gid] = dwg.draw_cobb(
-                vert_sup_cnrs[lt_sup], vert_inf_cnrs[lt_inf], grp, title=gid, text_attrs=text_attrs
-            )
+        )
+        measures[gid] = dwg.draw_cobb(
+            vert_sup_cnrs[lt_sup], vert_inf_cnrs[lt_inf], grp, title=gid, text_attrs=text_attrs
+        )
         if pt_sup is not None:
             drawings += [('PT', 'PT Cobb (p.49)')]
             gid = 'PT'
