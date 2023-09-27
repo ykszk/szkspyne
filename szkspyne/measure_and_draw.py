@@ -32,6 +32,14 @@ POINT_RADIUS = 2.0
 PERP_BOX_SIZE = (20, 20)  # perpendicular sign
 
 
+def is_crossing(l1: LineSegment, l2: LineSegment) -> bool:
+    try:
+        l1.intersect_line_segment(l2)
+        return True
+    except ValueError:
+        return False
+
+
 def measure_json(
     lm_data: Any,
     height: int,
@@ -244,13 +252,6 @@ def measure_json(
             n_verts = len(vert_corners)
             candidates = []
 
-            def is_crossing(l1: LineSegment, l2: LineSegment) -> bool:
-                try:
-                    l1.intersect_line_segment(l2)
-                    return True
-                except ValueError:
-                    return False
-
             for mt_sup in range(n_verts):
                 for mt_inf in range(mt_sup + 2, 13):  # n_verts-2):
                     # check curve
@@ -311,6 +312,73 @@ def measure_json(
             if pt_sup is not None:
                 pt_apex, pt_apex_corner = find_apex(pt_sup, pt_inf)
                 apex_corners = [pt_apex_corner] + apex_corners
+        elif curve_algo == 'no-cross2':
+            # no-cross: max diff with constraint
+            n_verts = len(vert_corners)
+
+            sup_inf, scores = [], []
+            for sup in range(n_verts):
+                for inf in range(sup + 2, n_verts):
+                    # check curve
+                    sup2inf = LineSegment(vert_centroids[inf], vert_centroids[sup])
+                    prev2inf = LineSegment(vert_centroids[inf - 1], vert_centroids[inf - 2])
+                    if inf - sup > 3 and is_crossing(sup2inf, prev2inf):
+                        continue
+                    angle = calc_angle(vert_sup_cnrs[sup], vert_inf_cnrs[inf])
+                    scores.append(abs(angle))
+                    sup_inf.append((sup, inf))
+            if len(scores) == 0:
+                raise RuntimeError('No candidate was found for %s', lm_data['imagePath'])
+            major_sup, major_inf = sup_inf[np.argmax(scores)]
+            # score, mt_sup, mt_inf, lt_sup, lt_inf = best_set
+            # pt_sup, pt_inf = None, None
+            major_apex, _ = find_apex(major_sup, major_inf)
+            sup_inf, scores = [], []
+            if major_apex <= 10:  # mt is major
+                mt_sup, mt_inf = major_sup, major_inf
+                lt_sup = mt_inf
+                for lt_inf in range(lt_sup + 2, n_verts):
+                    # check curve
+                    sup2inf = LineSegment(vert_centroids[lt_inf], vert_centroids[lt_sup])
+                    prev2inf = LineSegment(vert_centroids[lt_inf - 1], vert_centroids[lt_inf - 2])
+                    if lt_inf - lt_sup > 3 and is_crossing(sup2inf, prev2inf):
+                        continue
+                    lt_angle = calc_angle(vert_sup_cnrs[lt_sup], vert_inf_cnrs[lt_inf])
+                    scores.append(abs(lt_angle))
+                    sup_inf.append((lt_sup, lt_inf))
+                if len(scores) == 0:
+                    raise RuntimeError('No candidate was found for %s. %d, %d', lm_data['imagePath'], mt_sup, mt_inf)
+                else:
+                    lt_sup, lt_inf = sup_inf[np.argmax(scores)]
+            else:  # tll is major
+                lt_sup, lt_inf = major_sup, major_inf
+                mt_inf = lt_sup
+                for mt_sup in range(max(mt_inf - 2, 0)):
+                    # check curve
+                    sup2inf = LineSegment(vert_centroids[mt_inf], vert_centroids[mt_sup])
+                    prev2inf = LineSegment(vert_centroids[mt_inf - 1], vert_centroids[mt_inf - 2])
+                    if mt_inf - mt_sup > 3 and is_crossing(sup2inf, prev2inf):
+                        continue
+                    mt_angle = calc_angle(vert_sup_cnrs[mt_sup], vert_inf_cnrs[mt_inf])
+                    scores.append(abs(mt_angle))
+                    sup_inf.append((mt_sup, mt_inf))
+                if len(scores) == 0:
+                    raise RuntimeError('No candidate was found for %s. %d, %d', lm_data['imagePath'], lt_sup, lt_inf)
+                else:
+                    mt_sup, mt_inf = sup_inf[np.argmax(scores)]
+
+            # re-compute apexes
+            apex_corners = []
+            pt_sup, pt_inf = None, None
+            if pt_sup is not None:
+                pt_apex, pt_apex_corner = find_apex(pt_sup, pt_inf)
+                apex_corners.append(pt_apex_corner)
+            assert mt_sup is not None
+            mt_apex, mt_apex_corner = find_apex(mt_sup, mt_inf)
+            apex_corners.append(mt_apex_corner)
+            assert lt_sup is not None
+            lt_apex, lt_apex_corner = find_apex(lt_sup, lt_inf)
+            apex_corners.append(lt_apex_corner)
         elif curve_algo == 'stored':  # Use stored value in json
             indices = lm_data['curve_indices']
             pt_sup, pt_inf = indices['PT']
@@ -360,7 +428,7 @@ def measure_json(
             vert_sup_cnrs[mt_sup], vert_inf_cnrs[mt_inf], grp, title=gid, text_attrs=text_attrs
         )
         if lt_sup is not None and lt_inf is not None:
-        gid = 'TLL'
+            gid = 'TLL'
         drawings.append((gid, 'TL/L Cobb (p.49)'))
         grp = dwg.add(
             dwg.g(
@@ -432,13 +500,13 @@ def measure_json(
                     visibility=d_visibility[gid],
                 )
             )
-            grp.add(dwg.path((['M'] + sacrum_center.tolist() + [sacrum_center[0]] + [vert_corners[:, :, 1].min()])))
-            grp.add(dwg.path((['M'] + vert_apex.tolist() + [sacrum_center[0]] + [vert_centroids[i_apex, 1]])))
+            grp.add(dwg.line(sacrum_center.tolist(), [sacrum_center[0], vert_corners[:, :, 1].min()]))
+            grp.add(dwg.line(vert_apex.tolist(), [sacrum_center[0], vert_centroids[i_apex, 1]]))
             grp.add(dwg.circle(center=vert_apex.tolist(), r=POINT_RADIUS, stroke=color, fill=color))
             text_elm = dwg.text('{:.1f} px'.format(vert_apex[0] - sacrum_center[0]), insert=vert_apex, **text_attrs)
             text_elm.set_desc(title=gid)
             grp.add(text_elm)
-            grp.add(dwg.path((['M'] + sacrum_tltr.ravel().tolist())))
+            grp.add(dwg.line(sacrum_tltr[0], sacrum_tltr[1]))
             for pos in np.concatenate((sacrum_tltr, sacrum_center[np.newaxis]), axis=0):
                 grp.add(dwg.circle(center=pos.tolist(), r=POINT_RADIUS, stroke=color, fill=color))
 
@@ -451,18 +519,12 @@ def measure_json(
             dwg.g(id=gid, class_=gid, stroke=color, stroke_width=LINE_WIDTH, fill='none', visibility=d_visibility[gid])
         )
 
-        grp.add(
-            dwg.path(
-                (['M'] + sacrum_center.tolist() + [sacrum_center[0]] + [lerp(sacrum_center[1], c7_centroid[1], 0.4)])
-            )
-        )
-        grp.add(
-            dwg.path((['M'] + c7_centroid.tolist() + [c7_centroid[0]] + [lerp(sacrum_center[1], c7_centroid[1], 0.6)]))
-        )
+        grp.add(dwg.line(sacrum_center.tolist(), [sacrum_center[0], lerp(sacrum_center[1], c7_centroid[1], 0.4)]))
+        grp.add(dwg.line(c7_centroid.tolist(), [c7_centroid[0], lerp(sacrum_center[1], c7_centroid[1], 0.6)]))
         grp.add(dwg.circle(center=sacrum_center.tolist(), r=POINT_RADIUS, stroke=color, fill=color))
         grp.add(dwg.circle(center=c7_centroid.tolist(), r=POINT_RADIUS, stroke=color, fill=color))
         y_cb = lerp(sacrum_center[1], c7_centroid[1], 0.5)
-        grp.add(dwg.path((['M'] + [c7_centroid[0], y_cb] + [sacrum_center[0], y_cb])))
+        grp.add(dwg.line([c7_centroid[0], y_cb], [sacrum_center[0], y_cb]))
         text_elm = dwg.text(
             '{:.1f} px'.format(c7_centroid[0] - sacrum_center[0]),
             insert=[max(c7_centroid[0], sacrum_center[0]), y_cb],
@@ -489,22 +551,12 @@ def measure_json(
 
         aux_t1_tilt = Line.from_points(c7pl[0], c7pl[1]).intersect_line(line_t1)
         grp.add(
-            dwg.path(
-                (
-                    ['M']
-                    + (aux_t1_tilt - 2 * t1_width * t1_sup_vec).tolist()
-                    + (aux_t1_tilt + 5 * t1_width * t1_sup_vec).tolist()
-                )
+            dwg.line(
+                (aux_t1_tilt - 2 * t1_width * t1_sup_vec).tolist(), (aux_t1_tilt + 5 * t1_width * t1_sup_vec).tolist()
             )
         )
         grp.add(
-            dwg.path(
-                (
-                    ['M']
-                    + (aux_t1_tilt - 2 * t1_width * aux_vec).tolist()
-                    + (aux_t1_tilt + 5 * t1_width * aux_vec).tolist()
-                )
-            )
+            dwg.line((aux_t1_tilt - 2 * t1_width * aux_vec).tolist(), (aux_t1_tilt + 5 * t1_width * aux_vec).tolist())
         )
         angle = calc_angle(vert_corners[0], ([0, aux_t1_tilt[1]], [image_size[0], aux_t1_tilt[1]]))
         angle_deg = np.rad2deg(angle)
@@ -534,7 +586,7 @@ def measure_json(
             line_clavicle = Line.from_points(clavicle_kps[0], clavicle_kps[1])
             chrl = Line.from_points([0, clavicle_kps[:, 1].min()], [image_size[0], clavicle_kps[:, 1].min()])
             dwg.draw_line(clavicle_kps[0], clavicle_kps[1], grp)
-            grp.add(dwg.path((['M'] + [0, clavicle_kps[:, 1].min()] + [image_size[0], clavicle_kps[:, 1].min()])))
+            grp.add(dwg.line([0, clavicle_kps[:, 1].min()], [image_size[0], clavicle_kps[:, 1].min()]))
             if (
                 clavicle_kps[0, 1] != clavicle_kps[1, 1]
             ):  # TODO: somehow chrl.intersect_line(line_clavicle) raises ValueError of parallel
@@ -603,7 +655,7 @@ def measure_json(
             pelvic_ref_line = Line.from_points(pelvic_kps[0], pelvic_kps[1])
             dwg.draw_line(pelvic_kps[0], pelvic_kps[1], grp)
             y_up = pelvic_kps[:, 1].min()
-            grp.add(dwg.path((['M'] + [0, y_up] + [image_size[0], y_up])))
+            grp.add(dwg.line([0, y_up], [image_size[0], y_up]))
             for pos in pelvic_kps:
                 grp.add(dwg.circle(center=pos.tolist(), r=POINT_RADIUS, stroke=color, fill=color))
             hline = Line.from_points((0, y_up), (image_size[0], y_up))
@@ -729,10 +781,10 @@ def measure_json(
         drawings.append((gid, 'Sacral Slope (p.99)'))
         color = line_colors[gid]
         grp = dwg.add(dwg.g(id=gid, class_=gid, stroke=color, visibility=d_visibility[gid]))
-        grp.add(dwg.path((['M'] + sacrum_tltr.ravel().tolist())))
+        grp.add(dwg.line((sacrum_tltr[0], sacrum_tltr[1])))
         sacrum_width = np.linalg.norm(sacrum_tltr[1] - sacrum_tltr[0])
         sacrum_hl = sacrum_tltr[0] + sacrum_width * np.array((np.sign(sacrum_tltr[1, 0] - sacrum_tltr[0, 0]), 0))
-        grp.add(dwg.path((['M'] + sacrum_tltr[0].tolist() + sacrum_hl.tolist())))
+        grp.add(dwg.line(sacrum_tltr[0].tolist(), sacrum_hl.tolist()))
         angle = np.abs(calc_angle(sacrum_tltr, (sacrum_tltr[0], sacrum_hl)))
         angle_deg = np.rad2deg(angle)
         txt_angle = '{:.2f}°'.format(angle_deg)
@@ -749,15 +801,13 @@ def measure_json(
         grp = dwg.add(dwg.g(id=gid, class_=gid, stroke=color, visibility=d_visibility[gid]))
 
         sacrum_tr = sacrum_tltr[1]
-        grp.add(dwg.path((['M'] + sacrum_tr.tolist() + [sacrum_tr[0]] + [lerp(sacrum_tr[1], c7_centroid[1], 0.7)])))
-        grp.add(
-            dwg.path((['M'] + c7_centroid.tolist() + [c7_centroid[0]] + [lerp(sacrum_tr[1], c7_centroid[1], 0.9)]))
-        )
+        grp.add(dwg.polyline(sacrum_tr.tolist() + [sacrum_tr[0]] + [lerp(sacrum_tr[1], c7_centroid[1], 0.7)]))
+        grp.add(dwg.polyline(c7_centroid.tolist() + [c7_centroid[0]] + [lerp(sacrum_tr[1], c7_centroid[1], 0.9)]))
         grp.add(dwg.circle(center=sacrum_tr.tolist(), r=POINT_RADIUS, stroke=color, fill=color))
         grp.add(dwg.circle(center=c7_centroid.tolist(), r=POINT_RADIUS, stroke=color, fill=color))
         y_cb = lerp(sacrum_tr[1], c7_centroid[1], 0.8)
         balance = sacrum_tr[0] - c7_centroid[0]
-        grp.add(dwg.path((['M'] + [c7_centroid[0], y_cb] + [sacrum_tr[0], y_cb])))
+        grp.add(dwg.line([c7_centroid[0], y_cb], [sacrum_tr[0], y_cb]))
         text_elm = dwg.text(
             '{:.1f} px'.format(balance), insert=[max(c7_centroid[0], sacrum_tr[0]), y_cb], **text_attrs
         )
@@ -774,18 +824,18 @@ def measure_json(
             color = line_colors[gid]
             grp = dwg.add(dwg.g(id=gid, class_=gid, stroke=color, fill='none', visibility=d_visibility[gid]))
             femoral_heads = np.array(circles['FemoralHead'])
-            grp.add(dwg.path((['M'] + sacrum_tltr.ravel().tolist())))
+            grp.add(dwg.line(sacrum_tltr[0], sacrum_tltr[1]))
             for femoral_head in femoral_heads:
                 grp.add(dwg.circle(center=femoral_head[0].tolist(), r=2, stroke=color, fill=color))
                 r = np.linalg.norm(femoral_head[0] - femoral_head[1])
                 grp.add(dwg.circle(center=femoral_head[0].tolist(), r=r, stroke=color, fill='none'))
-            grp.add(dwg.path((['M'] + femoral_heads[:, 0].ravel().tolist())))
+            grp.add(dwg.line(femoral_heads[0, 0], femoral_heads[1, 0]))
             femoral_center = femoral_heads[:, 0].mean(axis=0)
             grp.add(dwg.circle(center=femoral_center.tolist(), r=2, stroke=color, fill=color))
-            grp.add(dwg.path((['M'] + femoral_center.tolist() + sacrum_center.tolist())))
+            grp.add(dwg.line(femoral_center.tolist(), sacrum_center.tolist()))
 
             sacrum_perp = perp(sacrum_tltr[1] - sacrum_tltr[0])
-            grp.add(dwg.path((['M'] + sacrum_center.tolist() + (sacrum_center + sacrum_width * sacrum_perp).tolist())))
+            grp.add(dwg.line(sacrum_center, (sacrum_center + sacrum_width * sacrum_perp).tolist()))
             angle = np.abs(calc_angle(sacrum_tltr, (femoral_center, sacrum_center)))
             angle_deg = 90 - np.rad2deg(angle)
             txt_angle = '{:.2f}°'.format(angle_deg)
@@ -800,8 +850,8 @@ def measure_json(
             drawings.append((gid, 'Pelvic Radius Angle (p.101)'))
             color = line_colors[gid]
             grp = dwg.add(dwg.g(id=gid, class_=gid, stroke=color, visibility=d_visibility[gid]))
-            grp.add(dwg.path((['M'] + sacrum_tltr.ravel().tolist())))
-            grp.add(dwg.path((['M'] + femoral_center.tolist() + sacrum_tltr[1].tolist())))
+            grp.add(dwg.line(sacrum_tltr[0].tolist(), sacrum_tltr[1].tolist()))
+            grp.add(dwg.line(femoral_center.tolist(), sacrum_tltr[1].tolist()))
             angle = np.abs(calc_angle(sacrum_tltr, (femoral_center, sacrum_tltr[1])))
             angle_deg = np.rad2deg(angle)
             txt_angle = '{:.2f}°'.format(angle_deg)
@@ -819,9 +869,9 @@ def measure_json(
             l5_sup_center = l5_sup.mean(axis=0)
             l5_perp = perp(l5_sup[1] - l5_sup[0])
             l5_width = np.linalg.norm(l5_sup[1] - l5_sup[0])
-            grp.add(dwg.path((['M'] + l5_sup_center.tolist() + (l5_sup_center + l5_width * l5_perp).tolist())))
-            grp.add(dwg.path((['M'] + vert_sup_cnrs[-1].ravel().tolist())))
-            grp.add(dwg.path((['M'] + femoral_center.tolist() + l5_sup_center.tolist())))
+            grp.add(dwg.line(l5_sup_center.tolist(), (l5_sup_center + l5_width * l5_perp).tolist()))
+            grp.add(dwg.line(vert_sup_cnrs[-1][0], vert_sup_cnrs[1]))
+            grp.add(dwg.line(femoral_center.tolist(), l5_sup_center.tolist()))
             angle = np.abs(calc_angle(l5_sup, (femoral_center, l5_sup_center)))
             angle_deg = 90 - np.rad2deg(angle)
             txt_angle = '{:.2f}°'.format(angle_deg)
@@ -865,7 +915,7 @@ def measure_json(
                 txt_angle = '{:.2f}°'.format(angle_deg)
                 measures[name] = angle_deg
                 grp = grps[gid]
-                grp.add(dwg.path((['M'] + pair.ravel().tolist())))
+                grp.add(dwg.line(pair[0], pair[1]))
                 text_elm = dwg.text(txt_angle, insert=pair[0], **text_attrs)
                 text_elm.set_desc(title=gid)
                 grp.add(text_elm)

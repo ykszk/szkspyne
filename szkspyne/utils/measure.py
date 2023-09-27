@@ -286,12 +286,12 @@ class SpinalDrawing(svgwrite.Drawing):
         if d[1] == 0:  # horizontal line
             p0 = [0, a[1]]
             p1 = [self.size[0], a[1]]
-            grp.add(self.path((['M'] + p0 + p1)))
+            grp.add(self.line(p0, p1))
             return p0, p1
         if d[0] == 0:  # vertical line
             p0 = [a[0], self.size[0]]
             p1 = [a[0], self.size[1]]
-            grp.add(self.path((['M'] + p0 + p1)))
+            grp.add(self.line(p0, p1))
             return p0, p1
         if xrange is None:
             xrange = (0, self.size[0])
@@ -313,7 +313,7 @@ class SpinalDrawing(svgwrite.Drawing):
         if xrange[0] <= x <= xrange[1]:
             intersections.append([x, yrange[1]])
         p1, p2 = intersections[0], intersections[1]
-        grp.add(self.path((['M'] + p1 + p2)))
+        grp.add(self.line(p1, p2))
         return p1, p2
 
     def draw_cobb(
@@ -343,8 +343,8 @@ class SpinalDrawing(svgwrite.Drawing):
             is_inside = np.linalg.norm(aux_cross - sup_cnrs[0]) > np.linalg.norm(up_low_cross - sup_cnrs[0])
             if is_inside:
                 text_pos = up_low_cross
-                grp.add(self.path((['M'] + up_end.tolist() + up_low_cross.tolist())))
-                grp.add(self.path((['M'] + low_end.tolist() + up_low_cross.tolist())))
+                grp.add(self.line(up_end, up_low_cross))
+                grp.add(self.line(low_end, up_low_cross))
             else:
                 aux_cross = Point(rotate_around(pts, angle_rad / 2, up_low_cross))
                 up_aux1 = up_line.project_point(aux_cross)
@@ -355,16 +355,16 @@ class SpinalDrawing(svgwrite.Drawing):
                 low_auxs = np.array((low_aux1, low_aux2))
                 text_pos = aux_cross
 
-                grp.add(self.path((['M'] + up_end.tolist() + up_auxs[0].tolist())))
-                grp.add(self.path((['M'] + up_auxs.tolist())))
-                grp.add(self.path((['M'] + low_end.tolist() + low_auxs[0].tolist())))
-                grp.add(self.path((['M'] + low_auxs.tolist())))
+                grp.add(self.line(up_end, up_auxs[0]))
+                grp.add(self.line(up_auxs[0], up_auxs[1]))
+                grp.add(self.line(low_end, low_auxs[0]))
+                grp.add(self.line(low_auxs[0], low_auxs[1]))
         except ValueError:
             angle_rad = 0
             text_pos = np.concatenate([sup_cnrs, inf_cnrs], axis=0).mean(axis=0)
-            grp.add(self.path((['M'] + sup_cnrs[0].tolist() + sup_cnrs[1].tolist())))
-            grp.add(self.path((['M'] + inf_cnrs[0].tolist() + inf_cnrs[1].tolist())))
-            grp.add(self.path((['M'] + sup_cnrs.mean(axis=0).tolist() + inf_cnrs.mean(axis=1).tolist())))
+            grp.add(self.line(sup_cnrs[0], sup_cnrs[1]))
+            grp.add(self.line(inf_cnrs[0], inf_cnrs[1]))
+            grp.add(self.line(sup_cnrs.mean(axis=0), inf_cnrs.mean(axis=1)))
 
         angle_deg = np.rad2deg(angle_rad)
         text_angle = '{:.1f}°'.format(angle_deg)
@@ -378,8 +378,8 @@ class SpinalDrawing(svgwrite.Drawing):
         return angle_deg
 
     def draw_vertical_dist(self, p1, p2, grp, title=''):
-        grp.add(self.path((['M'] + [0, p1[1]] + [self.size[0], p1[1]])))
-        grp.add(self.path((['M'] + [0, p2[1]] + [self.size[0], p2[1]])))
+        grp.add(self.line([0, p1[1]], [self.size[0], p1[1]]))
+        grp.add(self.line([0, p2[1]], [self.size[0], p2[1]]))
         height_text = '{:.1f} px'.format(np.abs(p1[1] - p2[1]))
         text_elm = self.text(height_text, insert=p1, **self.text_attrs)
         if title:
