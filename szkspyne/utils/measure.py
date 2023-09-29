@@ -10,7 +10,7 @@ import numpy as np
 import svgwrite
 from PIL import Image
 from scipy import stats
-from skspatial.objects import Line, Point
+from skspatial.objects import Line, LineSegment, Point
 
 from szkspyne import settings
 
@@ -203,6 +203,17 @@ def read_default_line_colors() -> Dict[str, str]:
         for r in reader:
             color_dict[r['name']] = r['color']
     return color_dict
+
+
+def is_crossing(l1: LineSegment, l2: LineSegment) -> bool:
+    '''
+    return true if two line segments cross, and false otherwise
+    '''
+    try:
+        l1.intersect_line_segment(l2)
+        return True
+    except ValueError:
+        return False
 
 
 class SpinalDrawing(svgwrite.Drawing):

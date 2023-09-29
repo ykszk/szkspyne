@@ -7,7 +7,7 @@ import sys
 from collections import defaultdict
 from io import BytesIO
 from pathlib import Path
-from typing import Any, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import logzero
 import numpy as np
@@ -22,6 +22,7 @@ from szkspyne.utils.measure import (
     SpinalDrawing,
     calc_angle,
     get_circle_dict,
+    is_crossing,
     lerp,
     perp,
 )
@@ -30,14 +31,6 @@ from szkspyne.utils.measure import (
 LINE_WIDTH = 2.0
 POINT_RADIUS = 2.0
 PERP_BOX_SIZE = (20, 20)  # perpendicular sign
-
-
-def is_crossing(l1: LineSegment, l2: LineSegment) -> bool:
-    try:
-        l1.intersect_line_segment(l2)
-        return True
-    except ValueError:
-        return False
 
 
 def find_apex(vert_corners, vert_centroids, sup, inf):
@@ -57,10 +50,22 @@ def find_apex(vert_corners, vert_centroids, sup, inf):
     return apex
 
 
+def load_line_colors():
+    return utils.read_default_line_colors()
+
+
+def load_label_colors(filename):
+    with open(filename) as f:
+        color_data = yaml.safe_load(f)
+    label_colors = color_data['label_colors']
+    return label_colors
+
+
 def measure_json(
     lm_data: Any,
     height: int,
-    config_filename: str,
+    label_colors: Dict[str, str],
+    line_colors: Dict[str, str],
     draw_points: bool,
     draw_vertebral_number: bool,
     image_type: Optional[str],
@@ -77,11 +82,6 @@ def measure_json(
     dwg = SpinalDrawing(lm_data, image_dir, height)
     kps, text_attrs, image_size = dwg.kps, dwg.text_attrs, dwg.size
 
-    with open(config_filename) as f:
-        color_data = yaml.safe_load(f)
-    label_colors = color_data['label_colors']
-
-    line_colors = utils.read_default_line_colors()
     d_visibility = defaultdict(lambda: 'visible')
     d_visibility.update({gid: 'hidden' for gid in hide})
 
@@ -122,8 +122,7 @@ def measure_json(
             grp.add(g_ptx)
 
     measures = {'flags': lm_data['flags']}
-    if len(kps['TL']) != len(kps['TR']) or len(kps['BL']) != len(kps['BR']):
-        raise ValueError('Invalid set of number of points for TL, TR, BL and BR')
+
     sacrum_tltr, vert_corners, disc_corners = dwg.sacrum_tltr, dwg.vert_corners, dwg.disc_corners
     vert_corners_w_c7, c7_corners, c7_centroid = dwg.vert_corners_w_c7, dwg.c7_corners, dwg.c7_centroid
 
@@ -312,7 +311,7 @@ def measure_json(
                     scores.append(abs(lt_angle))
                     sup_inf.append((lt_sup, lt_inf))
                 if len(scores) == 0:
-                    raise RuntimeError('No candidate was found for %s. %d, %d', lm_data['imagePath'], mt_sup, mt_inf)
+                    lt_sup, lt_inf = None, None
                 else:
                     lt_sup, lt_inf = sup_inf[np.argmax(scores)]
             else:  # tll is major
@@ -328,7 +327,7 @@ def measure_json(
                     scores.append(abs(mt_angle))
                     sup_inf.append((mt_sup, mt_inf))
                 if len(scores) == 0:
-                    raise RuntimeError('No candidate was found for %s. %d, %d', lm_data['imagePath'], lt_sup, lt_inf)
+                    mt_sup, mt_inf = None, None
                 else:
                     mt_sup, mt_inf = sup_inf[np.argmax(scores)]
 
@@ -359,38 +358,38 @@ def measure_json(
 
         # cobb angles
         logger.debug('Cobb angles')
-        drawings += [('MT', 'MT Cobb (p.49)'), ('TLL', 'TL/L Cobb (p.49)')]
-        gid = 'MT'
-        drawings.append((gid, 'MT Cobb (p.49)'))
-        grp = dwg.add(
-            dwg.g(
-                id=gid,
-                class_=gid,
-                stroke=line_colors[gid],
-                stroke_width=LINE_WIDTH,
-                fill='none',
-                visibility=d_visibility[gid],
+        if mt_sup is not None and mt_inf is not None:
+            gid = 'MT'
+            drawings.append((gid, 'MT Cobb (p.49)'))
+            grp = dwg.add(
+                dwg.g(
+                    id=gid,
+                    class_=gid,
+                    stroke=line_colors[gid],
+                    stroke_width=LINE_WIDTH,
+                    fill='none',
+                    visibility=d_visibility[gid],
+                )
             )
-        )
-        measures[gid] = dwg.draw_cobb(
-            vert_sup_cnrs[mt_sup], vert_inf_cnrs[mt_inf], grp, title=gid, text_attrs=text_attrs
-        )
+            measures[gid] = dwg.draw_cobb(
+                vert_sup_cnrs[mt_sup], vert_inf_cnrs[mt_inf], grp, title=gid, text_attrs=text_attrs
+            )
         if lt_sup is not None and lt_inf is not None:
             gid = 'TLL'
-        drawings.append((gid, 'TL/L Cobb (p.49)'))
-        grp = dwg.add(
-            dwg.g(
-                id=gid,
-                class_=gid,
-                stroke=line_colors[gid],
-                stroke_width=LINE_WIDTH,
-                fill='none',
-                visibility=d_visibility[gid],
+            drawings.append((gid, 'TL/L Cobb (p.49)'))
+            grp = dwg.add(
+                dwg.g(
+                    id=gid,
+                    class_=gid,
+                    stroke=line_colors[gid],
+                    stroke_width=LINE_WIDTH,
+                    fill='none',
+                    visibility=d_visibility[gid],
+                )
             )
-        )
-        measures[gid] = dwg.draw_cobb(
-            vert_sup_cnrs[lt_sup], vert_inf_cnrs[lt_inf], grp, title=gid, text_attrs=text_attrs
-        )
+            measures[gid] = dwg.draw_cobb(
+                vert_sup_cnrs[lt_sup], vert_inf_cnrs[lt_inf], grp, title=gid, text_attrs=text_attrs
+            )
         if pt_sup is not None:
             drawings += [('PT', 'PT Cobb (p.49)')]
             gid = 'PT'
@@ -916,7 +915,7 @@ def main():
     parser.add_argument(
         '--algo',
         help='Algorithm to determine curves',
-        choices=['max_diffs', 'fujimori', 'no-cross', 'stored'],
+        choices=['max_diffs', 'fujimori', 'no-cross', 'no-cross2', 'stored'],
         default='max_diffs',
     )
     parser.add_argument('--imagedb', help='image database filename for heatmap overlay')
@@ -936,6 +935,8 @@ def main():
     sub_single.add_argument('--html', help='Save html')
 
     def command_single(args):
+        label_colors = load_label_colors(args.config)
+        line_colors = load_line_colors()
         if args.parent_dir:
             image_dir = Path(args.parent_dir)
         else:
@@ -945,7 +946,8 @@ def main():
         measure_json(
             lm_data,
             args.height,
-            args.config,
+            label_colors,
+            line_colors,
             args.points,
             args.numbers,
             args.image_type,
@@ -977,7 +979,11 @@ def main():
         if not args.html and not args.image and not args.measure:
             print('At least one output (html, image, or measure) argument is required.')
             sys.exit(1)
+        if args.measure and args.ndjson:
+            logger.warning('Specifying both `measure` and `ndjson is somewhat redundant. Consider using onlye one.')
         outdir = Path(args.output)
+        label_colors = load_label_colors(args.config)
+        line_colors = load_line_colors()
         if args.workers <= 0:
             import os
 
@@ -1000,7 +1006,8 @@ def main():
             return measure_json(
                 lm_data,
                 args.height,
-                args.config,
+                label_colors,
+                line_colors,
                 args.points,
                 args.numbers,
                 args.image_type,
@@ -1026,7 +1033,8 @@ def main():
             return measure_json(
                 lm_data,
                 args.height,
-                args.config,
+                label_colors,
+                line_colors,
                 args.points,
                 args.numbers,
                 args.image_type,
