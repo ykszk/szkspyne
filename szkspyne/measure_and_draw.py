@@ -7,7 +7,8 @@ import sys
 from collections import defaultdict
 from io import BytesIO
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, NameduTple
+import dataclasses
 
 import logzero
 import numpy as np
@@ -31,6 +32,50 @@ from szkspyne.utils.measure import (
 LINE_WIDTH = 2.0
 POINT_RADIUS = 2.0
 PERP_BOX_SIZE = (20, 20)  # perpendicular sign
+
+
+class CurvePair(NameduTple):
+    '''
+    tuple of sup index and inf index in this order
+    '''
+
+    sup: int
+    inf: int
+
+
+class CurveIndices(NameduTple):
+    pt: Optional[CurvePair]
+    mt: Optional[CurvePair]
+    tll: Optional[CurvePair]
+
+    @staticmethod
+    def from_tuples(
+        pt: Tuple[Optional[int], Optional[int]],
+        mt: Tuple[Optional[int], Optional[int]],
+        tll: Tuple[Optional[int], Optional[int]],
+    ):
+        return CurveIndices(CurveIndices.tuple2pair(pt), CurveIndices.tuple2pair(mt), CurveIndices.tuple2pair(tll))
+
+    @staticmethod
+    def tuple2pair(t: Tuple[Optional[int], Optional[int]]):
+        return None if t[0] is None or t[1] is None else CurvePair(t[0], t[1])
+
+    @staticmethod
+    def pair2tuple(p: Optional['CurvePair']):
+        return (None, None) if p is None else (p.sup, p.inf)
+
+    def to_dict(self) -> Dict[str, Tuple[Optional[int], Optional[int]]]:
+        return {
+            'MT': CurveIndices.pair2tuple(self.mt),
+            'LTT': CurveIndices.pair2tuple(self.tll),
+            'PT': CurveIndices.pair2tuple(self.pt),
+        }
+
+    @staticmethod
+    def from_dict(d: Dict[str, Tuple[Optional[int], Optional[int]]]):
+        return CurveIndices(
+            CurveIndices.tuple2pair(d['PT']), CurveIndices.tuple2pair(d['MT']), CurveIndices.tuple2pair(d['TLL'])
+        )
 
 
 def find_apex(vert_corners, vert_centroids, sup, inf):
@@ -192,6 +237,7 @@ def measure_json(
                         best_set = (mt_sup, mt_inf), best_pt, best_lt
             assert best_set is not None
             (mt_sup, mt_inf), (pt_sup, pt_inf), (lt_sup, lt_inf) = best_set
+            curve_indices = CurveIndices.from_tuples((pt_sup, pt_inf), (mt_sup, mt_inf), (lt_sup, lt_inf))
         elif curve_algo == 'fujimori':
             APEX_MARGIN = 2
             diff_mat = (
@@ -221,6 +267,7 @@ def measure_json(
             lt_set = lt_angles[lower_arg([e[-1] for e in lt_angles])]
             lt_sup, lt_inf = lt_set[0], lt_set[1]
             pt_sup, pt_inf = None, None
+            curve_indices = CurveIndices.from_tuples((pt_sup, pt_inf), (mt_sup, mt_inf), (lt_sup, lt_inf))
         elif curve_algo == 'no-cross':
             # no-cross: max diff with constraint
             # No PT
@@ -278,6 +325,7 @@ def measure_json(
                 if candidates:
                     pt_sup, _ = max(candidates, key=lambda e: e[1])
                     pt_inf = inf
+            curve_indices = CurveIndices.from_tuples((pt_sup, pt_inf), (mt_sup, mt_inf), (lt_sup, lt_inf))
         elif curve_algo == 'no-cross2':
             # no-cross: max diff with constraint
             n_verts = len(vert_corners)
@@ -332,6 +380,7 @@ def measure_json(
                     mt_sup, mt_inf = sup_inf[np.argmax(scores)]
 
             pt_sup, pt_inf = None, None
+            curve_indices = CurveIndices.from_tuples((pt_sup, pt_inf), (mt_sup, mt_inf), (lt_sup, lt_inf))
         elif curve_algo == 'stored':  # Use stored value in json
             indices = lm_data['curve_indices']
             pt_sup, pt_inf = indices['PT']
@@ -345,67 +394,35 @@ def measure_json(
                 if lt_inf >= len(vert_corners):
                     logger.info('Stored index exceeds possible value. %s, %s', lm_data['imagePath'], lt_inf)
                     lt_inf = len(vert_corners) - 1
+            curve_indices = CurveIndices.from_tuples((pt_sup, pt_inf), (mt_sup, mt_inf), (lt_sup, lt_inf))
         else:
             raise NotImplemented
 
+        logger.debug('Cobb angles')
         apexes = []
-        for sup, inf in ((pt_sup, pt_inf), (mt_sup, mt_inf), (lt_sup, lt_inf)):
-            if sup is not None and inf is not None:
+        for gid, disp, sup_inf_pair in [
+            ('MT', 'MT Cobb (p.49)', curve_indices.mt),
+            ('TLL', 'TL/L Cobb (p.49)', curve_indices.tll),
+            ('PT', 'PT Cobb (p.49)', curve_indices.pt),
+        ]:
+            if sup_inf_pair is not None:
+                sup, inf = sup_inf_pair
                 apex = find_apex(vert_corners, vert_centroids, sup, inf)
                 apexes.append(apex)
-
-        measures['curve_indices'] = {'MT': (mt_sup, mt_inf), 'PT': (pt_sup, pt_inf), 'TLL': (lt_sup, lt_inf)}
-
-        # cobb angles
-        logger.debug('Cobb angles')
-        if mt_sup is not None and mt_inf is not None:
-            gid = 'MT'
-            drawings.append((gid, 'MT Cobb (p.49)'))
-            grp = dwg.add(
-                dwg.g(
-                    id=gid,
-                    class_=gid,
-                    stroke=line_colors[gid],
-                    stroke_width=LINE_WIDTH,
-                    fill='none',
-                    visibility=d_visibility[gid],
+                drawings.append((gid, disp))
+                grp = dwg.add(
+                    dwg.g(
+                        id=gid,
+                        class_=gid,
+                        stroke=line_colors[gid],
+                        stroke_width=LINE_WIDTH,
+                        fill='none',
+                        visibility=d_visibility[gid],
+                    )
                 )
-            )
-            measures[gid] = dwg.draw_cobb(
-                vert_sup_cnrs[mt_sup], vert_inf_cnrs[mt_inf], grp, title=gid, text_attrs=text_attrs
-            )
-        if lt_sup is not None and lt_inf is not None:
-            gid = 'TLL'
-            drawings.append((gid, 'TL/L Cobb (p.49)'))
-            grp = dwg.add(
-                dwg.g(
-                    id=gid,
-                    class_=gid,
-                    stroke=line_colors[gid],
-                    stroke_width=LINE_WIDTH,
-                    fill='none',
-                    visibility=d_visibility[gid],
+                measures[gid] = dwg.draw_cobb(
+                    vert_sup_cnrs[sup], vert_inf_cnrs[inf], grp, title=gid, text_attrs=text_attrs
                 )
-            )
-            measures[gid] = dwg.draw_cobb(
-                vert_sup_cnrs[lt_sup], vert_inf_cnrs[lt_inf], grp, title=gid, text_attrs=text_attrs
-            )
-        if pt_sup is not None:
-            drawings += [('PT', 'PT Cobb (p.49)')]
-            gid = 'PT'
-            grp = dwg.add(
-                dwg.g(
-                    id=gid,
-                    class_=gid,
-                    stroke='red',
-                    stroke_width=LINE_WIDTH,
-                    fill='none',
-                    visibility=d_visibility[gid],
-                )
-            )
-            measures[gid] = dwg.draw_cobb(
-                vert_sup_cnrs[pt_sup], vert_inf_cnrs[pt_inf], grp, title=gid, text_attrs=text_attrs
-            )
         # Curve apex
         if apexes:
             gid = 'CurveApex'
@@ -1067,8 +1084,8 @@ def main():
         if args.ndjson:
             with open(args.ndjson, 'w') as f:
                 for fn, ms in zip(json_filenames, all_measures):
-                    ms['filename'] = re.sub(r"\.json$", "", fn.name)  # not using `fn.stem` to avoid stripping to much
-                    f.write(json.dumps(ms, ensure_ascii=False))
+                    ms['filename'] = fn.stem
+                    f.write(json.dumps(ms, ensure_ascii=False, separators=(',', ':')))
                     f.write('\n')
         return 0
 
