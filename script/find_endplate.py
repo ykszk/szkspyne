@@ -37,7 +37,6 @@ ref_indices_ndjson = load_ndjson(ref_indices_filename)
 ref_points_ndjson = load_ndjson(ref_points_filename)
 input_points_ndjson = load_ndjson(input_filename)
 input_indices_ndjson = load_ndjson(input_indices_filename)
-assert len(ref_indices_ndjson) == len(ref_points_ndjson)
 
 
 def obj2vertebrae(obj: dict):
@@ -48,9 +47,9 @@ def obj2vertebrae(obj: dict):
 
 
 d_indices = {}
-for file_id, input_obj in input_points_ndjson.items():
-    indices_obj = ref_indices_ndjson[file_id]
-    curves = indices_obj['curve_indices']
+for file_id, indices_obj in ref_indices_ndjson.items():
+    input_obj = input_points_ndjson[file_id]
+    curves = indices_obj['measures']['curve_indices']
     input_verts = obj2vertebrae(input_obj).reshape(-1, 2, 2, 2)  # [index, top/bottom, lr, point2d]
     ref_verts = obj2vertebrae(ref_points_ndjson[file_id]).reshape(-1, 2, 2, 2)
     closest_indices = {label: [] for label in curves.keys()}

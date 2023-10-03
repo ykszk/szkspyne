@@ -4,7 +4,7 @@ import itertools
 from base64 import b64encode
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Dict, List, Tuple, Union
+from typing import Any, Dict, List, Tuple, NamedTuple, Optional
 
 import numpy as np
 import svgwrite
@@ -290,8 +290,8 @@ class SpinalDrawing(svgwrite.Drawing):
         a: np.ndarray,
         b: np.ndarray,
         grp,
-        xrange: Union[Tuple[float, float], None] = None,
-        yrange: Union[Tuple[float, float], None] = None,
+        xrange: Optional[Tuple[float, float]] = None,
+        yrange: Optional[Tuple[float, float]] = None,
     ):
         d = b - a
         if d[1] == 0:  # horizontal line
@@ -396,3 +396,47 @@ class SpinalDrawing(svgwrite.Drawing):
         if title:
             text_elm.set_desc(title=title)
         grp.add(text_elm)
+
+
+class CurvePair(NamedTuple):
+    '''
+    tuple of sup index and inf index in this order
+    '''
+
+    sup: int
+    inf: int
+
+
+class CurveIndices(NamedTuple):
+    pt: Optional[CurvePair]
+    mt: Optional[CurvePair]
+    tll: Optional[CurvePair]
+
+    @staticmethod
+    def from_tuples(
+        pt: Tuple[Optional[int], Optional[int]],
+        mt: Tuple[Optional[int], Optional[int]],
+        tll: Tuple[Optional[int], Optional[int]],
+    ):
+        return CurveIndices(CurveIndices.tuple2pair(pt), CurveIndices.tuple2pair(mt), CurveIndices.tuple2pair(tll))
+
+    @staticmethod
+    def tuple2pair(t: Tuple[Optional[int], Optional[int]]):
+        return None if t[0] is None or t[1] is None else CurvePair(t[0], t[1])
+
+    @staticmethod
+    def pair2tuple(p: Optional['CurvePair']):
+        return (None, None) if p is None else (p.sup, p.inf)
+
+    def to_dict(self) -> Dict[str, Tuple[Optional[int], Optional[int]]]:
+        return {
+            'MT': CurveIndices.pair2tuple(self.mt),
+            'TLL': CurveIndices.pair2tuple(self.tll),
+            'PT': CurveIndices.pair2tuple(self.pt),
+        }
+
+    @staticmethod
+    def from_dict(d: Dict[str, Tuple[Optional[int], Optional[int]]]):
+        return CurveIndices(
+            CurveIndices.tuple2pair(d['PT']), CurveIndices.tuple2pair(d['MT']), CurveIndices.tuple2pair(d['TLL'])
+        )

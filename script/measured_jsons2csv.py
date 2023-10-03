@@ -28,7 +28,7 @@ def merge_ndjsons(ndjson_filenames: List[Path], prefixes: List[str]):
                 set_flags = set([k for k, v in set_flags.items() if v])
                 flags = {f: f in set_flags for f in flags_required}
                 data.update(flags)
-            data.update({prefix + k: v for k, v in json_data.items()})
+            data.update({prefix + k: v for k, v in json_data['measures'].items()})
             rows[i] = data  # update
         df = pd.DataFrame(rows)
         df.set_index('filename', drop=True, inplace=True)
@@ -47,7 +47,7 @@ for image_type in IMAGE_TYPES:
     df_merged = merge_ndjsons(ndjsons, PREFIXES)
     df_merged.to_csv(data_root / f'{image_type}.csv', encoding='cp932')
 
-for suffix in ['_w_curve_indices', '_w_closest_indices']:
+for suffix in ['_w_closest_indices']:
     suffixed_filename = data_root / 'auto' / f'measures_ap_whole{suffix}.ndjson'
     if not suffixed_filename.exists():
         continue

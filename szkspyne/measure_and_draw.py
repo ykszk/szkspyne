@@ -7,8 +7,7 @@ import sys
 from collections import defaultdict
 from io import BytesIO
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, NameduTple
-import dataclasses
+from typing import Any, Dict, List, Optional, Tuple
 
 import logzero
 import numpy as np
@@ -21,6 +20,7 @@ from skspatial.objects import Line, LineSegment
 import szkspyne.utils.measure as utils
 from szkspyne.utils.measure import (
     SpinalDrawing,
+    CurveIndices,
     calc_angle,
     get_circle_dict,
     is_crossing,
@@ -32,50 +32,6 @@ from szkspyne.utils.measure import (
 LINE_WIDTH = 2.0
 POINT_RADIUS = 2.0
 PERP_BOX_SIZE = (20, 20)  # perpendicular sign
-
-
-class CurvePair(NameduTple):
-    '''
-    tuple of sup index and inf index in this order
-    '''
-
-    sup: int
-    inf: int
-
-
-class CurveIndices(NameduTple):
-    pt: Optional[CurvePair]
-    mt: Optional[CurvePair]
-    tll: Optional[CurvePair]
-
-    @staticmethod
-    def from_tuples(
-        pt: Tuple[Optional[int], Optional[int]],
-        mt: Tuple[Optional[int], Optional[int]],
-        tll: Tuple[Optional[int], Optional[int]],
-    ):
-        return CurveIndices(CurveIndices.tuple2pair(pt), CurveIndices.tuple2pair(mt), CurveIndices.tuple2pair(tll))
-
-    @staticmethod
-    def tuple2pair(t: Tuple[Optional[int], Optional[int]]):
-        return None if t[0] is None or t[1] is None else CurvePair(t[0], t[1])
-
-    @staticmethod
-    def pair2tuple(p: Optional['CurvePair']):
-        return (None, None) if p is None else (p.sup, p.inf)
-
-    def to_dict(self) -> Dict[str, Tuple[Optional[int], Optional[int]]]:
-        return {
-            'MT': CurveIndices.pair2tuple(self.mt),
-            'LTT': CurveIndices.pair2tuple(self.tll),
-            'PT': CurveIndices.pair2tuple(self.pt),
-        }
-
-    @staticmethod
-    def from_dict(d: Dict[str, Tuple[Optional[int], Optional[int]]]):
-        return CurveIndices(
-            CurveIndices.tuple2pair(d['PT']), CurveIndices.tuple2pair(d['MT']), CurveIndices.tuple2pair(d['TLL'])
-        )
 
 
 def find_apex(vert_corners, vert_centroids, sup, inf):
@@ -115,7 +71,6 @@ def measure_json(
     draw_vertebral_number: bool,
     image_type: Optional[str],
     html_filename: Optional[Path],
-    measure_filename: Optional[Path],
     template_directory: str,
     html_title: str,
     hide: List[str],
@@ -166,7 +121,8 @@ def measure_json(
                 g_ptx.add(dwg.circle(center=pt, r=POINT_RADIUS))
             grp.add(g_ptx)
 
-    measures = {'flags': lm_data['flags']}
+    measures: Dict[str, Any] = {}
+    measure_result = {'flags': lm_data['flags'], 'measures': measures}
 
     sacrum_tltr, vert_corners, disc_corners = dwg.sacrum_tltr, dwg.vert_corners, dwg.disc_corners
     vert_corners_w_c7, c7_corners, c7_centroid = dwg.vert_corners_w_c7, dwg.c7_corners, dwg.c7_centroid
@@ -397,6 +353,7 @@ def measure_json(
             curve_indices = CurveIndices.from_tuples((pt_sup, pt_inf), (mt_sup, mt_inf), (lt_sup, lt_inf))
         else:
             raise NotImplemented
+        measures['curve_indices'] = curve_indices.to_dict()
 
         logger.debug('Cobb angles')
         apexes = []
@@ -766,8 +723,8 @@ def measure_json(
         grp = dwg.add(dwg.g(id=gid, class_=gid, stroke=color, visibility=d_visibility[gid]))
 
         sacrum_tr = sacrum_tltr[1]
-        grp.add(dwg.polyline(sacrum_tr.tolist() + [sacrum_tr[0]] + [lerp(sacrum_tr[1], c7_centroid[1], 0.7)]))
-        grp.add(dwg.polyline(c7_centroid.tolist() + [c7_centroid[0]] + [lerp(sacrum_tr[1], c7_centroid[1], 0.9)]))
+        grp.add(dwg.line(sacrum_tr.tolist(), [sacrum_tr[0]] + [lerp(sacrum_tr[1], c7_centroid[1], 0.7)]))
+        grp.add(dwg.line(c7_centroid.tolist(), [c7_centroid[0]] + [lerp(sacrum_tr[1], c7_centroid[1], 0.9)]))
         grp.add(dwg.circle(center=sacrum_tr.tolist(), r=POINT_RADIUS, stroke=color, fill=color))
         grp.add(dwg.circle(center=c7_centroid.tolist(), r=POINT_RADIUS, stroke=color, fill=color))
         y_cb = lerp(sacrum_tr[1], c7_centroid[1], 0.8)
@@ -898,10 +855,6 @@ def measure_json(
             measures[name + '_x'] = pts[0][0]
             measures[name + '_y'] = pts[0][1]
 
-    if measure_filename:
-        with open(measure_filename, 'w') as f:
-            json.dump(measures, f, ensure_ascii=False)
-
     if html_filename:
         env = Environment(loader=FileSystemLoader(template_directory, encoding='utf8'))
         template = env.get_template('template.html')
@@ -915,7 +868,7 @@ def measure_json(
             f.write(
                 template.render(svg=svg_tag, svg_container='document', checkboxes='\n'.join(cbs), title=html_title)
             )
-    return measures
+    return measure_result
 
 
 def main():
@@ -960,7 +913,7 @@ def main():
             image_dir = Path(args.input).parent
         with open(args.input) as f:
             lm_data = json.load(f)
-        measure_json(
+        measures = measure_json(
             lm_data,
             args.height,
             label_colors,
@@ -969,7 +922,6 @@ def main():
             args.numbers,
             args.image_type,
             args.html,
-            args.measure,
             args.template,
             args.title,
             args.hide,
@@ -978,6 +930,9 @@ def main():
             args.algo,
             args.imagedb,
         )
+        if args.measure:
+            with open(args.measure, 'w') as f:
+                json.dump(measures, f, ensure_ascii=False)
 
     sub_single.set_defaults(handler=command_single)
 
@@ -1010,44 +965,20 @@ def main():
         from joblib import Parallel, delayed
 
         def do(fn: Path):
-            stem = re.sub(r"\.json$", "", fn.name)
-            measure = outdir / (stem + '.json') if args.measure else None
-            html = outdir / (stem + '.html') if args.html else None
-            if args.parent_dir:
-                image_dir = Path(args.parent_dir)
-            else:
-                image_dir = fn.parent
             with open(fn) as f:
                 lm_data = json.load(f)
                 lm_data['filename'] = fn.stem
-            return measure_json(
-                lm_data,
-                args.height,
-                label_colors,
-                line_colors,
-                args.points,
-                args.numbers,
-                args.image_type,
-                html,
-                measure,
-                args.template,
-                '{} - {}'.format(fn.stem, args.title),
-                args.hide,
-                image_dir,
-                args.slopes,
-                args.algo,
-                args.imagedb,
-            )
+            return do_ndjson(fn, lm_data)
 
         def do_ndjson(fn: Path, lm_data):
             stem = re.sub(r"\.json$", "", Path(lm_data['filename']).name)
-            measure = outdir / (stem + '.json') if args.measure else None
+            measure_filename = outdir / (stem + '.json') if args.measure else None
             html = outdir / (stem + '.html') if args.html else None
             if args.parent_dir:
                 image_dir = Path(args.parent_dir)
             else:
                 image_dir = fn.parent
-            return measure_json(
+            measures = measure_json(
                 lm_data,
                 args.height,
                 label_colors,
@@ -1056,7 +987,6 @@ def main():
                 args.numbers,
                 args.image_type,
                 html,
-                measure,
                 args.template,
                 '{} - {}'.format(stem, args.title),
                 args.hide,
@@ -1065,6 +995,10 @@ def main():
                 args.algo,
                 args.imagedb,
             )
+            if measure_filename:
+                with open(measure_filename, 'w') as f:
+                    json.dump(measures, f, ensure_ascii=False)
+            return measures
 
         if Path(args.input).is_dir():
             json_filenames = sorted(Path(args.input).glob('*.json'))
@@ -1084,7 +1018,7 @@ def main():
         if args.ndjson:
             with open(args.ndjson, 'w') as f:
                 for fn, ms in zip(json_filenames, all_measures):
-                    ms['filename'] = fn.stem
+                    ms['filename'] = re.sub(r"\.json$", "", fn.name)  # not using `fn.stem` to avoid stripping too much
                     f.write(json.dumps(ms, ensure_ascii=False, separators=(',', ':')))
                     f.write('\n')
         return 0
