@@ -216,39 +216,31 @@ def is_crossing(l1: LineSegment, l2: LineSegment) -> bool:
         return False
 
 
-class SpinalDrawing(svgwrite.Drawing):
-    def __init__(self, lm_data: Dict, image_dir: Path, height: int):
+def find_apex(vert_corners, vert_centroids, sup, inf):
+    # maximum translation
+    sup_line = Line.from_points(vert_corners[sup][0], vert_corners[sup][1])
+    inf_line = Line.from_points(vert_corners[inf][0], vert_corners[inf][1])
+
+    vert_disc_centroids = vert_centroids[sup : (inf + 1)]
+    try:
+        p_intersect = sup_line.intersect_line(inf_line)
+    except ValueError:  # parallel lines
+        apex = (sup + inf) // 2
+        return apex
+
+    apex, _ = max([(i, abs(p_intersect[0] - c[0])) for i, c in enumerate(vert_disc_centroids)], key=lambda e: e[1])
+    apex = sup + apex
+    return apex
+
+
+class Vertebrae:
+    def __init__(self, lm_data: Dict):
         lm_data = lm_data.copy()
-        img_fn = Path(image_dir) / Path(lm_data['imagePath']).name
-        pixel_size = 1
-        original_image_shape = (lm_data['imageWidth'], lm_data['imageHeight'])
-        scale = height / original_image_shape[1]
-        image_size = (scale * lm_data['imageWidth'] * pixel_size, height * pixel_size)
-        super().__init__('output.svg', size=image_size, viewBox=('0 0 {} {}'.format(*image_size)))
-        if img_fn.exists():
-            img = Image.open(img_fn)
-            img.thumbnail((100000, height))  # specify height. width argument is just a big number
-            w, h = img.size
-            image_size = (w * pixel_size, h * pixel_size)
-            self.add(self.image('data:image/jpg;base64,' + img2b64(img), size=img.size))
-        else:
-            img = None
-
-        for shape in lm_data['shapes']:
-            shape['points'] = [[scale * e for e in p] for p in shape['points']]
-
-        text_attrs = dict(
-            stroke='black', stroke_width='1px', fill='white', style="font-size:24px; font-family:sans-serif"
-        )
-
         points = get_point_dict(lm_data)
         kps = sort_kps(points)
 
-        self.size = image_size
-        self.text_attrs = text_attrs
         self.points = points
         self.kps = kps
-        self.img = img
 
         if len(kps['TL']) != len(kps['TR']) or len(kps['BL']) != len(kps['BR']):
             raise ValueError('Invalid set of number of points for TL, TR, BL and BR')
@@ -284,6 +276,37 @@ class SpinalDrawing(svgwrite.Drawing):
         self.vert_sup_cnrs = vert_sup_cnrs
         self.vert_sup_vecs = vert_sup_vecs
         self.vert_inf_cnrs = vert_inf_cnrs
+
+
+class SpinalDrawing(svgwrite.Drawing):
+    def __init__(self, lm_data: Dict, image_dir: Path, height: int):
+        lm_data = lm_data.copy()
+        img_fn = Path(image_dir) / Path(lm_data['imagePath']).name
+        pixel_size = 1
+        original_image_shape = (lm_data['imageWidth'], lm_data['imageHeight'])
+        scale = height / original_image_shape[1]
+        image_size = (scale * lm_data['imageWidth'] * pixel_size, height * pixel_size)
+        super().__init__('output.svg', size=image_size, viewBox=('0 0 {} {}'.format(*image_size)))
+        if img_fn.exists():
+            img = Image.open(img_fn)
+            img.thumbnail((100000, height))  # specify height. width argument is just a big number
+            w, h = img.size
+            image_size = (w * pixel_size, h * pixel_size)
+            self.add(self.image('data:image/jpg;base64,' + img2b64(img), size=img.size))
+        else:
+            img = None
+
+        for shape in lm_data['shapes']:
+            shape['points'] = [[scale * e for e in p] for p in shape['points']]
+
+        text_attrs = dict(
+            stroke='black', stroke_width='1px', fill='white', style="font-size:24px; font-family:sans-serif"
+        )
+
+        self.vertebrae = Vertebrae(lm_data)
+        self.size = image_size
+        self.text_attrs = text_attrs
+        self.img = img
 
     def draw_line(
         self,
@@ -425,18 +448,22 @@ class CurveIndices(NamedTuple):
         return None if t[0] is None or t[1] is None else CurvePair(t[0], t[1])
 
     @staticmethod
+    def option2pair(t: Optional[Tuple[int, int]]):
+        return None if t is None else CurvePair(t[0], t[1])
+
+    @staticmethod
     def pair2tuple(p: Optional['CurvePair']):
         return (None, None) if p is None else (p.sup, p.inf)
 
-    def to_dict(self) -> Dict[str, Tuple[Optional[int], Optional[int]]]:
+    def to_dict(self) -> Dict[str, Optional['CurvePair']]:
         return {
-            'MT': CurveIndices.pair2tuple(self.mt),
-            'TLL': CurveIndices.pair2tuple(self.tll),
-            'PT': CurveIndices.pair2tuple(self.pt),
+            'MT': self.mt,
+            'TLL': self.tll,
+            'PT': self.pt,
         }
 
     @staticmethod
-    def from_dict(d: Dict[str, Tuple[Optional[int], Optional[int]]]):
+    def from_dict(d: Dict[str, Optional[Tuple[int, int]]]):
         return CurveIndices(
-            CurveIndices.tuple2pair(d['PT']), CurveIndices.tuple2pair(d['MT']), CurveIndices.tuple2pair(d['TLL'])
+            CurveIndices.option2pair(d['PT']), CurveIndices.option2pair(d['MT']), CurveIndices.option2pair(d['TLL'])
         )

@@ -40,10 +40,8 @@ input_indices_ndjson = load_ndjson(input_indices_filename)
 
 
 def obj2vertebrae(obj: dict):
-    d_points = measure_utils.get_point_dict(obj)
-    d_points = measure_utils.sort_kps(d_points)
-    sacrum_tltr, vert_corners, disc_corners = measure_utils.get_vert_and_disc_corners(d_points)
-    return vert_corners
+    vert = measure_utils.Vertebrae(obj)
+    return vert.vert_corners
 
 
 d_indices = {}
@@ -52,12 +50,13 @@ for file_id, indices_obj in ref_indices_ndjson.items():
     curves = indices_obj['measures']['curve_indices']
     input_verts = obj2vertebrae(input_obj).reshape(-1, 2, 2, 2)  # [index, top/bottom, lr, point2d]
     ref_verts = obj2vertebrae(ref_points_ndjson[file_id]).reshape(-1, 2, 2, 2)
-    closest_indices = {label: [] for label in curves.keys()}
+    closest_indices = {}
     for label, indices in curves.items():
+        if indices is None:
+            closest_indices[label] = None
+            continue
+        closest_indices[label] = []
         for top_bottom, index in enumerate(indices):
-            if index is None:
-                closest_indices[label].append(None)
-                continue
             input_points = input_verts[:, top_bottom]
             ref_points = ref_verts[index, top_bottom]
             tl_dist = spatial.distance.cdist(ref_points[[0]], input_points[:, 0])[0]

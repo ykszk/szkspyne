@@ -22,7 +22,9 @@ for image_type in ap lateral; do
         for subdir in auto reference; do
             echo measure and draw $image_type $subdir
             ndjson="$result_dir"/$subdir/keypoints/${image_type}_whole/all_final_keypoints.ndjson
-            cat $ndjson | jq -c "$jq_remove_flex" | python3 "$SCRIPT_DIR"/measure_and_draw.py --hide $HIDE --height 1200 --points --numbers --image_type $image_type --parent_dir "$SCRIPT_DIR"/../../data/annotation/images/all --title "${subdir} ${image_type}" --config "$SCRIPT_DIR"/../../data/annotation/config.yaml --algo "$algo" --imagedb "$result_dir"/heatmap_images.sqlite3 batch - "$result_dir"/$subdir/${image_type}_whole/ --html --ndjson "$result_dir"/$subdir/measures_${image_type}_whole.ndjson
+            ndjson_curves="$result_dir"/$subdir/curve_indices_${image_type}_whole.ndjson
+            cat $ndjson | jq -c "$jq_remove_flex" | python3 "$SCRIPT_DIR"/determine_curves.py - $ndjson_curves --algo $algo
+            cat $ndjson | jq -c "$jq_remove_flex" | lmrs join --mode left - $ndjson_curves | python3 "$SCRIPT_DIR"/measure_and_draw.py --hide $HIDE --height 1200 --points --numbers --image_type $image_type --parent_dir "$SCRIPT_DIR"/../../data/annotation/images/all --title "${subdir} ${image_type}" --config "$SCRIPT_DIR"/../../data/annotation/config.yaml --algo "$algo" --imagedb "$result_dir"/heatmap_images.sqlite3 batch - "$result_dir"/$subdir/${image_type}_whole/ --html --ndjson "$result_dir"/$subdir/measures_${image_type}_whole.ndjson
         done
     ) &
 done

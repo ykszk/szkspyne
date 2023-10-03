@@ -26,29 +26,13 @@ from szkspyne.utils.measure import (
     is_crossing,
     lerp,
     perp,
+    find_apex,
 )
 
 
 LINE_WIDTH = 2.0
 POINT_RADIUS = 2.0
 PERP_BOX_SIZE = (20, 20)  # perpendicular sign
-
-
-def find_apex(vert_corners, vert_centroids, sup, inf):
-    # maximum translation
-    sup_line = Line.from_points(vert_corners[sup][0], vert_corners[sup][1])
-    inf_line = Line.from_points(vert_corners[inf][0], vert_corners[inf][1])
-
-    vert_disc_centroids = vert_centroids[sup : (inf + 1)]
-    try:
-        p_intersect = sup_line.intersect_line(inf_line)
-    except ValueError:  # parallel lines
-        apex = (sup + inf) // 2
-        return apex
-
-    apex, _ = max([(i, abs(p_intersect[0] - c[0])) for i, c in enumerate(vert_disc_centroids)], key=lambda e: e[1])
-    apex = sup + apex
-    return apex
 
 
 def load_line_colors():
@@ -80,7 +64,7 @@ def measure_json(
     imagedb: Optional[str],
 ):
     dwg = SpinalDrawing(lm_data, image_dir, height)
-    kps, text_attrs, image_size = dwg.kps, dwg.text_attrs, dwg.size
+    kps, text_attrs, image_size = dwg.vertebrae.kps, dwg.text_attrs, dwg.size
 
     d_visibility = defaultdict(lambda: 'visible')
     d_visibility.update({gid: 'hidden' for gid in hide})
@@ -124,15 +108,15 @@ def measure_json(
     measures: Dict[str, Any] = {}
     measure_result = {'flags': lm_data['flags'], 'measures': measures}
 
-    sacrum_tltr, vert_corners, disc_corners = dwg.sacrum_tltr, dwg.vert_corners, dwg.disc_corners
-    vert_corners_w_c7, c7_corners, c7_centroid = dwg.vert_corners_w_c7, dwg.c7_corners, dwg.c7_centroid
+    sacrum_tltr, vert_corners = dwg.vertebrae.sacrum_tltr, dwg.vertebrae.vert_corners
+    c7_centroid = dwg.vertebrae.c7_centroid
 
-    sacrum_center, vert_centroids, disc_centroids = dwg.sacrum_center, dwg.vert_centroids, dwg.disc_centroids
+    sacrum_center, vert_centroids = dwg.vertebrae.sacrum_center, dwg.vertebrae.vert_centroids
     vert_sup_cnrs, vert_sup_vecs, vert_sup_vecs, vert_inf_cnrs = (
-        dwg.vert_sup_cnrs,
-        dwg.vert_sup_vecs,
-        dwg.vert_sup_vecs,
-        dwg.vert_inf_cnrs,
+        dwg.vertebrae.vert_sup_cnrs,
+        dwg.vertebrae.vert_sup_vecs,
+        dwg.vertebrae.vert_sup_vecs,
+        dwg.vertebrae.vert_inf_cnrs,
     )
 
     if draw_vertebral_number:
@@ -149,210 +133,7 @@ def measure_json(
             grp.add(dwg.text(vn, insert=vc))
 
     if image_type == 'ap':
-        # %% coronal translation
-        logger.debug('Coronal translation')
-        coronal_translation = vert_centroids[:, 0] - sacrum_center[0]
-        # Find vertebraes and calculate Cobb angles
-        best_set = None
-        best_score = 0
-        MT_MARGIN = 3
-
-        if curve_algo == 'max_diffs':
-            for mt_sup in range(MT_MARGIN, 7):
-                for mt_inf in range(9, len(vert_sup_cnrs) - MT_MARGIN):
-                    if mt_inf - mt_sup >= 10:
-                        continue
-                    mt_angle = calc_angle(vert_sup_cnrs[mt_sup], vert_inf_cnrs[mt_inf])
-                    # pt
-                    best_pt_score = 0
-                    best_pt = None
-                    pt_inf = mt_sup
-                    for pt_sup in range(0, mt_sup - 1):
-                        pt_angle = calc_angle(vert_sup_cnrs[pt_sup], vert_inf_cnrs[pt_inf])
-                        score = np.abs(pt_angle - mt_angle)
-                        if score > best_pt_score:
-                            best_pt = (pt_sup, pt_inf)
-                            best_pt_score = score
-
-                    # lt
-                    lt_sup = mt_inf
-                    lt_infs = np.arange(mt_inf, len(vert_inf_cnrs))
-                    best_lt_score = 0
-                    best_lt = None
-                    lt_sup = mt_inf
-                    for lt_inf in range(lt_sup + 1, len(vert_inf_cnrs)):
-                        lt_angle = calc_angle(vert_sup_cnrs[lt_sup], vert_inf_cnrs[lt_inf])
-                        score = np.abs(lt_angle - mt_angle)
-                        if score > best_lt_score:
-                            best_lt = (lt_sup, lt_inf)
-                            best_lt_score = score
-                    score = best_pt_score + best_lt_score
-                    assert best_pt is not None and best_lt is not None
-                    if score > best_score:
-                        best_score = score
-                        best_set = (mt_sup, mt_inf), best_pt, best_lt
-            assert best_set is not None
-            (mt_sup, mt_inf), (pt_sup, pt_inf), (lt_sup, lt_inf) = best_set
-            curve_indices = CurveIndices.from_tuples((pt_sup, pt_inf), (mt_sup, mt_inf), (lt_sup, lt_inf))
-        elif curve_algo == 'fujimori':
-            APEX_MARGIN = 2
-            diff_mat = (
-                coronal_translation[APEX_MARGIN:-APEX_MARGIN, np.newaxis]
-                - coronal_translation[np.newaxis, APEX_MARGIN:-APEX_MARGIN]
-            )
-            max_pair: Tuple[int] = np.unravel_index(diff_mat.argmax(), diff_mat.shape)
-            upper_apex = int(min(*max_pair) + APEX_MARGIN)
-            lower_apex = int(max(*max_pair) + APEX_MARGIN)
-            if vert_centroids[upper_apex][0] > vert_centroids[lower_apex][0]:
-                upper_arg, lower_arg = np.argmin, np.argmax
-            else:
-                upper_arg, lower_arg = np.argmax, np.argmin
-            mt_angles = []
-            for mt_sup in range(upper_apex - 1):
-                for mt_inf in range(upper_apex + 1, lower_apex - 1):
-                    mt_angle = calc_angle(vert_sup_cnrs[mt_sup], vert_inf_cnrs[mt_inf])
-                    mt_angles.append((mt_sup, mt_inf, mt_angle))
-            mt_set = mt_angles[upper_arg([e[-1] for e in mt_angles])]
-            mt_sup, mt_inf = mt_set[0], mt_set[1]
-
-            lt_sup = mt_inf
-            lt_angles = []
-            for lt_inf in range(lower_apex + 1, len(vert_corners)):
-                lt_angle = calc_angle(vert_sup_cnrs[lt_sup], vert_inf_cnrs[lt_inf])
-                lt_angles.append((lt_sup, lt_inf, lt_angle))
-            lt_set = lt_angles[lower_arg([e[-1] for e in lt_angles])]
-            lt_sup, lt_inf = lt_set[0], lt_set[1]
-            pt_sup, pt_inf = None, None
-            curve_indices = CurveIndices.from_tuples((pt_sup, pt_inf), (mt_sup, mt_inf), (lt_sup, lt_inf))
-        elif curve_algo == 'no-cross':
-            # no-cross: max diff with constraint
-            # No PT
-            n_verts = len(vert_corners)
-            candidates = []
-
-            for mt_sup in range(n_verts):
-                for mt_inf in range(mt_sup + 2, 13):  # n_verts-2):
-                    # check curve
-                    sup2inf = LineSegment(vert_centroids[mt_inf], vert_centroids[mt_sup])
-                    prev2inf = LineSegment(vert_centroids[mt_inf - 1], vert_centroids[mt_inf - 2])
-                    if mt_inf - mt_sup > 3 and is_crossing(sup2inf, prev2inf):
-                        break
-                    lt_sup = mt_inf
-                    mt_angle = calc_angle(vert_sup_cnrs[mt_sup], vert_inf_cnrs[mt_inf])
-                    for lt_inf in range(lt_sup + 2, n_verts):
-                        # check curve
-                        sup2inf = LineSegment(vert_centroids[lt_inf], vert_centroids[lt_sup])
-                        prev2inf = LineSegment(vert_centroids[lt_inf - 1], vert_centroids[lt_inf - 2])
-                        if lt_inf - lt_sup > 3 and is_crossing(sup2inf, prev2inf):
-                            break
-                        lt_angle = calc_angle(vert_sup_cnrs[lt_sup], vert_inf_cnrs[lt_inf])
-                        score = mt_angle - lt_angle
-                        candidates.append((score, mt_sup, mt_inf, lt_sup, lt_inf))
-            if len(candidates) == 0:
-                raise RuntimeError('No candidate was found for %s', lm_data['imagePath'])
-            scores = np.array([e[0] for e in candidates])
-            abs_scores = np.abs(scores)
-            best_set = candidates[np.argmax(abs_scores)]
-            score, mt_sup, mt_inf, lt_sup, lt_inf = best_set
-            pt_sup, pt_inf = None, None
-            lt_apex = find_apex(vert_corners, vert_centroids, lt_sup, lt_inf)
-            if n_verts - lt_inf >= 2 and lt_apex < 11:
-                lt_angle = calc_angle(vert_sup_cnrs[lt_sup], vert_inf_cnrs[lt_inf])
-                sup = lt_inf
-                candidates = []
-                for inf in range(sup + 2, n_verts):
-                    angle = calc_angle(vert_sup_cnrs[sup], vert_inf_cnrs[inf])
-                    if angle * lt_angle < 0:
-                        candidates.append((inf, abs(angle)))
-                if candidates:
-                    inf, angle = max(candidates, key=lambda e: e[1])
-                    pt_sup, pt_inf = mt_sup, mt_inf
-                    mt_sup, mt_inf = lt_sup, lt_inf
-                    lt_sup = mt_inf
-                    lt_inf = inf
-            if pt_sup is None and mt_sup >= 2:
-                mt_angle = calc_angle(vert_sup_cnrs[mt_sup], vert_inf_cnrs[mt_inf])
-                inf = mt_sup
-                candidates = []
-                for sup in range(0, inf - 1):
-                    angle = calc_angle(vert_sup_cnrs[sup], vert_inf_cnrs[inf])
-                    if angle * mt_angle < 0:
-                        candidates.append((sup, abs(angle)))
-                if candidates:
-                    pt_sup, _ = max(candidates, key=lambda e: e[1])
-                    pt_inf = inf
-            curve_indices = CurveIndices.from_tuples((pt_sup, pt_inf), (mt_sup, mt_inf), (lt_sup, lt_inf))
-        elif curve_algo == 'no-cross2':
-            # no-cross: max diff with constraint
-            n_verts = len(vert_corners)
-
-            sup_inf, scores = [], []
-            for sup in range(n_verts):
-                for inf in range(sup + 2, n_verts):
-                    # check curve
-                    sup2inf = LineSegment(vert_centroids[inf], vert_centroids[sup])
-                    prev2inf = LineSegment(vert_centroids[inf - 1], vert_centroids[inf - 2])
-                    if inf - sup > 3 and is_crossing(sup2inf, prev2inf):
-                        continue
-                    angle = calc_angle(vert_sup_cnrs[sup], vert_inf_cnrs[inf])
-                    scores.append(abs(angle))
-                    sup_inf.append((sup, inf))
-            if len(scores) == 0:
-                raise RuntimeError('No candidate was found for %s', lm_data['imagePath'])
-            major_sup, major_inf = sup_inf[np.argmax(scores)]
-            major_apex = find_apex(vert_corners, vert_centroids, major_sup, major_inf)
-            sup_inf, scores = [], []
-            if major_apex <= 10:  # mt is major
-                mt_sup, mt_inf = major_sup, major_inf
-                lt_sup = mt_inf
-                for lt_inf in range(lt_sup + 2, n_verts):
-                    # check curve
-                    sup2inf = LineSegment(vert_centroids[lt_inf], vert_centroids[lt_sup])
-                    prev2inf = LineSegment(vert_centroids[lt_inf - 1], vert_centroids[lt_inf - 2])
-                    if lt_inf - lt_sup > 3 and is_crossing(sup2inf, prev2inf):
-                        continue
-                    lt_angle = calc_angle(vert_sup_cnrs[lt_sup], vert_inf_cnrs[lt_inf])
-                    scores.append(abs(lt_angle))
-                    sup_inf.append((lt_sup, lt_inf))
-                if len(scores) == 0:
-                    lt_sup, lt_inf = None, None
-                else:
-                    lt_sup, lt_inf = sup_inf[np.argmax(scores)]
-            else:  # tll is major
-                lt_sup, lt_inf = major_sup, major_inf
-                mt_inf = lt_sup
-                for mt_sup in range(max(mt_inf - 2, 0)):
-                    # check curve
-                    sup2inf = LineSegment(vert_centroids[mt_inf], vert_centroids[mt_sup])
-                    prev2inf = LineSegment(vert_centroids[mt_inf - 1], vert_centroids[mt_inf - 2])
-                    if mt_inf - mt_sup > 3 and is_crossing(sup2inf, prev2inf):
-                        continue
-                    mt_angle = calc_angle(vert_sup_cnrs[mt_sup], vert_inf_cnrs[mt_inf])
-                    scores.append(abs(mt_angle))
-                    sup_inf.append((mt_sup, mt_inf))
-                if len(scores) == 0:
-                    mt_sup, mt_inf = None, None
-                else:
-                    mt_sup, mt_inf = sup_inf[np.argmax(scores)]
-
-            pt_sup, pt_inf = None, None
-            curve_indices = CurveIndices.from_tuples((pt_sup, pt_inf), (mt_sup, mt_inf), (lt_sup, lt_inf))
-        elif curve_algo == 'stored':  # Use stored value in json
-            indices = lm_data['curve_indices']
-            pt_sup, pt_inf = indices['PT']
-            mt_sup, mt_inf = indices['MT']
-            lt_sup, lt_inf = indices['TLL']
-            if mt_inf is not None:
-                if mt_inf >= len(vert_corners):
-                    logger.info('Stored index exceeds possible value. %s, %s', lm_data['imagePath'], mt_inf)
-                    mt_inf = len(vert_corners) - 1
-            if lt_inf is not None:
-                if lt_inf >= len(vert_corners):
-                    logger.info('Stored index exceeds possible value. %s, %s', lm_data['imagePath'], lt_inf)
-                    lt_inf = len(vert_corners) - 1
-            curve_indices = CurveIndices.from_tuples((pt_sup, pt_inf), (mt_sup, mt_inf), (lt_sup, lt_inf))
-        else:
-            raise NotImplemented
+        curve_indices = CurveIndices.from_dict(lm_data['curve_indices'])
         measures['curve_indices'] = curve_indices.to_dict()
 
         logger.debug('Cobb angles')
@@ -827,7 +608,7 @@ def measure_json(
             grp = dwg.add(dwg.g(id=gid, class_=gid, stroke=color, visibility=d_visibility[gid]))
             grps[gid] = grp
             drawings.append((gid, name))
-        for i, corners in enumerate(vert_corners_w_c7, 1):
+        for i, corners in enumerate(dwg.vertebrae.vert_corners_w_c7, 1):
             for pair, ul in ((corners[:2], 'upper'), (corners[2:], 'lower')):
                 name = f'V{i}_{ul}_slope'
                 gid = f'{ul}_slope'
