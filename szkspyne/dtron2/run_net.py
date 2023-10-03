@@ -132,7 +132,7 @@ if __name__ == "__main__":
         filename = os.path.splitext(os.path.basename(path))[0] + '.json'
         if args.ndjson:
             predictions['filename'] = filename
-            ndjson.append(json.dumps(predictions, cls=utils.PredictionEncoder))
+            ndjson.append(json.dumps(predictions, cls=utils.PredictionEncoder, separators=(',', ':')))
         else:
             with open(os.path.join(args.output, filename), 'w') as f:
                 json.dump(predictions, f, cls=utils.PredictionEncoder, indent=2)

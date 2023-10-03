@@ -39,4 +39,4 @@ for line in sys.stdin:
         dataset[data['filepath']] = shape_data
 
 for data in dataset.values():
-    print(json.dumps(data, ensure_ascii=False))
+    print(json.dumps(data, ensure_ascii=False, separators=(',', ':')))

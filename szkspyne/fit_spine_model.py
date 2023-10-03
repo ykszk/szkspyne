@@ -527,7 +527,7 @@ def main():
         logger.info('Save ndjson')
         with open(args.output, 'w') as f:
             for r in results:
-                f.write(json.dumps(r, ensure_ascii=False))
+                f.write(json.dumps(r, ensure_ascii=False, separators=(',', ':')))
                 f.write('\n')
         logger.info('Done')
         skipped = [r for r in result_skipped if isinstance(r, str)]

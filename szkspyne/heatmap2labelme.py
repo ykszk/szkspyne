@@ -107,7 +107,7 @@ def main():
         if save_ndjson:
             with open(save_ndjson, 'w') as f:
                 for d in data:
-                    f.write(json.dumps(d, ensure_ascii=False))
+                    f.write(json.dumps(d, ensure_ascii=False, separators=(',', ':')))
                     f.write('\n')
 
     heatmap2labelme(args.heatmap, args.ndjson, args.output, args.save_heatmap, args.save_ndjson, args.jobs)

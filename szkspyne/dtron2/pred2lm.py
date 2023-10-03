@@ -42,7 +42,7 @@ def main():
             shape = dict(label=label, points=[box[:2], box[2:]], group_id=None, shape_type='rectangle', flags={})
             shapes.append(shape)
         lmdata['shapes'] = shapes
-        print(json.dumps(lmdata))
+        print(json.dumps(lmdata, ensure_ascii=False, separators=(',', ':')))
         # break
 
 

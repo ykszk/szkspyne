@@ -70,5 +70,5 @@ for file_id, input_obj in input_points_ndjson.items():
 
 with open(output_indices_filename, 'w') as f:
     for obj in d_indices.values():
-        f.write(json.dumps(obj, ensure_ascii=False))
+        f.write(json.dumps(obj, ensure_ascii=False, separators=(',', ':')))
         f.write('\n')

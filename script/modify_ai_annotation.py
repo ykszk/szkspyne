@@ -77,7 +77,7 @@ class NDJsonIO:
             return self.data
 
         def write(self, obj: Any):
-            line = json.dumps(obj, ensure_ascii=False)
+            line = json.dumps(obj, ensure_ascii=False, separators=(',', ':'))
             self.ndjson[self.i] = line
 
     def __init__(self, input: Path, output: Path):

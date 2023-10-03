@@ -51,7 +51,7 @@ for old in tqdm(exp_data):
     if outdir.suffix == '.ndjson':
         new['filename'] = stem
         with open(outdir, 'a') as f:
-            f.write(json.dumps(new, ensure_ascii=False))
+            f.write(json.dumps(new, ensure_ascii=False, separators=(',', ':')))
             f.write('\n')
     else:
         filename = (outdir / stem).with_suffix('.json')

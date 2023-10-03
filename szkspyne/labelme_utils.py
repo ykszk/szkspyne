@@ -112,7 +112,7 @@ def labelme2ndjson(input_dir, output, n_jobs: int):
             data = json.load(f)
         data['filename'] = fn.name
         data['mtime'] = fn.stat().st_mtime
-        l = json.dumps(data, ensure_ascii=False)
+        l = json.dumps(data, ensure_ascii=False, separators=(',', ':'))
         return l
 
     lines = Parallel(n_jobs=n_jobs)(delayed(do)(fn) for fn in tqdm(input_dir.glob('*.json')))
@@ -145,7 +145,7 @@ def load_ndjson(filename: Union[str, Path], encoding=None) -> List[Dict]:
 def save_ndjson(ndjson: List[Any], filename: Union[str, Path], encoding=None, ensure_ascii=False):
     with open(filename, 'w', encoding=encoding) as f:
         for data in ndjson:
-            f.write(json.dumps(data, ensure_ascii=ensure_ascii))
+            f.write(json.dumps(data, ensure_ascii=ensure_ascii, separators=(',', ':')))
             f.write('\n')
 
 

@@ -155,7 +155,7 @@ def main():
         data = json.loads(line)
         for c in commands:
             data = c.map(data)
-        print(json.dumps(data, ensure_ascii=False))
+        print(json.dumps(data, ensure_ascii=False, separators=(',', ':')))
     for c in commands:
         c.finalize()
     return 0

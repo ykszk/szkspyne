@@ -111,7 +111,7 @@ def main():
                 save_data = filter(lambda d: d['pid'] in pids, all_data)
                 with open(filename, 'w') as f:
                     for d in save_data:
-                        f.write(json.dumps(d, ensure_ascii=False))
+                        f.write(json.dumps(d, ensure_ascii=False, separators=(',', ':')))
                         f.write('\n')
 
             save_ndjson(set(non_test_pids), outdir / 'train_val.ndjson')
