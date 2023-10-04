@@ -4,7 +4,7 @@ import os
 import re
 import sys
 from pathlib import Path
-from typing import Tuple
+from typing import List, Tuple
 
 import numpy as np
 import tqdm
@@ -161,57 +161,33 @@ def determine_curves(lm_data, curve_algo):
         # no-cross: max diff with constraint
         n_verts = len(vert_corners)
 
-        sup_inf, scores = [], []
-        for sup in range(n_verts):
-            for inf in range(sup + 2, n_verts):
-                # check curve
-                sup2inf = LineSegment(vert_centroids[inf], vert_centroids[sup])
-                prev2inf = LineSegment(vert_centroids[inf - 1], vert_centroids[inf - 2])
-                if inf - sup > 3 and is_crossing(sup2inf, prev2inf):
-                    continue
-                angle = calc_angle(vert_sup_cnrs[sup], vert_inf_cnrs[inf])
-                scores.append(abs(angle))
-                sup_inf.append((sup, inf))
-        if len(scores) == 0:
-            raise RuntimeError('No candidate was found for %s', lm_data['imagePath'])
-        major_sup, major_inf = sup_inf[np.argmax(scores)]
-        major_apex = find_apex(vert_corners, vert_centroids, major_sup, major_inf)
+        largest_curve = vertebra_data.find_largest_angle()
+        assert largest_curve is not None
+        largest_sup, largest_inf, largest_angle, largest_apex = largest_curve
 
-        def find_tll(mt_inf):
-            lt_sup = mt_inf
-            sup_inf, scores = [], []
-            for lt_inf in range(lt_sup + 2, n_verts):
-                # check curve
-                sup2inf = LineSegment(vert_centroids[lt_inf], vert_centroids[lt_sup])
-                prev2inf = LineSegment(vert_centroids[lt_inf - 1], vert_centroids[lt_inf - 2])
-                if lt_inf - lt_sup > 3 and is_crossing(sup2inf, prev2inf):
-                    continue
-                lt_angle = calc_angle(vert_sup_cnrs[lt_sup], vert_inf_cnrs[lt_inf])
-                scores.append(abs(lt_angle))
-                sup_inf.append((lt_sup, lt_inf))
-            if len(scores) == 0:
-                lt_sup, lt_inf = None, None
-            else:
-                lt_sup, lt_inf = sup_inf[np.argmax(scores)]
-            return lt_sup, lt_inf
-
-        def find_mt(lt_sup):
-            mt_inf = lt_sup
-            sup_inf, scores = [], []
-            for mt_sup in range(max(mt_inf - 2, 0)):
-                # check curve
-                sup2inf = LineSegment(vert_centroids[mt_inf], vert_centroids[mt_sup])
-                prev2inf = LineSegment(vert_centroids[mt_inf - 1], vert_centroids[mt_inf - 2])
-                if mt_inf - mt_sup > 3 and is_crossing(sup2inf, prev2inf):
-                    continue
-                mt_angle = calc_angle(vert_sup_cnrs[mt_sup], vert_inf_cnrs[mt_inf])
-                scores.append(abs(mt_angle))
-                sup_inf.append((mt_sup, mt_inf))
-            if len(scores) == 0:
-                mt_sup, mt_inf = None, None
-            else:
-                mt_sup, mt_inf = sup_inf[np.argmax(scores)]
-            return mt_sup, mt_inf
+        sup, inf = largest_sup, largest_inf
+        upwards: List[Vertebrae.Curve] = []
+        downwards: List[Vertebrae.Curve] = []
+        while sup >= 2:
+            curve = vertebra_data.find_upward(sup)
+            if curve is None:
+                break
+            next_sup, next_inf, next_angle, next_apex = curve
+            assert next_sup < sup
+            upwards.append(curve)
+            sup = next_sup
+        while inf <= n_verts - 2:
+            curve = vertebra_data.find_downward(inf)
+            if curve is None:
+                break
+            next_sup, next_inf, next_angle, next_apex = curve
+            assert next_inf > inf
+            downwards.append(curve)
+            inf = next_inf
+        all_curves = upwards + [largest_curve] + downwards
+        all_angles = [c.angle for c in all_curves]
+        idx_major = np.argmax(all_angles)
+        major_apex = all_curves[idx_major].apex
 
         major_apexes = [major_apex]
         # add secondary curve-sets if primary apex is on the boundary
@@ -221,21 +197,42 @@ def determine_curves(lm_data, curve_algo):
             major_apexes.append(10)
         names = ['Primary', 'Secondary']
         for i, major_apex in enumerate(major_apexes):
-            if major_apex <= 10:  # major is mt
-                mt_sup, mt_inf = major_sup, major_inf
-                lt_sup, lt_inf = find_tll(mt_inf)
-                if lt_sup is None:
-                    apexes = {'MT': major_apex}
+            if major_apex <= 3:  # major is pt
+                apexes = {'PT': major_apex}
+                pt_sup, pt_inf = largest_sup, largest_inf
+                mt_sup, mt_inf = None, None
+                lt_sup, lt_inf = None, None
+                if len(downwards) >= 1:
+                    mt_sup, mt_inf = downwards[0].sup, downwards[0].inf
+                    apexes['MT'] = downwards[0].apex
+                if len(downwards) >= 2:
+                    lt_sup, lt_inf = downwards[1].sup, downwards[1].inf
+                    apexes['LTT'] = downwards[1].apex
+            elif major_apex <= 10:  # major is mt
+                apexes = {'MT': major_apex}
+                mt_sup, mt_inf = largest_sup, largest_inf
+                if len(upwards) > 0:
+                    pt_sup, pt_inf = upwards[0].sup, upwards[0].inf
+                    apexes['PT'] = upwards[0].apex
                 else:
-                    apexes = {'MT': major_apex, 'TLL': find_apex(vert_corners, vert_centroids, lt_sup, lt_inf)}
+                    pt_sup, pt_inf = None, None
+
+                if len(downwards) > 0:
+                    lt_sup, lt_inf = downwards[0].sup, downwards[0].inf
+                    apexes['LTT'] = downwards[0].apex
+                else:
+                    lt_sup, lt_inf = None, None
             else:  # major is tll
-                lt_sup, lt_inf = major_sup, major_inf
-                mt_sup, mt_inf = find_mt(lt_sup)
-                if mt_sup is None:
-                    apexes = {'TLL': major_apex}
-                else:
-                    apexes = {'MT': find_apex(vert_corners, vert_centroids, mt_sup, mt_inf), 'TLL': major_apex}
-            pt_sup, pt_inf = None, None
+                apexes = {'TLL': major_apex}
+                lt_sup, lt_inf = largest_sup, largest_inf
+                mt_sup, mt_inf = None, None
+                pt_sup, pt_inf = None, None
+                if len(upwards) >= 1:
+                    mt_sup, mt_inf = upwards[0].sup, upwards[0].inf
+                    apexes['MT'] = upwards[0].apex
+                if len(upwards) >= 2:
+                    pt_sup, pt_inf = upwards[1].sup, upwards[1].inf
+                    apexes['PT'] = upwards[1].apex
             curve_indices = CurveIndices.from_tuples((pt_sup, pt_inf), (mt_sup, mt_inf), (lt_sup, lt_inf))
             curve_sets.append({'name': names[i], 'indices': curve_indices.to_dict(), 'apices': apexes})
     else:

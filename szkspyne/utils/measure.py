@@ -4,7 +4,7 @@ import itertools
 from base64 import b64encode
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Dict, List, Tuple, NamedTuple, Optional
+from typing import Any, Dict, List, NamedTuple, Optional, Tuple
 
 import numpy as np
 import svgwrite
@@ -276,6 +276,48 @@ class Vertebrae:
         self.vert_sup_cnrs = vert_sup_cnrs
         self.vert_sup_vecs = vert_sup_vecs
         self.vert_inf_cnrs = vert_inf_cnrs
+
+    class Curve(NamedTuple):
+        sup: int
+        inf: int
+        angle: float
+        apex: int
+
+    def _find_largest_angle(self, candidate_sup_inf):
+        scores: List[float] = []
+        sup_inf = []
+        for sup, inf in candidate_sup_inf:
+            sup2inf = LineSegment(self.vert_centroids[inf], self.vert_centroids[sup])
+            prev2inf = LineSegment(self.vert_centroids[inf - 1], self.vert_centroids[inf - 2])
+            if inf - sup > 3 and is_crossing(sup2inf, prev2inf):
+                continue
+            angle = calc_angle(self.vert_sup_cnrs[sup], self.vert_inf_cnrs[inf])
+            scores.append(abs(angle))
+            sup_inf.append((sup, inf))
+        if len(scores) == 0:
+            return None
+        else:
+            sup, inf = sup_inf[np.argmax(scores)]
+            return Vertebrae.Curve(
+                sup, inf, np.max(scores), find_apex(self.vert_corners, self.vert_centroids, sup, inf)
+            )
+
+    def find_largest_angle(self):
+        sup_inf = []
+        n_verts = len(self.vert_corners)
+        for sup in range(n_verts - 2):
+            for inf in range(sup + 2, n_verts):
+                sup_inf.append((sup, inf))
+        return self._find_largest_angle(sup_inf)
+
+    def find_downward(self, sup):
+        n_verts = len(self.vert_corners)
+        sup_inf = [(sup, inf) for inf in range(sup + 2, n_verts)]
+        return self._find_largest_angle(sup_inf)
+
+    def find_upward(self, inf):
+        sup_inf = [(sup, inf) for sup in range(max(inf - 2, 0))]
+        return self._find_largest_angle(sup_inf)
 
 
 class SpinalDrawing(svgwrite.Drawing):
