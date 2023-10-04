@@ -12,13 +12,7 @@ from joblib import Parallel, delayed
 from logzero import logger
 from skspatial.objects import LineSegment
 
-from szkspyne.utils.measure import (
-    CurveIndices,
-    Vertebrae,
-    calc_angle,
-    find_apex,
-    is_crossing,
-)
+from szkspyne.utils.measure import CurveIndices, Vertebrae, calc_angle, find_apex, is_crossing
 
 
 def determine_curves(lm_data):
@@ -242,7 +236,7 @@ def main():
     assert all_measures is not None
     with open(args.output, 'w') as f:
         for fn, ms in zip(json_filenames, all_measures):
-            line = {'filename': re.sub(r"\.json$", "", fn.name), 'curve_indices': [ms]}
+            line = {'filename': re.sub(r"\.json$", "", fn.name), 'curve_indices': [{'name': 'Primary', 'indices': ms}]}
             f.write(json.dumps(line, ensure_ascii=False, separators=(',', ':')))
             f.write('\n')
     return 0

@@ -125,7 +125,7 @@ def measure_json(
 
     if image_type == 'ap':
         for i, d_curve_indices in enumerate(lm_data['curve_indices']):
-            curve_indices = CurveIndices.from_dict(d_curve_indices)
+            curve_indices = CurveIndices.from_dict(d_curve_indices['indices'])
             measures['curve_indices'] = curve_indices.to_dict()
             display = 'inline' if i == 0 else 'none'
             layer = dwg.add(dwg.g(id=f'layer_{i}', class_=f'layer layer_{i}', style=f'display:{display}'))
@@ -182,7 +182,7 @@ def measure_json(
                 for v in vert_centroids:
                     grp.add(dwg.circle(center=v, r=POINT_RADIUS, fill=color))
         if len(lm_data['curve_indices']) > 1:
-            layer_control = [(f'layer_{i}', f'Set {i}') for i, _ in enumerate(lm_data['curve_indices'])]
+            layer_control = [(f'layer_{i}', data['name']) for i, data in enumerate(lm_data['curve_indices'])]
 
         # apical translation
         if False:

@@ -65,7 +65,7 @@ for file_id, indices_obj in ref_indices_ndjson.items():
             tr_dist = spatial.distance.cdist(ref_points[[1]], input_points[:, 1])[0]
             dist = tl_dist + tr_dist
             closest_indices[label].append(int(np.argmin(dist)))
-    d_indices[file_id] = {'filename': file_id, 'curve_indices': [closest_indices]}
+    d_indices[file_id] = {'filename': file_id, 'curve_indices': [{'name': 'Closest', 'indices': closest_indices}]}
 
 
 with open(output_indices_filename, 'w') as f:
