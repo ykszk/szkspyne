@@ -1,24 +1,24 @@
-import sys
 import argparse
 import json
-import re
 import os
-from collections import defaultdict
-from io import BytesIO
+import re
+import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
-from szkspyne.utils.measure import (
-    Vertebrae,
-    CurveIndices,
-    calc_angle,
-    is_crossing,
-    find_apex,
-)
+from typing import Tuple
+
 import numpy as np
-from skspatial.objects import Line, LineSegment
-from logzero import logger
 import tqdm
 from joblib import Parallel, delayed
+from logzero import logger
+from skspatial.objects import LineSegment
+
+from szkspyne.utils.measure import (
+    CurveIndices,
+    Vertebrae,
+    calc_angle,
+    find_apex,
+    is_crossing,
+)
 
 
 def determine_curves(lm_data):
@@ -242,7 +242,7 @@ def main():
     assert all_measures is not None
     with open(args.output, 'w') as f:
         for fn, ms in zip(json_filenames, all_measures):
-            line = {'filename': re.sub(r"\.json$", "", fn.name), 'curve_indices': ms}
+            line = {'filename': re.sub(r"\.json$", "", fn.name), 'curve_indices': [ms]}
             f.write(json.dumps(line, ensure_ascii=False, separators=(',', ':')))
             f.write('\n')
     return 0

@@ -30,17 +30,31 @@
         function change_visibility(cb) {
             let svg_id = cb.id.substring(3);
             let visibility = cb.checked ? "visible" : "hidden";
-            {{svg_container}}.getElementById(svg_id).style.visibility = visibility;
+            const elms = {{svg_container}}.getElementsByClassName(svg_id)
+            for (elm of elms) {
+                elm.style.visibility = visibility;
+            }
         }
 
         function change_all(visibility) {
-            let elms = document.getElementsByTagName('input');
+            let elms = document.querySelectorAll("input[type='checkbox']");
             console.log(visibility);
             for (elm of elms) {
                 elm.checked = visibility == "visible";
                 change_visibility(elm);
             }
         }
+        function switch_layer(radio) {
+            const elms = document.querySelectorAll("g.layer");
+            const selected_value = radio.value;
+            for (elm of elms) {
+                if (elm.classList.contains(selected_value)) {
+                    elm.style.display = "inline";
+                } else {
+                    elm.style.display = "none";
+                }
+            }
+		}
     </script>
 </head>
 

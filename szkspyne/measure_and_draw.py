@@ -1,4 +1,3 @@
-# %%
 import argparse
 import json
 import re
@@ -7,7 +6,7 @@ import sys
 from collections import defaultdict
 from io import BytesIO
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 import logzero
 import numpy as np
@@ -15,19 +14,10 @@ import yaml
 from jinja2 import Environment, FileSystemLoader
 from logzero import logger
 from PIL import Image
-from skspatial.objects import Line, LineSegment
+from skspatial.objects import Line
 
 import szkspyne.utils.measure as utils
-from szkspyne.utils.measure import (
-    SpinalDrawing,
-    CurveIndices,
-    calc_angle,
-    get_circle_dict,
-    is_crossing,
-    lerp,
-    perp,
-    find_apex,
-)
+from szkspyne.utils.measure import CurveIndices, SpinalDrawing, calc_angle, find_apex, get_circle_dict, lerp, perp
 
 
 LINE_WIDTH = 2.0
@@ -60,7 +50,6 @@ def measure_json(
     hide: List[str],
     image_dir: Path,
     calc_slopes: bool,
-    curve_algo: str,
     imagedb: Optional[str],
 ):
     dwg = SpinalDrawing(lm_data, image_dir, height)
@@ -132,59 +121,68 @@ def measure_json(
                 vn = f'T{i}'
             grp.add(dwg.text(vn, insert=vc))
 
-    if image_type == 'ap':
-        curve_indices = CurveIndices.from_dict(lm_data['curve_indices'])
-        measures['curve_indices'] = curve_indices.to_dict()
+    layer_control = None
 
-        logger.debug('Cobb angles')
-        apexes = []
-        for gid, disp, sup_inf_pair in [
-            ('MT', 'MT Cobb (p.49)', curve_indices.mt),
-            ('TLL', 'TL/L Cobb (p.49)', curve_indices.tll),
-            ('PT', 'PT Cobb (p.49)', curve_indices.pt),
-        ]:
-            if sup_inf_pair is not None:
-                sup, inf = sup_inf_pair
-                apex = find_apex(vert_corners, vert_centroids, sup, inf)
-                apexes.append(apex)
-                drawings.append((gid, disp))
-                grp = dwg.add(
+    if image_type == 'ap':
+        for i, d_curve_indices in enumerate(lm_data['curve_indices']):
+            curve_indices = CurveIndices.from_dict(d_curve_indices)
+            measures['curve_indices'] = curve_indices.to_dict()
+            display = 'inline' if i == 0 else 'none'
+            layer = dwg.add(dwg.g(id=f'layer_{i}', class_=f'layer layer_{i}', style=f'display:{display}'))
+
+            logger.debug('Cobb angles')
+            apexes = []
+            for gid, disp, sup_inf_pair in [
+                ('MT', 'MT Cobb (p.49)', curve_indices.mt),
+                ('TLL', 'TL/L Cobb (p.49)', curve_indices.tll),
+                ('PT', 'PT Cobb (p.49)', curve_indices.pt),
+            ]:
+                if sup_inf_pair is not None:
+                    sup, inf = sup_inf_pair
+                    apex = find_apex(vert_corners, vert_centroids, sup, inf)
+                    apexes.append(apex)
+                    if i == 0:
+                        drawings.append((gid, disp))
+                    grp = layer.add(
+                        dwg.g(
+                            id=gid,
+                            class_=gid,
+                            stroke=line_colors[gid],
+                            stroke_width=LINE_WIDTH,
+                            fill='none',
+                            visibility=d_visibility[gid],
+                        )
+                    )
+                    measures[gid] = dwg.draw_cobb(
+                        vert_sup_cnrs[sup], vert_inf_cnrs[inf], grp, title=gid, text_attrs=text_attrs
+                    )
+            # Curve apex
+            if apexes:
+                gid = 'CurveApex'
+                if i == 0:
+                    drawings.append((gid, 'Curve Apex(es)'))
+                color = line_colors[gid]
+                grp = layer.add(
                     dwg.g(
                         id=gid,
                         class_=gid,
-                        stroke=line_colors[gid],
+                        stroke=color,
                         stroke_width=LINE_WIDTH,
                         fill='none',
                         visibility=d_visibility[gid],
                     )
                 )
-                measures[gid] = dwg.draw_cobb(
-                    vert_sup_cnrs[sup], vert_inf_cnrs[inf], grp, title=gid, text_attrs=text_attrs
-                )
-        # Curve apex
-        if apexes:
-            gid = 'CurveApex'
-            drawings.append((gid, 'Curve Apex(es)'))
-            color = line_colors[gid]
-            grp = dwg.add(
-                dwg.g(
-                    id=gid,
-                    class_=gid,
-                    stroke=color,
-                    stroke_width=LINE_WIDTH,
-                    fill='none',
-                    visibility=d_visibility[gid],
-                )
-            )
-            for apex in apexes:
-                vert_apex = vert_corners[apex]
-                grp.add(
-                    dwg.polygon(
-                        points=[vc.tolist() for vc in [vert_apex[0], vert_apex[1], vert_apex[3], vert_apex[2]]]
+                for apex in apexes:
+                    vert_apex = vert_corners[apex]
+                    grp.add(
+                        dwg.polygon(
+                            points=[vc.tolist() for vc in [vert_apex[0], vert_apex[1], vert_apex[3], vert_apex[2]]]
+                        )
                     )
-                )
-            for v in vert_centroids:
-                grp.add(dwg.circle(center=v, r=POINT_RADIUS, fill=color))
+                for v in vert_centroids:
+                    grp.add(dwg.circle(center=v, r=POINT_RADIUS, fill=color))
+        if len(lm_data['curve_indices']) > 1:
+            layer_control = [(f'layer_{i}', f'Set {i}') for i, _ in enumerate(lm_data['curve_indices'])]
 
         # apical translation
         if False:
@@ -644,6 +642,10 @@ def measure_json(
         cbs = []
         for name, label in drawings:
             cbs.append(t_cb.render(name=name, label=label, checked='' if name in hide else 'checked'))
+        if layer_control:
+            t_lc = env.get_template('switch_layer.html')
+            lc = t_lc.render(layers=layer_control)
+            cbs.append(lc)
         svg_tag = dwg.tostring()
         with open(html_filename, 'w', encoding='utf8') as f:
             f.write(
@@ -663,12 +665,6 @@ def main():
     )
     parser.add_argument('--title', help='html title', default='Scoliosis Measuaraments')
     parser.add_argument('--image_type', help='Image type', choices=['ap', 'lateral'], default='ap')
-    parser.add_argument(
-        '--algo',
-        help='Algorithm to determine curves',
-        choices=['max_diffs', 'fujimori', 'no-cross', 'no-cross2', 'stored'],
-        default='max_diffs',
-    )
     parser.add_argument('--imagedb', help='image database filename for heatmap overlay')
     parser.add_argument('--hide', help='Hide specified drawings', nargs='*', default=[])
     parser.add_argument('--parent_dir', help='Override parent directory of imagePath')
@@ -708,7 +704,6 @@ def main():
             args.hide,
             image_dir,
             args.slopes,
-            args.algo,
             args.imagedb,
         )
         if args.measure:
@@ -773,7 +768,6 @@ def main():
                 args.hide,
                 image_dir,
                 args.slopes,
-                args.algo,
                 args.imagedb,
             )
             if measure_filename:
