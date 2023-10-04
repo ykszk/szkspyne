@@ -95,7 +95,8 @@ def measure_json(
             grp.add(g_ptx)
 
     measures: Dict[str, Any] = {}
-    measure_result = {'flags': lm_data['flags'], 'measures': measures}
+    all_alt_measures = []
+    measure_result = {'flags': lm_data['flags'], 'measures': measures, 'alt_measures': all_alt_measures}
 
     sacrum_tltr, vert_corners = dwg.vertebrae.sacrum_tltr, dwg.vertebrae.vert_corners
     c7_centroid = dwg.vertebrae.c7_centroid
@@ -125,9 +126,10 @@ def measure_json(
 
     if image_type == 'ap':
         for i, d_curve_indices in enumerate(lm_data['curve_indices']):
+            alt_measures = {'name': d_curve_indices['name']}
+            all_alt_measures.append(alt_measures)
             curve_indices = CurveIndices.from_dict(d_curve_indices['indices'])
-            if i == 0:
-                measures['curve_indices'] = curve_indices.to_dict()
+            alt_measures['curve_indices'] = curve_indices.to_dict()
             display = 'inline' if i == 0 else 'none'
             layer = dwg.add(dwg.g(id=f'layer_{i}', class_=f'layer layer_{i}', style=f'display:{display}'))
 
@@ -155,8 +157,8 @@ def measure_json(
                     angle = dwg.draw_cobb(
                         vert_sup_cnrs[sup], vert_inf_cnrs[inf], grp, title=gid, text_attrs=text_attrs
                     )
+                    alt_measures[gid] = angle
                     if i == 0:
-                        measures[gid] = angle
                         drawings.append((gid, disp))
             # Curve apex
             if len(apexes) > 0:
@@ -183,6 +185,10 @@ def measure_json(
                     )
                 for v in vert_centroids:
                     grp.add(dwg.circle(center=v, r=POINT_RADIUS, fill=color))
+        for key in all_alt_measures[0].keys():
+            if key == 'name':
+                continue
+            measures[key] = all_alt_measures[0][key]
         if len(lm_data['curve_indices']) > 1:
             layer_control = [(f'layer_{i}', data['name']) for i, data in enumerate(lm_data['curve_indices'])]
 

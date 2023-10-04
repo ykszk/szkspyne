@@ -30,24 +30,30 @@ for image_type in ap lateral; do
 done
 wait
 
+# find best matching curve sets
+python3 "$SCRIPT_DIR"/../script/find_best_curve_set.py "$result_dir"
+
 # closest endplates
 python3 "$SCRIPT_DIR"/../script/find_endplate.py "$result_dir"
 subdir="auto"
 image_type="ap"
-suffix="_w_closest_indices"
-mkdir -p "$result_dir"/"$subdir"/"$image_type"_whole${suffix}
-ndjson_w_indices="$result_dir"/auto/keypoints/ap_whole/all_final_keypoints${suffix}.ndjson
-lmrs join --mode inner "$result_dir"/auto/keypoints/ap_whole/all_final_keypoints.ndjson "$result_dir"/auto/closest_indices.ndjson "$result_dir"/auto/curve_indices_${image_type}_whole.ndjson > "$ndjson_w_indices"
+for variant in best_indices closest_indices; do
+    suffix=_w_"$variant"
+    mkdir -p "$result_dir"/"$subdir"/"$image_type"_whole${suffix}
+    ndjson_w_indices="$result_dir"/auto/keypoints/ap_whole/all_final_keypoints${suffix}.ndjson
+    lmrs join --mode inner "$result_dir"/auto/keypoints/ap_whole/all_final_keypoints.ndjson "$result_dir"/auto/"$variant".ndjson "$result_dir"/auto/curve_indices_${image_type}_whole.ndjson >"$ndjson_w_indices"
 
-cat "$ndjson_w_indices" | jq -c "$jq_remove_flex" | python3 "$SCRIPT_DIR"/measure_and_draw.py --hide $HIDE --height 1200 --points --numbers --image_type $image_type --parent_dir "$SCRIPT_DIR"/../../data/annotation/images/all --title "${subdir} ${image_type}" --config "$SCRIPT_DIR"/../../data/annotation/config.yaml --imagedb "$result_dir"/heatmap_images.sqlite3 batch - "$result_dir"/$subdir/${image_type}_whole${suffix}/ --html --ndjson "$result_dir"/$subdir/measures_${image_type}_whole${suffix}.ndjson
-readonly REUSE_CURVE=false
+    cat "$ndjson_w_indices" | jq -c "$jq_remove_flex" | python3 "$SCRIPT_DIR"/measure_and_draw.py --hide $HIDE --height 1200 --points --numbers --image_type $image_type --parent_dir "$SCRIPT_DIR"/../../data/annotation/images/all --title "${subdir} ${image_type}" --config "$SCRIPT_DIR"/../../data/annotation/config.yaml --imagedb "$result_dir"/heatmap_images.sqlite3 batch - "$result_dir"/$subdir/${image_type}_whole${suffix}/ --html --ndjson "$result_dir"/$subdir/measures_${image_type}_whole${suffix}.ndjson
+done
 
-suffix="_w_closest_indices"
 python3 "$SCRIPT_DIR"/../script/measured_jsons2csv.py "$result_dir"
+
 jupytext --to ipynb --output - "$SCRIPT_DIR"/../notebooks/exp_summary.py --update-metadata '{"title":"exp summary"}' | INPUT_DIR="$result_dir" NO_VIS=true jupyter nbconvert --stdin --to html --execute --no-input --output "$result_dir"/summary.html
 
-jupytext --to ipynb --output - "$SCRIPT_DIR"/../notebooks/exp_summary.py --update-metadata '{"title":"exp summary w closest indices"}' | INPUT_DIR="$result_dir" NO_VIS=true DATA_SUFFIX=${suffix} jupyter nbconvert --stdin --to html --execute --no-input --output "$result_dir"/summary${suffix}.html
-
+for variant in best_indices closest_indices; do
+    suffix=_w_"$variant"
+    jupytext --to ipynb --output - "$SCRIPT_DIR"/../notebooks/exp_summary.py --update-metadata "{\"title\":\"exp summary w $variant indices\"}" | INPUT_DIR="$result_dir" NO_VIS=true DATA_SUFFIX=${suffix} jupyter nbconvert --stdin --to html --execute --no-input --output "$result_dir"/summary${suffix}.html
+done
 # python3 "$SCRIPT_DIR"/../script/pair_data.py "$result_dir" || (echo "Failed at pair_data.py" && exit 1)
 # INPUT_DIR="$result_dir" jupyter nbconvert "$SCRIPT_DIR"/../script/ap_summary.ipynb --no-input --execute --to html --output "$result_dir"/summary_flex.html
 

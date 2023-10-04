@@ -47,7 +47,7 @@ for image_type in IMAGE_TYPES:
     df_merged = merge_ndjsons(ndjsons, PREFIXES)
     df_merged.to_csv(data_root / f'{image_type}.csv', encoding='cp932')
 
-for suffix in ['_w_closest_indices']:
+for suffix in ['_w_closest_indices', '_w_best_indices']:
     suffixed_filename = data_root / 'auto' / f'measures_ap_whole{suffix}.ndjson'
     if not suffixed_filename.exists():
         continue
