@@ -12,7 +12,13 @@ from joblib import Parallel, delayed
 from logzero import logger
 from skspatial.objects import LineSegment
 
-from szkspyne.utils.measure import CurveIndices, Vertebrae, calc_angle, find_apex, is_crossing
+from szkspyne.utils.measure import (
+    CurveIndices,
+    Vertebrae,
+    calc_angle,
+    find_apex,
+    is_crossing,
+)
 
 
 def determine_curves(lm_data, curve_algo):
@@ -191,6 +197,11 @@ def determine_curves(lm_data, curve_algo):
 
         major_apexes = [major_apex]
         # add secondary curve-sets if primary apex is on the boundary
+        if major_apex == 4:
+            major_apexes.append(5)
+        if major_apex == 5:
+            major_apexes.append(4)
+
         if major_apex == 10:
             major_apexes.append(11)
         if major_apex == 11:
