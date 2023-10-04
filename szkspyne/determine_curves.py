@@ -15,7 +15,7 @@ from skspatial.objects import LineSegment
 from szkspyne.utils.measure import CurveIndices, Vertebrae, calc_angle, find_apex, is_crossing
 
 
-def determine_curves(lm_data):
+def determine_curves(lm_data, curve_algo):
     vertebra_data = Vertebrae(lm_data)
     vert_corners = vertebra_data.vert_corners
 
@@ -24,7 +24,7 @@ def determine_curves(lm_data):
         vertebra_data.vert_sup_cnrs,
         vertebra_data.vert_inf_cnrs,
     )
-    curve_algo = 'no-cross'
+    curve_sets = []
     if curve_algo == 'max_diffs':
         best_set = None
         best_score = 0
@@ -65,6 +65,7 @@ def determine_curves(lm_data):
         assert best_set is not None
         (mt_sup, mt_inf), (pt_sup, pt_inf), (lt_sup, lt_inf) = best_set
         curve_indices = CurveIndices.from_tuples((pt_sup, pt_inf), (mt_sup, mt_inf), (lt_sup, lt_inf))
+        curve_sets.append({'name': 'Primary', 'indices': curve_indices.to_dict()})
     elif curve_algo == 'fujimori':
         coronal_translation = vert_centroids[:, 0] - sacrum_center[0]
         APEX_MARGIN = 2
@@ -96,6 +97,7 @@ def determine_curves(lm_data):
         lt_sup, lt_inf = lt_set[0], lt_set[1]
         pt_sup, pt_inf = None, None
         curve_indices = CurveIndices.from_tuples((pt_sup, pt_inf), (mt_sup, mt_inf), (lt_sup, lt_inf))
+        curve_sets.append({'name': 'Primary', 'indices': curve_indices.to_dict()})
     elif curve_algo == 'no-cross':
         # no-cross: max diff with constraint
         # No PT
@@ -154,6 +156,7 @@ def determine_curves(lm_data):
                 pt_sup, _ = max(candidates, key=lambda e: e[1])
                 pt_inf = inf
         curve_indices = CurveIndices.from_tuples((pt_sup, pt_inf), (mt_sup, mt_inf), (lt_sup, lt_inf))
+        curve_sets.append({'name': 'Primary', 'indices': curve_indices.to_dict()})
     elif curve_algo == 'no-cross2':
         # no-cross: max diff with constraint
         n_verts = len(vert_corners)
@@ -173,10 +176,10 @@ def determine_curves(lm_data):
             raise RuntimeError('No candidate was found for %s', lm_data['imagePath'])
         major_sup, major_inf = sup_inf[np.argmax(scores)]
         major_apex = find_apex(vert_corners, vert_centroids, major_sup, major_inf)
-        sup_inf, scores = [], []
-        if major_apex <= 10:  # mt is major
-            mt_sup, mt_inf = major_sup, major_inf
+
+        def find_tll(mt_inf):
             lt_sup = mt_inf
+            sup_inf, scores = [], []
             for lt_inf in range(lt_sup + 2, n_verts):
                 # check curve
                 sup2inf = LineSegment(vert_centroids[lt_inf], vert_centroids[lt_sup])
@@ -190,9 +193,11 @@ def determine_curves(lm_data):
                 lt_sup, lt_inf = None, None
             else:
                 lt_sup, lt_inf = sup_inf[np.argmax(scores)]
-        else:  # tll is major
-            lt_sup, lt_inf = major_sup, major_inf
+            return lt_sup, lt_inf
+
+        def find_mt(lt_sup):
             mt_inf = lt_sup
+            sup_inf, scores = [], []
             for mt_sup in range(max(mt_inf - 2, 0)):
                 # check curve
                 sup2inf = LineSegment(vert_centroids[mt_inf], vert_centroids[mt_sup])
@@ -206,12 +211,36 @@ def determine_curves(lm_data):
                 mt_sup, mt_inf = None, None
             else:
                 mt_sup, mt_inf = sup_inf[np.argmax(scores)]
+            return mt_sup, mt_inf
 
-        pt_sup, pt_inf = None, None
-        curve_indices = CurveIndices.from_tuples((pt_sup, pt_inf), (mt_sup, mt_inf), (lt_sup, lt_inf))
+        major_apexes = [major_apex]
+        # add secondary curve-sets if primary apex is on the boundary
+        if major_apex == 10:
+            major_apexes.append(11)
+        if major_apex == 11:
+            major_apexes.append(10)
+        names = ['Primary', 'Secondary']
+        for i, major_apex in enumerate(major_apexes):
+            if major_apex <= 10:  # major is mt
+                mt_sup, mt_inf = major_sup, major_inf
+                lt_sup, lt_inf = find_tll(mt_inf)
+                if lt_sup is None:
+                    apexes = {'MT': major_apex}
+                else:
+                    apexes = {'MT': major_apex, 'TLL': find_apex(vert_corners, vert_centroids, lt_sup, lt_inf)}
+            else:  # major is tll
+                lt_sup, lt_inf = major_sup, major_inf
+                mt_sup, mt_inf = find_mt(lt_sup)
+                if mt_sup is None:
+                    apexes = {'TLL': major_apex}
+                else:
+                    apexes = {'MT': find_apex(vert_corners, vert_centroids, mt_sup, mt_inf), 'TLL': major_apex}
+            pt_sup, pt_inf = None, None
+            curve_indices = CurveIndices.from_tuples((pt_sup, pt_inf), (mt_sup, mt_inf), (lt_sup, lt_inf))
+            curve_sets.append({'name': names[i], 'indices': curve_indices.to_dict(), 'apices': apexes})
     else:
         raise NotImplemented
-    return curve_indices.to_dict()
+    return curve_sets
 
 
 def main():
@@ -232,11 +261,11 @@ def main():
     if args.jobs <= 0:
         args.jobs = os.cpu_count()
         logger.info("Use %d cores", args.jobs)
-    all_measures = Parallel(n_jobs=args.jobs)(delayed(determine_curves)(data) for data in tqdm.tqdm(ndjson))
-    assert all_measures is not None
+    all_curves = Parallel(n_jobs=args.jobs)(delayed(determine_curves)(data, args.algo) for data in tqdm.tqdm(ndjson))
+    assert all_curves is not None
     with open(args.output, 'w') as f:
-        for fn, ms in zip(json_filenames, all_measures):
-            line = {'filename': re.sub(r"\.json$", "", fn.name), 'curve_indices': [{'name': 'Primary', 'indices': ms}]}
+        for fn, curve_sets in zip(json_filenames, all_curves):
+            line = {'filename': re.sub(r"\.json$", "", fn.name), 'curve_indices': curve_sets}
             f.write(json.dumps(line, ensure_ascii=False, separators=(',', ':')))
             f.write('\n')
     return 0

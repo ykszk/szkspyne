@@ -126,12 +126,13 @@ def measure_json(
     if image_type == 'ap':
         for i, d_curve_indices in enumerate(lm_data['curve_indices']):
             curve_indices = CurveIndices.from_dict(d_curve_indices['indices'])
-            measures['curve_indices'] = curve_indices.to_dict()
+            if i == 0:
+                measures['curve_indices'] = curve_indices.to_dict()
             display = 'inline' if i == 0 else 'none'
             layer = dwg.add(dwg.g(id=f'layer_{i}', class_=f'layer layer_{i}', style=f'display:{display}'))
 
             logger.debug('Cobb angles')
-            apexes = []
+            apexes: Dict[str, int] = d_curve_indices.get('apices', {})
             for gid, disp, sup_inf_pair in [
                 ('MT', 'MT Cobb (p.49)', curve_indices.mt),
                 ('TLL', 'TL/L Cobb (p.49)', curve_indices.tll),
@@ -139,10 +140,8 @@ def measure_json(
             ]:
                 if sup_inf_pair is not None:
                     sup, inf = sup_inf_pair
-                    apex = find_apex(vert_corners, vert_centroids, sup, inf)
-                    apexes.append(apex)
-                    if i == 0:
-                        drawings.append((gid, disp))
+                    apex = apexes.get(gid, find_apex(vert_corners, vert_centroids, sup, inf))
+                    apexes[gid] = apex
                     grp = layer.add(
                         dwg.g(
                             id=gid,
@@ -153,11 +152,14 @@ def measure_json(
                             visibility=d_visibility[gid],
                         )
                     )
-                    measures[gid] = dwg.draw_cobb(
+                    angle = dwg.draw_cobb(
                         vert_sup_cnrs[sup], vert_inf_cnrs[inf], grp, title=gid, text_attrs=text_attrs
                     )
+                    if i == 0:
+                        measures[gid] = angle
+                        drawings.append((gid, disp))
             # Curve apex
-            if apexes:
+            if len(apexes) > 0:
                 gid = 'CurveApex'
                 if i == 0:
                     drawings.append((gid, 'Curve Apex(es)'))
@@ -172,7 +174,7 @@ def measure_json(
                         visibility=d_visibility[gid],
                     )
                 )
-                for apex in apexes:
+                for apex in apexes.values():
                     vert_apex = vert_corners[apex]
                     grp.add(
                         dwg.polygon(

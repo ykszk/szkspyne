@@ -13,8 +13,8 @@ echo 'start:' "$(date)"
 
 readonly jq_remove_flex='. | select(.flags."除外" or .flags."左屈" or .flags."右屈" or .flags."先天性側彎"|not)'
 readonly HIDE="CurveApex APT CoronalBalance T1Tilt ClavicleAngle ShoulderHeight Pelvis FemoralHead PelvicObliquity LegLength SacralObliquity Mid/LowerThoracicKyphosis ProximalThoracicKyphosis SacralSlope PelvicIncidence PelvicRadiusAngle L5IncidenceAngle LumbosacralAngle"
-algo="no-cross"
-algo="max_diffs"
+algo="no-cross2"
+# algo="max_diffs"
 for image_type in ap lateral; do
     (
         # create reference
@@ -37,7 +37,7 @@ image_type="ap"
 suffix="_w_closest_indices"
 mkdir -p "$result_dir"/"$subdir"/"$image_type"_whole${suffix}
 ndjson_w_indices="$result_dir"/auto/keypoints/ap_whole/all_final_keypoints${suffix}.ndjson
-lmrs join --mode inner "$result_dir"/auto/keypoints/ap_whole/all_final_keypoints.ndjson "$result_dir"/auto/curve_indices_${image_type}_whole.ndjson "$result_dir"/auto/closest_indices.ndjson > "$ndjson_w_indices"
+lmrs join --mode inner "$result_dir"/auto/keypoints/ap_whole/all_final_keypoints.ndjson "$result_dir"/auto/closest_indices.ndjson "$result_dir"/auto/curve_indices_${image_type}_whole.ndjson > "$ndjson_w_indices"
 
 cat "$ndjson_w_indices" | jq -c "$jq_remove_flex" | python3 "$SCRIPT_DIR"/measure_and_draw.py --hide $HIDE --height 1200 --points --numbers --image_type $image_type --parent_dir "$SCRIPT_DIR"/../../data/annotation/images/all --title "${subdir} ${image_type}" --config "$SCRIPT_DIR"/../../data/annotation/config.yaml --imagedb "$result_dir"/heatmap_images.sqlite3 batch - "$result_dir"/$subdir/${image_type}_whole${suffix}/ --html --ndjson "$result_dir"/$subdir/measures_${image_type}_whole${suffix}.ndjson
 readonly REUSE_CURVE=false
