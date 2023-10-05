@@ -18,8 +18,8 @@ from jinja2 import Environment, FileSystemLoader
 from scipy import stats
 
 import szkspyne
-from szkspyne.utils.measure import pearsonr_ci
 import szkspyne.labelme_utils as labelme_utils
+from szkspyne.utils.measure import pearsonr_ci
 
 
 mpl.rcParams["figure.dpi"] = 100
@@ -39,6 +39,7 @@ from collections import namedtuple
 
 DATA_SUFFIX = os.environ.get('DATA_SUFFIX', '')
 ap_filename = f'ap_whole{DATA_SUFFIX}.csv' if DATA_SUFFIX else 'ap_whole.csv'
+skip_lateral = DATA_SUFFIX != ''
 dir_suffix = os.environ.get("DIR_SUFFIX", '_whole')
 # df_birthday = pd.read_csv('../../data/anonymized_birthday.csv')
 # dict_sex_bday = {row.PatientID:(row.PatientSex, datetime.strptime(str(row.Birthday), '%Y%m%d')) for _, row in df_birthday.iterrows()}
@@ -120,7 +121,9 @@ DELETE_COLS = ["除外", "左屈", "右屈", "先天性側彎"]
 manual_annotations = labelme_utils.load_ndjson(result_dir / 'manual_annotation.ndjson')
 d_group_id = {Path(a['filepath']).stem: a['group_id'] for a in manual_annotations}
 
-for d in [d_ap, d_lateral]:
+for i, d in enumerate([d_ap, d_lateral]):
+    if skip_lateral and i == 1:
+        break
     name, filename, angle_cols, key_cols = d
     filename = str(result_dir / filename)
     display(HTML(f"<h1>{name}</h1>"))
@@ -293,7 +296,7 @@ for d in [d_ap, d_lateral]:
 
         # flex_style = "display:flex;flex-direction:row;flex-wrap:wrap;"
         flex_style = "display:flex;flex-direction:row;"
-        N = 10
+        N = 20
         if col in key_cols:
             # for best_worst, sls in [('Best',slice(N)), ('Median',slice(len(df_d)//2-N//2,int(len(df_d)//2+np.ceil(N/2)))), ('Worst',slice(-N,None))]:
             third_q = (
@@ -308,11 +311,16 @@ for d in [d_ap, d_lateral]:
                 "95 percentile",
                 slice(95 * (len(df_d) // 100) - N // 2, int(95 * (len(df_d) // 100) + np.ceil(N / 2))),
             )
+            p_99 = (
+                "99 percentile",
+                slice(99 * (len(df_d) // 100) - N // 2, min(len(df_d), int(99 * (len(df_d) // 100) + np.ceil(N / 2)))),
+            )
             for best_worst, sls in [
                 ("Median", slice(len(df_d) // 2 - N // 2, int(len(df_d) // 2 + np.ceil(N / 2)))),
                 # third_q,
                 # p_90,
                 p_95,
+                # p_99,
                 ("Worst", slice(-N, None)),
             ]:
                 # for best_worst, sls in [('Median',slice(len(df_d)//2-N//2,int(len(df_d)//2+np.ceil(N/2)))), ('Worst',slice(-N,None))]:

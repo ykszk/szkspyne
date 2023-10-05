@@ -382,7 +382,7 @@ def main():
             else:
                 best_loss = pt_pca.icp(t_vert_points, args.icp_lr, args.max_iter, args.patience)
                 histories.append(
-                    {'name': f'{name}-icp', 'history': [], 'coefs': pt_pca.coefs.detach().numpy().tolist()}
+                    {'name': f'{name}-icp', 'history': [best_loss], 'coefs': pt_pca.coefs.detach().numpy().tolist()}
                 )
                 results.append((name, best_loss, pt_pca.coefs.detach().cpu(), pca, []))
 

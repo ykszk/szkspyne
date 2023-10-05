@@ -1,16 +1,17 @@
 import argparse
-import sys
 import json
+import sys
 
 import numpy as np
-
-from szkspyne import point_utils, labelme_utils, settings
 from szkmipy import mhd
+
+from szkspyne import labelme_utils, point_utils, settings
+
 
 PROB_MAX = settings.PROB_MAX
 
 
-def hm2labelme(pred, original_shape, image_filename: str, label_names, min_thresh=0.25):
+def hm2labelme(pred, original_shape, image_filename: str, label_names, min_thresh: float):
     kps_per_ch = point_utils.local_center_of_masses(pred, min_thresh)
     scale = original_shape[0] / pred.shape[1]
     kps_per_ch = [(np.array(kps, dtype=np.float32) * scale).tolist() for kps in kps_per_ch]
@@ -18,7 +19,7 @@ def hm2labelme(pred, original_shape, image_filename: str, label_names, min_thres
     return json_data
 
 
-def save_kps_json(pred, original_shape, image_filename: str, json_filename: str, label_names, min_thresh=0.25):
+def save_kps_json(pred, original_shape, image_filename: str, json_filename: str, label_names, min_thresh: float):
     json_data = hm2labelme(pred, original_shape, image_filename, label_names, min_thresh)
     with open(json_filename, 'w') as f:
         json.dump(json_data, f, indent=2)
