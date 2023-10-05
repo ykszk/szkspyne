@@ -51,6 +51,6 @@ for image_type in ap_whole lateral_whole; do
     outfile="$result_dir"/auto/keypoints/$image_type/all_final_keypoints.ndjson
     if [ $infile -nt $outfile ]; then
         cat "$result_dir"/?/auto/$image_type/all_pca_keypoints.ndjson >"$result_dir"/auto/keypoints/$image_type/all_pca_keypoints.ndjson
-        python3 "$SCRIPT_DIR"/../script/modify_ai_annotation.py $image_type "$result_dir"/auto/keypoints/$image_type/all_pca_keypoints.ndjson --output - | lmrs join --mode left - "$result_dir"/flags.ndjson > $outfile
+        python3 "$SCRIPT_DIR"/../script/modify_ai_annotation.py $image_type "$result_dir"/auto/keypoints/$image_type/all_pca_keypoints.ndjson --output - | jq -c 'del(.pca)' | lmrs join --mode left - "$result_dir"/flags.ndjson > $outfile
     fi
 done
