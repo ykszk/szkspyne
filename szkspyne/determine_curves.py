@@ -12,13 +12,31 @@ from joblib import Parallel, delayed
 from logzero import logger
 from skspatial.objects import LineSegment
 
-from szkspyne.utils.measure import (
-    CurveIndices,
-    Vertebrae,
-    calc_angle,
-    find_apex,
-    is_crossing,
-)
+from szkspyne.utils.measure import CurveIndices, Vertebrae, calc_angle, find_apex, is_crossing
+
+
+class VertebralIndex:
+    T1 = 0
+    T2 = 1
+    T3 = 2
+    T4 = 3
+    T5 = 4
+    T6 = 5
+    T7 = 6
+    T8 = 7
+    T9 = 8
+    T10 = 9
+    T11 = 10
+    T12 = 11
+    L1 = 12
+    L2 = 13
+    L3 = 14
+    L4 = 15
+    L5 = 16
+    L6 = 7
+
+
+VIX = VertebralIndex
 
 
 def determine_curves(lm_data, curve_algo):
@@ -197,18 +215,18 @@ def determine_curves(lm_data, curve_algo):
 
         major_apexes = [major_apex]
         # add secondary curve-sets if primary apex is on the boundary
-        if major_apex == 4:
-            major_apexes.append(5)
-        if major_apex == 5:
-            major_apexes.append(4)
+        if major_apex == VIX.T5:
+            major_apexes.append(VIX.T6)
+        if major_apex == VIX.T6:
+            major_apexes.append(VIX.T5)
 
-        if major_apex == 10:
-            major_apexes.append(11)
-        if major_apex == 11:
-            major_apexes.append(10)
+        if major_apex == VIX.T11:
+            major_apexes.append(VIX.T12)
+        if major_apex == VIX.T12:
+            major_apexes.append(VIX.T11)
         names = ['Primary', 'Secondary']
         for i, major_apex in enumerate(major_apexes):
-            if major_apex <= 3:  # major is pt
+            if major_apex <= VIX.T5:  # major is pt
                 apexes = {'PT': major_apex}
                 pt_sup, pt_inf = largest_sup, largest_inf
                 mt_sup, mt_inf = None, None
@@ -219,7 +237,7 @@ def determine_curves(lm_data, curve_algo):
                 if len(downwards) >= 2:
                     lt_sup, lt_inf = downwards[1].sup, downwards[1].inf
                     apexes['LTT'] = downwards[1].apex
-            elif major_apex <= 10:  # major is mt
+            elif major_apex <= VIX.T11:  # major is mt
                 apexes = {'MT': major_apex}
                 mt_sup, mt_inf = largest_sup, largest_inf
                 if len(upwards) > 0:
