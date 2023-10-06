@@ -13,6 +13,7 @@ echo 'start:' "$(date)"
 
 readonly jq_remove_flex='. | select(.flags."除外" or .flags."左屈" or .flags."右屈" or .flags."先天性側彎"|not)'
 readonly HIDE="CurveApex APT CoronalBalance T1Tilt ClavicleAngle ShoulderHeight Pelvis FemoralHead PelvicObliquity LegLength SacralObliquity Mid/LowerThoracicKyphosis ProximalThoracicKyphosis SacralSlope PelvicIncidence PelvicRadiusAngle L5IncidenceAngle LumbosacralAngle"
+export HIDE
 algo="no-cross2"
 # algo="max_diffs"
 for image_type in ap lateral; do

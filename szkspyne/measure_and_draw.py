@@ -17,7 +17,15 @@ from PIL import Image
 from skspatial.objects import Line
 
 import szkspyne.utils.measure as utils
-from szkspyne.utils.measure import CurveIndices, SpinalDrawing, calc_angle, find_apex, get_circle_dict, lerp, perp
+from szkspyne.utils.measure import (
+    CurveIndices,
+    SpinalDrawing,
+    calc_angle,
+    find_apex,
+    get_circle_dict,
+    lerp,
+    perp,
+)
 
 
 LINE_WIDTH = 2.0
@@ -490,7 +498,7 @@ def measure_json(
         drawings.append((gid, 'Sacral Slope (p.99)'))
         color = line_colors[gid]
         grp = dwg.add(dwg.g(id=gid, class_=gid, stroke=color, visibility=d_visibility[gid]))
-        grp.add(dwg.line((sacrum_tltr[0], sacrum_tltr[1])))
+        grp.add(dwg.line(sacrum_tltr[0].tolist(), sacrum_tltr[1].tolist()))
         sacrum_width = np.linalg.norm(sacrum_tltr[1] - sacrum_tltr[0])
         sacrum_hl = sacrum_tltr[0] + sacrum_width * np.array((np.sign(sacrum_tltr[1, 0] - sacrum_tltr[0, 0]), 0))
         grp.add(dwg.line(sacrum_tltr[0].tolist(), sacrum_hl.tolist()))
@@ -507,7 +515,7 @@ def measure_json(
         logger.debug(gid)
         drawings.append((gid, 'Sagittal Balance (p.67)'))
         color = line_colors[gid]
-        grp = dwg.add(dwg.g(id=gid, class_=gid, stroke=color, visibility=d_visibility[gid]))
+        grp = dwg.add(dwg.g(id=gid, class_=gid, stroke=color, stroke_width=LINE_WIDTH, visibility=d_visibility[gid]))
 
         sacrum_tr = sacrum_tltr[1]
         grp.add(dwg.line(sacrum_tr.tolist(), [sacrum_tr[0]] + [lerp(sacrum_tr[1], c7_centroid[1], 0.7)]))
@@ -579,7 +587,7 @@ def measure_json(
             l5_perp = perp(l5_sup[1] - l5_sup[0])
             l5_width = np.linalg.norm(l5_sup[1] - l5_sup[0])
             grp.add(dwg.line(l5_sup_center.tolist(), (l5_sup_center + l5_width * l5_perp).tolist()))
-            grp.add(dwg.line(vert_sup_cnrs[-1][0], vert_sup_cnrs[1]))
+            grp.add(dwg.line(vert_sup_cnrs[-1][0], vert_sup_cnrs[-1][1]))
             grp.add(dwg.line(femoral_center.tolist(), l5_sup_center.tolist()))
             angle = np.abs(calc_angle(l5_sup, (femoral_center, l5_sup_center)))
             angle_deg = 90 - np.rad2deg(angle)

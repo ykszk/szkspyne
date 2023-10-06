@@ -370,6 +370,16 @@ class SpinalDrawing(svgwrite.Drawing):
         grp.add(self.line(p1, p2))
         return p1, p2
 
+    def line3(self, p1, p2, p3):
+        '''
+        Choose the pair with the largest distance and return line between the chosen pair of points
+        '''
+        p1, p2, p3 = np.array(p1), np.array(p2), np.array(p3)
+        combos = [(p1, p2), (p2, p3), (p3, p1)]
+        dists = [np.linalg.norm(a - b, ord=2) for a, b in combos]
+        a, b = combos[np.argmax(dists)]
+        return self.line(a, b)
+
     def draw_cobb(
         self,
         sup_cnrs: np.ndarray,
@@ -383,42 +393,42 @@ class SpinalDrawing(svgwrite.Drawing):
         low_line = Line.from_points(inf_cnrs[0], inf_cnrs[1])
         try:
             up_low_cross = up_line.intersect_line(low_line)
+        except ValueError:
+            up_low_cross = None
+        if up_low_cross is None:
+            angle_rad = 0
+            text_pos = np.concatenate([sup_cnrs, inf_cnrs], axis=0).mean(axis=0)
+            grp.add(self.line(sup_cnrs[0], sup_cnrs[1]))
+            grp.add(self.line(inf_cnrs[0], inf_cnrs[1]))
+            grp.add(self.line(sup_cnrs.mean(axis=0), inf_cnrs.mean(axis=1)))
+        else:
             angle_rad = -calc_angle((sup_cnrs[0], sup_cnrs[1]), (inf_cnrs[0], inf_cnrs[1]))
             if angle_rad > 0:
                 up_end = sup_cnrs[1]
-                low_end = inf_cnrs[1]
                 pts = up_end + aux_dist * (sup_cnrs[0] - sup_cnrs[1])
             else:
                 up_end = sup_cnrs[0]
-                low_end = inf_cnrs[0]
                 pts = up_end + aux_dist * (sup_cnrs[1] - sup_cnrs[0])
 
             aux_cross = Point(rotate_around(pts, angle_rad / 2, up_low_cross))
             is_inside = np.linalg.norm(aux_cross - sup_cnrs[0]) > np.linalg.norm(up_low_cross - sup_cnrs[0])
             if is_inside:
                 text_pos = up_low_cross
-                grp.add(self.line(up_end, up_low_cross))
-                grp.add(self.line(low_end, up_low_cross))
+                grp.add(self.line3(sup_cnrs[0], sup_cnrs[1], up_low_cross))
+                grp.add(self.line3(inf_cnrs[0], inf_cnrs[1], up_low_cross))
             else:
-                aux_cross = Point(rotate_around(pts, angle_rad / 2, up_low_cross))
+                text_pos = aux_cross
                 up_aux1 = up_line.project_point(aux_cross)
                 up_aux2 = up_aux1 + 1.5 * (aux_cross - up_aux1)
                 up_auxs = np.array((up_aux1, up_aux2))
                 low_aux1 = low_line.project_point(aux_cross)
                 low_aux2 = low_aux1 + 1.5 * (aux_cross - low_aux1)
                 low_auxs = np.array((low_aux1, low_aux2))
-                text_pos = aux_cross
 
-                grp.add(self.line(up_end, up_auxs[0]))
+                grp.add(self.line3(sup_cnrs[0], sup_cnrs[1], up_auxs[0]))
                 grp.add(self.line(up_auxs[0], up_auxs[1]))
-                grp.add(self.line(low_end, low_auxs[0]))
+                grp.add(self.line3(inf_cnrs[0], inf_cnrs[1], low_auxs[0]))
                 grp.add(self.line(low_auxs[0], low_auxs[1]))
-        except ValueError:
-            angle_rad = 0
-            text_pos = np.concatenate([sup_cnrs, inf_cnrs], axis=0).mean(axis=0)
-            grp.add(self.line(sup_cnrs[0], sup_cnrs[1]))
-            grp.add(self.line(inf_cnrs[0], inf_cnrs[1]))
-            grp.add(self.line(sup_cnrs.mean(axis=0), inf_cnrs.mean(axis=1)))
 
         angle_deg = np.rad2deg(angle_rad)
         text_angle = '{:.1f}°'.format(angle_deg)

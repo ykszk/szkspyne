@@ -37,6 +37,8 @@ include_visualization = not ('NO_VIS' in os.environ)
 from collections import namedtuple
 
 
+HIDE = os.environ.get('HIDE', 'Heatmap').split(' ')
+
 DATA_SUFFIX = os.environ.get('DATA_SUFFIX', '')
 ap_filename = f'ap_whole{DATA_SUFFIX}.csv' if DATA_SUFFIX else 'ap_whole.csv'
 skip_lateral = DATA_SUFFIX != ''
@@ -227,7 +229,7 @@ for i, d in enumerate([d_ap, d_lateral]):
     for col_name in ['Heatmap', 'Points', 'VertebralNumber', 'CurveApex'] + [
         c[5:] for c in df.columns if c.startswith('pred ') and not c.endswith('curve_indices')
     ]:
-        cbs.append(t_cb.render(name=col_name, label=col_name, checked='checked'))
+        cbs.append(t_cb.render(name=col_name, label=col_name, checked='' if col_name in HIDE else 'checked'))
     cbs = '\n'.join(cbs)
     cbs = (
         '<h2>Show/Hide</h2>'
