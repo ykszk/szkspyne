@@ -27,9 +27,8 @@ for fold_dir in "$result_dir"/?; do
 
             infile="$fold_dir"/y_pred_$image_type.mha
             outfile="$result_dir"/heatmap_images.sqlite3
-            if [ $infile -nt $outfile ]; then
-                python3 "$SCRIPT_DIR"/../script/hm2db.py $infile "$outdir"/all_heatmap_keypoints.ndjson $outfile
-            fi
+            # always execute but with `--skip` option
+            python3 "$SCRIPT_DIR"/../script/hm2db.py --skip $infile "$outdir"/all_heatmap_keypoints.ndjson $outfile
 
             infile="$outdir"/all_heatmap_keypoints.ndjson
             outfile="$outdir"/all_pca_keypoints.ndjson

@@ -1,13 +1,15 @@
-from pathlib import Path
-from szkspyne import labelme_utils
-from szkmipy import mhd
-from PIL import Image
-import numpy as np
-from io import BytesIO
-import sqlite3
-from tqdm import tqdm
-import sys
 import argparse
+import sqlite3
+import sys
+from io import BytesIO
+from pathlib import Path
+
+import numpy as np
+from PIL import Image
+from szkmipy import mhd
+from tqdm import tqdm
+
+from szkspyne import labelme_utils
 
 
 def main():
@@ -15,6 +17,9 @@ def main():
     parser.add_argument('heatmap', help='heatmap mhd filename')
     parser.add_argument('ndjson', help='ndjson with filename keys')
     parser.add_argument('output', help='output sqlite3 database name')
+    parser.add_argument(
+        '--skip', help='skip saving heatmap if the image already exists in the db.', action='store_true'
+    )
 
     args = parser.parse_args()
 
@@ -33,6 +38,9 @@ def main():
     conn.commit()
 
     for jobj, hm in tqdm(zip(ndjson, heatmaps), total=len(heatmaps)):
+        filename = jobj['filename'] + '.png'
+        if args.skip and cursor.execute("SELECT EXISTS(SELECT 1 FROM image WHERE name=(?))", (filename,)):
+            continue
         width = int(round(jobj['imageWidth'] * hm.shape[0] / jobj['imageHeight']))
         hm = hm[:, :width]
         hm = hm / hm.max()
@@ -47,7 +55,6 @@ def main():
         with BytesIO() as bio:
             img.save(bio, format='png')
             binary = bio.getvalue()
-        filename = jobj['filename'] + '.png'
         cursor.execute(
             '''
         REPLACE INTO image (name, binary) VALUES (?, ?)
