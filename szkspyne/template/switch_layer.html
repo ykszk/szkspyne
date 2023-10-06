@@ -1,0 +1,10 @@
+<fieldset>
+    <legend>Curve sets</legend>
+    <div>
+        {%- for layer in layers %}
+        <label>
+        <input type="radio" id="{{layer[0]}}" class="layer {{layer[0]}}" name="layer" value="{{layer[0]}}" onchange="switch_layer(this)" {% if loop.first -%}checked{%- endif -%}/>
+        {{layer[1]}}</label>
+        {%- endfor %}
+    </div>
+</fieldset>
