@@ -19,7 +19,7 @@ from scipy import stats
 
 import szkspyne
 import szkspyne.labelme_utils as labelme_utils
-from szkspyne.utils.measure import pearsonr_ci
+from szkspyne.utils.stats import pearsonr_ci
 
 
 mpl.rcParams["figure.dpi"] = 100
