@@ -17,17 +17,18 @@ for fold_dir in "$result_dir"/?; do
         fi
         for image_type in ap_whole lateral_whole; do
             outdir="$fold_dir"/auto/$image_type
-
-            infile="$fold_dir"/y_pred_$image_type.mha
-            outfile="$result_dir"/heatmap_images.sqlite3
-            if [ $infile -nt $outfile ]; then
-                python3 "$SCRIPT_DIR"/../script/hm2db.py $infile "$outdir"/all_heatmap_keypoints.ndjson $outfile
-            fi
+            mkdir -p $outdir
 
             infile="$fold_dir"/y_pred_$image_type.mha
             outfile="$outdir"/all_heatmap_keypoints.ndjson
             if [ $infile -nt $outfile ]; then
                 python3 "$SCRIPT_DIR"/heatmap2labelme.py $infile "$fold_dir"/test_$image_type.ndjson "$outdir" --save_ndjson $outfile
+            fi
+
+            infile="$fold_dir"/y_pred_$image_type.mha
+            outfile="$result_dir"/heatmap_images.sqlite3
+            if [ $infile -nt $outfile ]; then
+                python3 "$SCRIPT_DIR"/../script/hm2db.py $infile "$outdir"/all_heatmap_keypoints.ndjson $outfile
             fi
 
             infile="$outdir"/all_heatmap_keypoints.ndjson
