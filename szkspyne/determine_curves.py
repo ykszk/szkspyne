@@ -12,31 +12,13 @@ from joblib import Parallel, delayed
 from logzero import logger
 from skspatial.objects import LineSegment
 
-from szkspyne.utils.measure import CurveIndices, Vertebrae, calc_angle, find_apex, is_crossing
-
-
-class VertebralIndex:
-    T1 = 0
-    T2 = 1
-    T3 = 2
-    T4 = 3
-    T5 = 4
-    T6 = 5
-    T7 = 6
-    T8 = 7
-    T9 = 8
-    T10 = 9
-    T11 = 10
-    T12 = 11
-    L1 = 12
-    L2 = 13
-    L3 = 14
-    L4 = 15
-    L5 = 16
-    L6 = 7
-
-
-VIX = VertebralIndex
+from szkspyne.utils.measure import (
+    CurveIndices,
+    VertebraDiscIndex,
+    Vertebrae,
+    calc_angle,
+    is_crossing,
+)
 
 
 def determine_curves(lm_data, curve_algo):
@@ -153,8 +135,8 @@ def determine_curves(lm_data, curve_algo):
         best_set = candidates[np.argmax(abs_scores)]
         score, mt_sup, mt_inf, lt_sup, lt_inf = best_set
         pt_sup, pt_inf = None, None
-        lt_apex = find_apex(vert_corners, vert_centroids, lt_sup, lt_inf)
-        if n_verts - lt_inf >= 2 and lt_apex < 11:
+        lt_apex = vertebra_data.find_apex(lt_sup, lt_inf)
+        if n_verts - lt_inf >= 2 and lt_apex < VertebraDiscIndex.T12:
             lt_angle = calc_angle(vert_sup_cnrs[lt_sup], vert_inf_cnrs[lt_inf])
             sup = lt_inf
             candidates = []
@@ -215,18 +197,18 @@ def determine_curves(lm_data, curve_algo):
 
         major_apexes = [major_apex]
         # add secondary curve-sets if primary apex is on the boundary
-        if major_apex == VIX.T5:
-            major_apexes.append(VIX.T6)
-        if major_apex == VIX.T6:
-            major_apexes.append(VIX.T5)
+        if major_apex in [VertebraDiscIndex.DT4T5, VertebraDiscIndex.T5]:
+            major_apexes.append(VertebraDiscIndex.T6)
+        if major_apex in [VertebraDiscIndex.DT5T6, VertebraDiscIndex.T6]:
+            major_apexes.append(VertebraDiscIndex.T5)
 
-        if major_apex == VIX.T11:
-            major_apexes.append(VIX.T12)
-        if major_apex == VIX.T12:
-            major_apexes.append(VIX.T11)
+        if major_apex in [VertebraDiscIndex.T11, VertebraDiscIndex.DT11T12]:
+            major_apexes.append(VertebraDiscIndex.T12)
+        if major_apex in [VertebraDiscIndex.T12, VertebraDiscIndex.DT12L1]:
+            major_apexes.append(VertebraDiscIndex.DT11T12)
         names = ['Primary', 'Secondary']
         for i, major_apex in enumerate(major_apexes):
-            if major_apex <= VIX.T5:  # major is pt
+            if major_apex <= VertebraDiscIndex.T5:  # major is pt
                 apexes = {'PT': major_apex}
                 pt_sup, pt_inf = largest_sup, largest_inf
                 mt_sup, mt_inf = None, None
@@ -237,7 +219,7 @@ def determine_curves(lm_data, curve_algo):
                 if len(downwards) >= 2:
                     lt_sup, lt_inf = downwards[1].sup, downwards[1].inf
                     apexes['LTT'] = downwards[1].apex
-            elif major_apex <= VIX.T11:  # major is mt
+            elif major_apex <= VertebraDiscIndex.DT11T12:  # major is mt
                 apexes = {'MT': major_apex}
                 mt_sup, mt_inf = largest_sup, largest_inf
                 if len(upwards) > 0:

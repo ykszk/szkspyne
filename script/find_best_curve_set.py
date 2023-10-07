@@ -61,9 +61,10 @@ for file_id, ref_indices_obj in ref_indices_ndjson.items():
             scores.append(score)
         best_indices = all_alt_measures[np.argmin(scores)]
 
+    best_indices['name'] = 'Best'
     d_indices[file_id] = {
         'filename': file_id,
-        'curve_indices': [{'name': 'Best', 'indices': best_indices['curve_indices']}],
+        'curve_indices': [best_indices],
     }
 
 

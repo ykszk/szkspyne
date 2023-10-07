@@ -1,8 +1,8 @@
 import csv
 import io
-import itertools
 from base64 import b64encode
 from collections import defaultdict
+from enum import IntEnum
 from pathlib import Path
 from typing import Any, Dict, List, NamedTuple, Optional, Tuple
 
@@ -161,9 +161,11 @@ def get_vert_and_disc_corners(kps):
     n_vertebrae = len(kps['BR'])
     sacrum_tltr = np.array((kps['TL'][-1], kps['TR'][-1]))
     vert_corners = np.array([kps[l][:n_vertebrae] for l in settings.VERTEBRA_LABEL_NAMES]).transpose((1, 0, 2))
-    disc_corners = np.array(
-        [kps[l][(1 if l in ['TL', 'TR'] else 0) :] for l in settings.VERTEBRA_LABEL_NAMES]
-    ).transpose((1, 0, 2))
+    disc_corners = (
+        np.array([kps[l][(1 if l in ['TL', 'TR'] else 0) :] for l in settings.VERTEBRA_LABEL_NAMES])
+        .transpose((1, 0, 2))[:-1]
+        .copy()
+    )
     return sacrum_tltr, vert_corners, disc_corners
 
 
@@ -188,21 +190,67 @@ def is_crossing(l1: LineSegment, l2: LineSegment) -> bool:
         return False
 
 
-def find_apex(vert_corners, vert_centroids, sup, inf):
-    # maximum translation
-    sup_line = Line.from_points(vert_corners[sup][0], vert_corners[sup][1])
-    inf_line = Line.from_points(vert_corners[inf][0], vert_corners[inf][1])
+class VertebraDiscIndex(IntEnum):
+    T1 = 0
+    DT1T2 = 1
+    T2 = 2
+    DT2T3 = 3
+    T3 = 4
+    DT3T4 = 5
+    T4 = 6
+    DT4T5 = 7
+    T5 = 8
+    DT5T6 = 9
+    T6 = 10
+    DT6T7 = 11
+    T7 = 12
+    DT7T8 = 13
+    T8 = 14
+    DT8T9 = 15
+    T9 = 16
+    DT9T10 = 17
+    T10 = 18
+    DT10T11 = 19
+    T11 = 20
+    DT11T12 = 21
+    T12 = 22
+    DT12L1 = 23
+    L1 = 24
+    DL1L2 = 25
+    L2 = 26
+    DL2L3 = 27
+    L3 = 28
+    DL3L4 = 29
+    L4 = 30
+    DL4L5 = 31
+    L5 = 32
+    DL5L6 = 33
+    L6 = 34
 
-    vert_disc_centroids = vert_centroids[sup : (inf + 1)]
-    try:
-        p_intersect = sup_line.intersect_line(inf_line)
-    except ValueError:  # parallel lines
-        apex = (sup + inf) // 2
-        return apex
 
-    apex, _ = max([(i, abs(p_intersect[0] - c[0])) for i, c in enumerate(vert_disc_centroids)], key=lambda e: e[1])
-    apex = sup + apex
-    return apex
+class VertebralIndex(IntEnum):
+    T1 = 0
+    T2 = 1
+    T3 = 2
+    T4 = 3
+    T5 = 4
+    T6 = 5
+    T7 = 6
+    T8 = 7
+    T9 = 8
+    T10 = 9
+    T11 = 10
+    T12 = 11
+    L1 = 12
+    L2 = 13
+    L3 = 14
+    L4 = 15
+    L5 = 16
+    L6 = 17
+
+    @staticmethod
+    def to_vert_disc_index(idx: 'VertebralIndex'):
+        return VertebraDiscIndex(2 * idx)
 
 
 class Vertebrae:
@@ -233,12 +281,23 @@ class Vertebrae:
         self.disc_corners = disc_corners
         self.vert_corners = vert_corners
 
+        assert len(self.vert_corners) - 1 == len(self.disc_corners)
+        vert_disc_corners = np.stack(
+            [self.vert_corners, np.pad(self.disc_corners, pad_width=((0, 1), (0, 0), (0, 0)))], axis=1
+        )
+        self.vert_disc_corners = vert_disc_corners.reshape((len(vert_disc_corners) * 2, 4, 2))[:-1].copy()
+
         sacrum_center = sacrum_tltr.mean(axis=0)
         vert_centroids = np.array([calc_centroid(c) for c in vert_corners])
         disc_centroids = np.array([calc_centroid(c) for c in disc_corners])
         self.sacrum_center = sacrum_center
         self.vert_centroids = vert_centroids
         self.disc_centroids = disc_centroids
+
+        vert_disc_centroids = np.stack(
+            [self.vert_centroids, np.pad(self.disc_centroids, pad_width=((0, 1), (0, 0)))], axis=1
+        )
+        self.vert_disc_centroids = vert_disc_centroids.reshape((len(vert_disc_centroids) * 2, 2))[:-1].copy()
 
         vert_sup_cnrs = vert_corners[:, :2]
         vert_sup_vecs = vert_sup_cnrs[:, 1] - vert_sup_cnrs[:, 0]
@@ -253,7 +312,7 @@ class Vertebrae:
         sup: int
         inf: int
         angle: float
-        apex: int
+        apex: VertebraDiscIndex
 
     def _find_largest_angle(self, candidate_sup_inf):
         scores: List[float] = []
@@ -276,9 +335,7 @@ class Vertebrae:
             return None
         else:
             sup, inf = sup_inf[np.argmax(scores)]
-            return Vertebrae.Curve(
-                sup, inf, np.max(scores), find_apex(self.vert_corners, self.vert_centroids, sup, inf)
-            )
+            return Vertebrae.Curve(sup, inf, np.max(scores), self.find_apex(sup, inf))
 
     def find_largest_angle(self):
         sup_inf = []
@@ -296,6 +353,35 @@ class Vertebrae:
     def find_upward(self, inf):
         sup_inf = [(sup, inf) for sup in range(max(inf - 2, 0))]
         return self._find_largest_angle(sup_inf)
+
+    def _find_apex(self, corners, arc, sup, inf) -> int:
+        '''
+        return index with maximum translation
+        '''
+        sup_line = Line.from_points(corners[sup][0], corners[sup][1])
+        inf_line = Line.from_points(corners[inf][0], corners[inf][1])
+        try:
+            p_intersect = sup_line.intersect_line(inf_line)
+        except ValueError:  # parallel lines
+            apex = (sup + inf) // 2
+            return apex
+
+        # maximum translation
+        apex, _ = max([(i, abs(p_intersect[0] - c[0])) for i, c in enumerate(arc)], key=lambda e: e[1])
+        apex = sup + apex
+        return apex
+
+    def find_apex(self, sup, inf) -> VertebraDiscIndex:
+        sup = VertebralIndex.to_vert_disc_index(sup)
+        inf = VertebralIndex.to_vert_disc_index(inf)
+        arc = self.vert_disc_centroids[sup : (inf + 1)]
+        apex = self._find_apex(self.vert_disc_corners, arc, sup, inf)
+        return VertebraDiscIndex(apex)
+
+    def find_apex_without_disc(self, sup, inf) -> VertebralIndex:
+        arc = self.vert_centroids[sup : (inf + 1)]
+        apex = self._find_apex(self.vert_corners, arc, sup, inf)
+        return VertebralIndex(apex)
 
 
 class SpinalDrawing(svgwrite.Drawing):

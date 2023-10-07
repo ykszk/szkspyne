@@ -20,8 +20,8 @@ import szkspyne.utils.measure as utils
 from szkspyne.utils.measure import (
     CurveIndices,
     SpinalDrawing,
+    VertebraDiscIndex,
     calc_angle,
-    find_apex,
     get_circle_dict,
     lerp,
     perp,
@@ -142,7 +142,7 @@ def measure_json(
             layer = dwg.add(dwg.g(id=f'layer_{i}', class_=f'layer layer_{i}', style=f'display:{display}'))
 
             logger.debug('Cobb angles')
-            apexes: Dict[str, int] = d_curve_indices.get('apices', {})
+            apexes: Dict[str, VertebraDiscIndex] = d_curve_indices.get('apices', {})
             for gid, disp, sup_inf_pair in [
                 ('MT', 'MT Cobb (p.49)', curve_indices.mt),
                 ('TLL', 'TL/L Cobb (p.49)', curve_indices.tll),
@@ -150,7 +150,7 @@ def measure_json(
             ]:
                 if sup_inf_pair is not None:
                     sup, inf = sup_inf_pair
-                    apex = apexes.get(gid, find_apex(vert_corners, vert_centroids, sup, inf))
+                    apex = apexes.get(gid, dwg.vertebrae.find_apex(sup, inf))
                     apexes[gid] = apex
                     grp = layer.add(
                         dwg.g(
@@ -185,10 +185,13 @@ def measure_json(
                     )
                 )
                 for apex in apexes.values():
-                    vert_apex = vert_corners[apex]
+                    apex_corners = dwg.vertebrae.vert_disc_corners[apex]
                     grp.add(
                         dwg.polygon(
-                            points=[vc.tolist() for vc in [vert_apex[0], vert_apex[1], vert_apex[3], vert_apex[2]]]
+                            points=[
+                                vc.tolist()
+                                for vc in [apex_corners[0], apex_corners[1], apex_corners[3], apex_corners[2]]
+                            ]
                         )
                     )
                 for v in vert_centroids:
