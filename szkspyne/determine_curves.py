@@ -245,7 +245,11 @@ def determine_curves(lm_data, curve_algo):
                     pt_sup, pt_inf = upwards[1].sup, upwards[1].inf
                     apexes['PT'] = upwards[1].apex
             curve_indices = CurveIndices.from_tuples((pt_sup, pt_inf), (mt_sup, mt_inf), (lt_sup, lt_inf))
-            curve_sets.append({'name': names[i], 'indices': curve_indices.to_dict(), 'apices': apexes})
+            angles = curve_indices.angles(vertebra_data)
+            angles = {k: v for k, v in zip(['PT', 'MT', 'TLL'], angles)}
+            curve_sets.append(
+                {'name': names[i], 'indices': curve_indices.to_dict(), 'apices': apexes, 'angles': angles}
+            )
     else:
         raise NotImplemented
     return curve_sets

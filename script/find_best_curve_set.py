@@ -16,7 +16,7 @@ args = parser.parse_args()
 
 
 result_dir = Path(args.input)
-input_indices_filename = result_dir / 'auto/measures_ap_whole.ndjson'
+input_indices_filename = result_dir / 'auto/curve_indices_ap_whole.ndjson'
 ref_indices_filename = result_dir / 'reference/measures_ap_whole.ndjson'
 output_indices_filename = result_dir / 'auto/best_indices.ndjson'
 
@@ -47,17 +47,17 @@ for file_id, ref_indices_obj in ref_indices_ndjson.items():
     in_indices_obj = input_indices_ndjson[file_id]
     ref_measures = ref_indices_obj['measures']
     ref_indices = ref_measures['curve_indices']
-    all_alt_measures = in_indices_obj['alt_measures']
+    all_alt_measures = in_indices_obj['curve_indices']
     best_indices = all_alt_measures[0]
     if len(all_alt_measures) > 1:
         ref_keys = [k for k, v in ref_indices.items() if v is not None]
         scores = []
         for alt_measures in all_alt_measures:
-            alt_keys = [k for k, v in alt_measures['curve_indices'].items() if v is not None]
+            alt_keys = [k for k, v in alt_measures['indices'].items() if v is not None]
             common_keys = set(ref_keys).intersection(set(alt_keys))
             score = 0
             for key in common_keys:
-                score += abs(ref_measures[key] - alt_measures[key])
+                score += abs(ref_measures[key] - alt_measures['angles'][key])
             scores.append(score)
         best_indices = all_alt_measures[np.argmin(scores)]
 

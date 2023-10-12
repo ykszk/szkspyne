@@ -578,6 +578,15 @@ class CurveIndices(NamedTuple):
             'PT': self.pt,
         }
 
+    def angles(self, vert: Vertebrae) -> List[Optional[float]]:
+        ags: List[Optional[float]] = []
+        for pair in [self.pt, self.mt, self.tll]:
+            if pair is None:
+                ags.append(None)
+            else:
+                ags.append(-np.rad2deg(calc_angle(vert.vert_sup_cnrs[pair[0]], vert.vert_inf_cnrs[pair[1]])))
+        return ags
+
     @staticmethod
     def from_dict(d: Dict[str, Optional[Tuple[int, int]]]):
         return CurveIndices(
