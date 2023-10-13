@@ -39,8 +39,10 @@ def main():
 
     for jobj, hm in tqdm(zip(ndjson, heatmaps), total=len(heatmaps)):
         filename = jobj['filename'] + '.png'
-        if args.skip and cursor.execute("SELECT EXISTS(SELECT 1 FROM image WHERE name=(?))", (filename,)):
-            continue
+        if args.skip:
+            cursor.execute("SELECT 1 FROM image WHERE name=?", (filename,))
+            if cursor.fetchone() is not None:
+                continue
         width = int(round(jobj['imageWidth'] * hm.shape[0] / jobj['imageHeight']))
         hm = hm[:, :width]
         hm = hm / hm.max()
