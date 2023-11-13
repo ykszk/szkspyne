@@ -1,13 +1,15 @@
 # %%
 import json
 import os
+import shutil
 import sys
 from collections import defaultdict
 from pathlib import Path
-from typing import Union, Dict, List, Any
+from typing import Any, Dict, List, Union
 
 import numpy as np
 from joblib import Parallel, delayed
+from logzero import logger
 from tqdm import tqdm
 
 
@@ -150,8 +152,6 @@ def save_ndjson(ndjson: List[Any], filename: Union[str, Path], encoding=None, en
 
 
 def diff_ndjsons(fn1, fn2):
-    from logzero import logger
-
     def load_ndjson(fn, key='filename'):
         with open(fn) as f:
             lines = f.readlines()
@@ -170,6 +170,26 @@ def diff_ndjsons(fn1, fn2):
         e1, e2 = d1[filename], d2[filename]
         if e1 != e2:
             print(filename)
+
+
+def copy_image(inname: str, outname: str):
+    outdir = Path(outname)
+    if not outdir.exists():
+        print(outdir, ' not found')
+        return
+    if inname == '-':
+        ndjson = [json.loads(line) for line in sys.stdin]
+        indir = Path('.')
+    else:
+        ndjson = load_ndjson(inname)
+        indir = Path(inname).parent
+    for js in ndjson:
+        src = indir / js['imagePath']
+        # print(src)
+        try:
+            shutil.copy(src, outdir)
+        except Exception as e:
+            logger.error('Skipping error:%s', e)
 
 
 def sort_kps(points):
@@ -237,6 +257,15 @@ def main():
         diff_ndjsons(args.input1, args.input2)
 
     p_diff.set_defaults(func=command_diff)
+
+    p_copy = subparsers.add_parser('copy', help="Copy images in ndjson.")
+    p_copy.add_argument('input', help='Input ndjson. Specify `-` to use stdin')
+    p_copy.add_argument('output', help='Output directory')
+
+    def command_copy(args):
+        copy_image(args.input, args.output)
+
+    p_copy.set_defaults(func=command_copy)
 
     args = parser.parse_args()
     if not hasattr(args, 'func'):
