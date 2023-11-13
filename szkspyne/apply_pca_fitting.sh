@@ -7,7 +7,7 @@ SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
 readonly SCRIPT_DIR
 readonly result_dir="$1"
 
-for fold_dir in "$result_dir"/?; do
+for fold_dir in "$result_dir"/folds/*; do
     (
         echo "$fold_dir"
         infile="$fold_dir"/train_val.ndjson
@@ -50,7 +50,7 @@ for image_type in ap_whole lateral_whole; do
     infile="$result_dir"/0/auto/$image_type/all_pca_keypoints.ndjson
     outfile="$result_dir"/auto/keypoints/$image_type/all_final_keypoints.ndjson
     if [ $infile -nt $outfile ]; then
-        cat "$result_dir"/?/auto/$image_type/all_pca_keypoints.ndjson >"$result_dir"/auto/keypoints/$image_type/all_pca_keypoints.ndjson
+        cat "$result_dir"/folds/*/auto/$image_type/all_pca_keypoints.ndjson >"$result_dir"/auto/keypoints/$image_type/all_pca_keypoints.ndjson
         python3 "$SCRIPT_DIR"/../script/modify_ai_annotation.py $image_type "$result_dir"/auto/keypoints/$image_type/all_pca_keypoints.ndjson --output - | jq -c 'del(.pca)' | lmrs join --mode left - "$result_dir"/flags.ndjson > $outfile
     fi
 done
