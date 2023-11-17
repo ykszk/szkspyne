@@ -260,7 +260,7 @@ def main():
     parser.add_argument('input', help='Input ndjson filename')
     parser.add_argument('output', help='Output ndjson filename')
     parser.add_argument('--algo', help='algorithm', default='no-cross')
-    parser.add_argument('-j', '--jobs', help='jobs', default=0)
+    parser.add_argument('-j', '--jobs', help='jobs', default=0, type=int)
 
     args = parser.parse_args()
     if args.input == '-':
