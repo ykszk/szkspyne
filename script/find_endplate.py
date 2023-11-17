@@ -17,11 +17,11 @@ args = parser.parse_args()
 
 
 result_dir = Path(args.input)
-input_filename = result_dir / 'auto/keypoints/ap_whole/all_final_keypoints.ndjson'
+input_filename = result_dir / 'auto/keypoints/ap_whole/final_keypoints.ndjson'
 input_indices_filename = result_dir / 'auto/measures_ap_whole.ndjson'
-ref_points_filename = result_dir / 'reference/keypoints/ap_whole/all_final_keypoints.ndjson'
+ref_points_filename = result_dir / 'reference/keypoints/ap_whole/final_keypoints.ndjson'
 ref_indices_filename = result_dir / 'reference/measures_ap_whole.ndjson'
-output_indices_filename = result_dir / 'auto/closest_indices.ndjson'
+output_indices_filename = result_dir / 'auto/curve_indices_ap_whole_closest_indices.ndjson'
 
 
 def to_named_dict(ndjson: List[Dict]):

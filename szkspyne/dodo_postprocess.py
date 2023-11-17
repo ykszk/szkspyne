@@ -204,14 +204,14 @@ def task_ref():
         }
 
 
-MES_HIDE = 'CurveApex APT CoronalBalance T1Tilt ClavicleAngle ShoulderHeight Pelvis FemoralHead PelvicObliquity LegLength SacralObliquity Mid/LowerThoracicKyphosis ProximalThoracicKyphosis SacralSlope PelvicIncidence PelvicRadiusAngle L5IncidenceAngle LumbosacralAngle'
+MES_HIDE = 'CurveApex SpinalLine APT CoronalBalance T1Tilt ClavicleAngle ShoulderHeight Pelvis FemoralHead PelvicObliquity LegLength SacralObliquity Mid/LowerThoracicKyphosis ProximalThoracicKyphosis SacralSlope PelvicIncidence PelvicRadiusAngle L5IncidenceAngle LumbosacralAngle'
 JQ_REMOVE_BEND = '. | select(.flags."除外" or .flags."左屈" or .flags."右屈" or .flags."先天性側彎"|not)'
 ALGO = 'no-cross2'
 
 
-def task_measure():
+def task_curve():
     '''
-    Measure Cob angles
+    Determine curves
     '''
     for image_type in IMAGE_TYPES:
         for subdir in ['auto', 'reference']:
@@ -222,23 +222,56 @@ def task_measure():
             c2 = f'python {script} - {curve_file} --algo {ALGO} --jobs 4'
             action1 = ' | '.join([c1, c2])
 
-            c2 = f'lmrs join --mode left - {curve_file}'
-            script = SRC_DIR / 'measure_and_draw.py'
-            parent_dir = SRC_DIR / '../../data/annotation/images/all'
-            config = SRC_DIR / '../../data/annotation/config.yaml'
-            outdir = RESULT_DIR / subdir / image_type
-            ndjson = RESULT_DIR / subdir / f'measures_{image_type}.ndjson'
-            imagedb = HM_IMAGE_DB
-            c3 = f'python {script} --hide {MES_HIDE} --height 1200 --points --numbers --image_type {image_type.split("_")[0]} --parent_dir {parent_dir} --title "{subdir} {image_type}" --config {config} --imagedb {imagedb} batch - {outdir} --html --ndjson {ndjson} --workers 4'
-            action2 = ' | '.join([c1, c2, c3])
-
             yield {
                 'name': f'{image_type}-{subdir}',
-                'actions': [action1, action2],
+                'actions': [action1],
                 'file_dep': [infile],
-                'targets': [ndjson],
+                'targets': [curve_file],
                 'clean': True,
             }
+
+
+VARIANTS = ['best_indices', 'closest_indices']
+
+
+def task_measure():
+    '''
+    Measure and draw into html files
+    '''
+    for image_type in IMAGE_TYPES:
+        for subdir in ['auto', 'reference']:
+            for variant in [''] + VARIANTS:
+                if variant != '' and image_type == 'lateral_whole':
+                    continue
+                if variant != '' and subdir == 'reference':
+                    continue
+                suffix = f'_{variant}' if variant != '' else ''
+                infile = RESULT_DIR / subdir / 'keypoints' / image_type / f'final_keypoints.ndjson'
+
+                # remove bending
+                c1 = f"jq -c '{JQ_REMOVE_BEND}' {infile}"
+
+                #
+                curve_file = RESULT_DIR / subdir / f'curve_indices_{image_type}{suffix}.ndjson'
+                c2 = f'lmrs join --mode left - {curve_file}'
+
+                script = SRC_DIR / 'measure_and_draw.py'
+                parent_dir = SRC_DIR / '../../data/annotation/images/all'
+                config = SRC_DIR / '../../data/annotation/config.yaml'
+                outdir = RESULT_DIR / subdir / f'{image_type}{suffix}'
+                outdir.mkdir(parents=True, exist_ok=True)
+                ndjson = RESULT_DIR / subdir / f'measures_{image_type}{suffix}.ndjson'
+                imagedb = HM_IMAGE_DB
+                c3 = f'python {script} --hide {MES_HIDE} --height 1200 --points --numbers --image_type {image_type.split("_")[0]} --parent_dir {parent_dir} --title "{subdir} {image_type}" --config {config} --imagedb {imagedb} batch - {outdir} --html --ndjson {ndjson} --workers 4'
+                action = ' | '.join([c1, c2, c3])
+
+                yield {
+                    'name': f'{image_type}-{subdir}{suffix}',
+                    'actions': [action],
+                    'file_dep': [curve_file, infile],
+                    'targets': [ndjson],
+                    'clean': True,
+                }
 
 
 def task_alt():
@@ -249,7 +282,7 @@ def task_alt():
 
     dep1 = RESULT_DIR / 'auto/curve_indices_ap_whole.ndjson'
     dep2 = RESULT_DIR / 'reference/measures_ap_whole.ndjson'
-    out = RESULT_DIR / 'auto/best_indices.ndjson'
+    out = RESULT_DIR / 'auto/curve_indices_ap_whole_best_indices.ndjson'
     action = ['python', script, RESULT_DIR]
     yield {
         'name': 'best curve',
@@ -263,7 +296,7 @@ def task_alt():
     dep2 = RESULT_DIR / 'auto/measures_ap_whole.ndjson'
     dep3 = RESULT_DIR / 'reference/keypoints/ap_whole/final_keypoints.ndjson'
     dep4 = RESULT_DIR / 'reference/measures_ap_whole.ndjson'
-    out = RESULT_DIR / 'auto/closest_indices.ndjson'
+    out = RESULT_DIR / 'auto/curve_indices_ap_whole_closest_indices.ndjson'
     action = ['python', SCRIPT_DIR / 'find_endplate.py', RESULT_DIR]
     yield {
         'name': 'closest endplate',
@@ -278,23 +311,50 @@ def task_summary():
     ''' '
     Create summary
     '''
-    script = ROOT_DIR / 'notebooks/exp_summary.py'
-    title = '{"title":"exp summary"}'
-    outfile = RESULT_DIR / 'summary.html'
-    c1 = f"jupytext --to ipynb --output - {script} --update-metadata '{title}'"
-    c2 = f'INPUT_DIR={RESULT_DIR} NO_VIS=true jupyter nbconvert --stdin --to html --execute --no-input --output {outfile}'
-    action = ' | '.join([c1, c2])
     file_dep = []
     for image_type in IMAGE_TYPES:
         for subdir in ['auto', 'reference']:
-            dep = RESULT_DIR / subdir / f'measures_{image_type}.ndjson'
-            file_dep.append(dep)
-
+            for variant in [''] + VARIANTS:
+                if variant != '' and image_type == 'lateral_whole':
+                    continue
+                if variant != '' and subdir == 'reference':
+                    continue
+                suffix = f'_{variant}' if variant != '' else ''
+                dep = RESULT_DIR / subdir / f'measures_{image_type}{suffix}.ndjson'
+                file_dep.append(dep)
+    targets = [RESULT_DIR / f'ap_whole.csv']
+    for variant in VARIANTS:
+        targets.append(RESULT_DIR / f'ap_whole_{variant}.csv')
     script = SCRIPT_DIR / 'measured_jsons2csv.py'
     pre = f'python3 {script} "{RESULT_DIR}"'
-    return {
-        'actions': [pre, action],
+
+    yield {
+        'name': 'pre',
+        'actions': [pre],
         'file_dep': file_dep,
-        'targets': [outfile],
+        'targets': targets,
         'clean': True,
     }
+
+    script = ROOT_DIR / 'notebooks/exp_summary.py'
+    for variant in [''] + VARIANTS:
+        if variant == '':
+            suffix = ''
+            title = '{"title":"exp summary"}'
+            name = 'normal'
+        else:
+            suffix = f'_{variant}'
+            title = f'{{"title":"exp summary w {variant}"}}'
+            name = variant
+        file_dep = [RESULT_DIR / f'ap_whole{suffix}.csv']
+        outfile = RESULT_DIR / f'summary{suffix}.html'
+        c1 = f"jupytext --to ipynb --output - {script} --update-metadata '{title}'"
+        c2 = f'INPUT_DIR={RESULT_DIR} NO_VIS=true DATA_SUFFIX={suffix} jupyter nbconvert --stdin --to html --execute --no-input --output {outfile}'
+        action = ' | '.join([c1, c2])
+        yield {
+            'name': name,
+            'actions': [action],
+            'file_dep': file_dep,
+            'targets': [outfile],
+            'clean': True,
+        }

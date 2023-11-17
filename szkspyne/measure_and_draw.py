@@ -217,7 +217,7 @@ def measure_json(
                     stroke=color,
                     stroke_width=LINE_WIDTH,
                     fill='none',
-                    visibility='hide',
+                    visibility=d_visibility[gid],
                 )
             )
             grp.add(dwg.polyline(points=polyline.tolist()))

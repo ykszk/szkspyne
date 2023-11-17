@@ -18,7 +18,7 @@ args = parser.parse_args()
 result_dir = Path(args.input)
 input_indices_filename = result_dir / 'auto/curve_indices_ap_whole.ndjson'
 ref_indices_filename = result_dir / 'reference/measures_ap_whole.ndjson'
-output_indices_filename = result_dir / 'auto/best_indices.ndjson'
+output_indices_filename = result_dir / 'auto/curve_indices_ap_whole_best_indices.ndjson'
 
 
 def to_named_dict(ndjson: List[Dict]):

@@ -138,7 +138,7 @@ for i, d in enumerate([d_ap, d_lateral]):
     df_dropped = df.dropna()
 
     pids = df["filename"].map(lambda e: d_group_id[e])
-    print("# of non-flex images", len(df))
+    print("# of images", len(df))
     print("# of unique patients", len(set(pids)))
 
     # sexes, ages = [], []
@@ -226,7 +226,7 @@ for i, d in enumerate([d_ap, d_lateral]):
     hue_order = ['XR & pre', 'XR & post', 'EOS & pre', 'EOS & post']
 
     cbs = []
-    for col_name in ['Heatmap', 'Points', 'VertebralNumber', 'CurveApex'] + [
+    for col_name in ['Heatmap', 'Points', 'VertebralNumber', 'CurveApex', 'SpinalLine'] + [
         c[5:] for c in df.columns if c.startswith('pred ') and not c.endswith('curve_indices')
     ]:
         cbs.append(t_cb.render(name=col_name, label=col_name, checked='' if col_name in HIDE else 'checked'))
@@ -318,6 +318,7 @@ for i, d in enumerate([d_ap, d_lateral]):
                 slice(99 * (len(df_d) // 100) - N // 2, min(len(df_d), int(99 * (len(df_d) // 100) + np.ceil(N / 2)))),
             )
             for best_worst, sls in [
+                ('Best', slice(N)),
                 ("Median", slice(len(df_d) // 2 - N // 2, int(len(df_d) // 2 + np.ceil(N / 2)))),
                 # third_q,
                 # p_90,
