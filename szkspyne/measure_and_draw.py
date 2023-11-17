@@ -51,7 +51,7 @@ def measure_json(
     line_colors: Dict[str, str],
     draw_points: bool,
     draw_vertebral_number: bool,
-    image_type: Optional[str],
+    image_type: str,
     html_filename: Optional[Path],
     template_directory: str,
     html_title: str,
@@ -202,6 +202,25 @@ def measure_json(
             measures[key] = all_alt_measures[0][key]
         if len(lm_data['curve_indices']) > 1:
             layer_control = [(f'layer_{i}', data['name']) for i, data in enumerate(lm_data['curve_indices'])]
+
+        if True:
+            gid = 'SpinalLine'
+            drawings.append((gid, 'SpinalLine'))
+            ys = np.linspace(dwg.vertebrae.vert_disc_centroids[0, 1], dwg.vertebrae.vert_disc_centroids[-1, 1], 100)
+            xs = dwg.vertebrae.poly_vert_disc_centroids(ys)
+            polyline = np.stack([xs, ys]).T
+            color = line_colors['CurveApex']
+            grp = dwg.add(
+                dwg.g(
+                    id=gid,
+                    class_=gid,
+                    stroke=color,
+                    stroke_width=LINE_WIDTH,
+                    fill='none',
+                    visibility='hide',
+                )
+            )
+            grp.add(dwg.polyline(points=polyline.tolist()))
 
         # apical translation
         if False:
