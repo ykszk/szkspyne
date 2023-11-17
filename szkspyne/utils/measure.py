@@ -298,6 +298,10 @@ class Vertebrae:
             [self.vert_centroids, np.pad(self.disc_centroids, pad_width=((0, 1), (0, 0)))], axis=1
         )
         self.vert_disc_centroids = vert_disc_centroids.reshape((len(vert_disc_centroids) * 2, 2))[:-1].copy()
+        DEG = 6
+        self.poly_vert_disc_centroids = np.poly1d(
+            np.polyfit(self.vert_disc_centroids[:, 1], self.vert_disc_centroids[:, 0], DEG)
+        )
 
         vert_sup_cnrs = vert_corners[:, :2]
         vert_sup_vecs = vert_sup_cnrs[:, 1] - vert_sup_cnrs[:, 0]
@@ -366,8 +370,11 @@ class Vertebrae:
             apex = (sup + inf) // 2
             return apex
 
+        ys = arc[:, 1]
+        poly_xs = self.poly_vert_disc_centroids(ys)
+
         # maximum translation
-        apex, _ = max([(i, abs(p_intersect[0] - c[0])) for i, c in enumerate(arc)], key=lambda e: e[1])
+        apex, _ = max([(i, abs(p_intersect[0] - x)) for i, x in enumerate(poly_xs)], key=lambda e: e[1])
         apex = sup + apex
         return apex
 
