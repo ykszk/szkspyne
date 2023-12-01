@@ -41,6 +41,12 @@ def task_pca():
 
 TGT_HM_KPS = 'all_heatmap_keypoints.ndjson'
 HM_IMAGE_DB = RESULT_DIR / f'heatmap_images.sqlite3'
+PHONY_DB_TGT = 'hm2db.done'
+
+
+def make_phony(filename):
+    with open(filename, 'w'):
+        pass
 
 
 def task_heat2lm():
@@ -67,12 +73,13 @@ def task_heat2lm():
             infile = fold_dir / f'y_pred_{image_type}.mha'
             infile2 = outfile
             outfile = HM_IMAGE_DB
+            phony = fold_dir / f'{image_type}_{PHONY_DB_TGT}'
             action = ['python', script, infile, infile2, outfile]
             yield {
                 'name': f'db-{fold_dir.name}-{image_type}',
-                'actions': [action],
+                'actions': [action, (make_phony, [phony])],
                 'file_dep': [infile2],
-                # 'targets': [outfile], # can't specify a common target
+                'targets': [phony],  # make phony target
             }
 
 
@@ -85,6 +92,7 @@ def task_fit():
         for image_type in IMAGE_TYPES:
             infile = fold_dir / f'y_pred_{image_type}.mha'
             infile2 = fold_dir / 'auto' / image_type / TGT_HM_KPS
+            pca_model = fold_dir / TGT_PCA
             outdir = fold_dir / 'auto' / image_type
             outfile = outdir / 'pca_keypoints.ndjson'
             params = [
@@ -111,7 +119,7 @@ def task_fit():
             yield {
                 'name': f'{fold_dir.name}-{image_type}',
                 'actions': [action],
-                'file_dep': [infile, infile2],
+                'file_dep': [infile, infile2, pca_model],
                 'targets': [outfile],
             }
 
@@ -153,7 +161,7 @@ def task_collect():
     Colelct results from splits
     '''
     for image_type in IMAGE_TYPES:
-        infiles = list(RESULT_DIR.glob(f'folds/*/auto/{image_type}/pca_keypoints.ndjson'))
+        infiles = [fold / f'auto/{image_type}/pca_keypoints.ndjson' for fold in FOLD_DIRS]
         outdir = RESULT_DIR / 'auto/keypoints' / image_type
         outdir.mkdir(exist_ok=True, parents=True)
         outfile = outdir / 'pca_keypoints.ndjson'
@@ -183,6 +191,18 @@ def task_collect():
             'targets': [outfile],
             'clean': True,
         }
+    # heatmap image db
+    infiles = []
+    for image_type in IMAGE_TYPES:
+        infiles += [fold / f'{image_type}_{PHONY_DB_TGT}' for fold in FOLD_DIRS]
+    outfile = RESULT_DIR / PHONY_DB_TGT
+    yield {
+        'name': f'db',
+        'actions': [(make_phony, [outfile])],
+        'file_dep': infiles,
+        'targets': [outfile],
+        'clean': True,
+    }
 
 
 def task_ref():
@@ -238,6 +258,7 @@ def task_measure():
     '''
     Measure and draw into html files
     '''
+    db_phony = RESULT_DIR / PHONY_DB_TGT
     for image_type in IMAGE_TYPES:
         for subdir in ['auto', 'reference']:
             for variant in [''] + VARIANTS:
@@ -268,7 +289,7 @@ def task_measure():
                 yield {
                     'name': f'{image_type}-{subdir}{suffix}',
                     'actions': [action],
-                    'file_dep': [curve_file, infile],
+                    'file_dep': [curve_file, infile, db_phony],
                     'targets': [ndjson],
                     'clean': True,
                 }

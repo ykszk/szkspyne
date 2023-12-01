@@ -133,25 +133,34 @@ with JsonsDirIO(input, output) if input.is_dir() else NDJsonIO(input, output) as
                 disk_widths = []
                 for pair in [('TL', 'TR'), ('BL', 'BR')]:
                     l, r = np.array(shapes['point'][pair[0]]).squeeze(), np.array(shapes['point'][pair[1]]).squeeze()
+                    if len(l) == 0 or len(r) == 0:
+                        continue
+                    if l.ndim != 2 or r.ndim != 2:
+                        continue
                     dists = cdist(l, r)
                     less_axis = 0 if len(l) <= len(r) else 1
                     disk_widths.append(dists.min(axis=less_axis))
-                median_width = np.median(np.concatenate(disk_widths))
-                # point -> circle
-                for fh in fhs:
-                    fh['shape_type'] = 'circle'
-                    center = np.array(fh['points'][0])
-                    arc_top = center.copy()
-                    arc_top[1] -= 0.8 * median_width
-                    points = np.stack((center, arc_top))
-                    fh['points'] = points.tolist()
-                rw.write(data)
+                if disk_widths:
+                    median_width = np.median(np.concatenate(disk_widths))
+                    # point -> circle
+                    for fh in fhs:
+                        fh['shape_type'] = 'circle'
+                        center = np.array(fh['points'][0])
+                        arc_top = center.copy()
+                        arc_top[1] -= 0.8 * median_width
+                        points = np.stack((center, arc_top))
+                        fh['points'] = points.tolist()
+            rw.write(data)
 
     elif args.image_type == 'ap_whole':
         logger.info('ap')
         for rw in ios:
             data = rw.read()
             shapes = labelme_utils.conv2shape_dict(data)
+            for label in ['C7-TL', 'C7-TR', 'S-TL', 'S-TR']:
+                for shape in data['shapes']:
+                    if shape['shape_type'] == 'point' and shape['label'] == label:
+                        data['shapes'].remove(shape)
             all_points = []
             for label in ['TL', 'TR', 'BL', 'BR']:
                 if label in shapes['point']:

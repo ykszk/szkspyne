@@ -1,10 +1,12 @@
 import argparse
 import sys
+
 import numpy as np
 from szkmipy import mhd
-from szkspyne import settings
 
+from szkspyne import settings
 from szkspyne.heatmap2labelme import save_kps_json
+
 
 PROB_MAX = settings.PROB_MAX
 
@@ -78,7 +80,7 @@ def main():
 
     DOWN_FACTOR = 256
 
-    def load(filename: Union[str, Path], height, pad: bool):
+    def load(filename: Union[str, Path], height, pad: bool, clahe: bool):
         # x, _ = mhd.read(filename)
         if str(filename).endswith('.dcm') or str(filename).endswith('.dicom'):
             x = pydicom.dcmread(filename).pixel_array
@@ -87,6 +89,8 @@ def main():
             x = np.array(img)
             if img.mode == 'I':
                 x = x.astype(np.uint16)
+        if x.ndim == 3:
+            x = x[..., 0]
         original_shape = x.shape
         # assert x.dtype == np.uint16, 'np.uint16 is expected'
         x = img_utils.resize_height(height, x)
@@ -94,7 +98,8 @@ def main():
         if pad:
             x = img_utils.pad_to_next_multiple(DOWN_FACTOR, x, [1], 0)
         logger.info('Padded to %s', x.shape)
-        x = apply_clahe(x)
+        if clahe:
+            x = apply_clahe(x)
         x = transforms.percentile_normalize(x, 1)  # , clip=True)
         x = x.astype(np.float32)
         return x, original_shape
@@ -104,12 +109,12 @@ def main():
         cl = clahe.apply(img)
         return cl
 
-    def load_model(args) -> pretrained_models.LitSMP:
+    def load_model(args, map_location=None) -> pretrained_models.LitSMP:
         if args.hparams and not args.weights:
             print('--weights is required for --hparams')
             sys.exit(1)
         if args.ckpt:
-            lit_model = pretrained_models.LitSMP.load_from_checkpoint(args.ckpt)
+            lit_model = pretrained_models.LitSMP.load_from_checkpoint(args.ckpt, map_location=map_location)
             assert isinstance(lit_model, pretrained_models.LitSMP)
         else:
             import pickle
@@ -117,7 +122,7 @@ def main():
             with open(args.hparams, 'rb') as f:
                 hparams = pickle.load(f)
             lit_model = pretrained_models.LitSMP(hparams.in_chs, hparams.out_chs, hparams.hparams)
-            lit_model.model.load_state_dict(torch.load(args.weights))
+            lit_model.model.load_state_dict(torch.load(args.weights, map_location=map_location))
         return lit_model
 
     def apply_single(args):
@@ -126,10 +131,10 @@ def main():
         device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
         logger.info('Use %s', device)
         logger.info('load model')
-        lit_model = load_model(args)
+        lit_model = load_model(args, device)
         lit_model.eval()
         logger.info('load image')
-        x, original_shape = load(args.input, args.height, True)
+        x, original_shape = load(args.input, args.height, True, False)
         if args.preproc:
             mhd.write(args.preproc, x)
         assert isinstance(x, np.ndarray)
@@ -149,7 +154,14 @@ def main():
         logger.info('Pred min: %s, Pred max: %s', pred.min(), pred.max())
         if args.labelme:
             logger.info('Save %s', args.labelme)
-            save_kps_json(pred, original_shape, Path(args.input).name, args.labelme, settings.LABEL_NAMES)
+            save_kps_json(
+                pred,
+                original_shape,
+                Path(args.input).name,
+                args.labelme,
+                settings.LABEL_NAMES,
+                min_thresh=0.1 * PROB_MAX,
+            )
         if args.heatmap:
             pred = np.transpose(pred, [1, 2, 0])
             mhd.write(args.heatmap, pred, {'ElementNumberOfChannels': pred.shape[-1]})
@@ -162,8 +174,11 @@ def main():
         indir = Path(args.input)
         n_jobs = args.workers
         input_filenames = sorted(indir.glob('*' + args.ext))
+        if len(input_filenames) == 0:
+            print("No image file found in ", args.input)
+            return 1
         xs, original_shapes = zip(
-            *Parallel(n_jobs=n_jobs)(delayed(load)(fn, args.height, False) for fn in tqdm.tqdm(input_filenames))
+            *Parallel(n_jobs=n_jobs)(delayed(load)(fn, args.height, False, False) for fn in tqdm.tqdm(input_filenames))
         )
         shapes = [x.shape for x in xs]
         max_shape = np.max(shapes, axis=0)
@@ -192,7 +207,7 @@ def main():
         )
         device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
         logger.info('load model')
-        lit_model = load_model(args)
+        lit_model = load_model(args, device)
         lit_model.to(device)
         lit_model.eval()
 

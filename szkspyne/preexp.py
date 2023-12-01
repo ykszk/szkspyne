@@ -66,7 +66,7 @@ def main():
 
     def train_test(test_id):
         logger.info('test set: %d', test_id)
-        outdir = outroot / '{}'.format(test_id)
+        outdir = outroot / 'folds' / '{}'.format(test_id)
         outdir.mkdir(parents=True, exist_ok=True)
         train_ids = [i for i in range(K_FOLD) if i != test_id]
         if USE_TEST_AS_VAL:
