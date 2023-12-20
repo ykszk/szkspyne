@@ -124,6 +124,10 @@ with JsonsDirIO(input, output) if input.is_dir() else NDJsonIO(input, output) as
             shapes = data['shapes']
             shapes = list(filter(lambda e: e['label'] not in AP_ONLY, shapes))
             data['shapes'] = shapes
+            for label in ['C7-TL', 'C7-TR', 'S-TL', 'S-TR']:
+                for shape in data['shapes']:
+                    if shape['shape_type'] == 'point' and shape['label'] == label:
+                        data['shapes'].remove(shape)
             for shape in data['shapes']:
                 if shape['shape_type'] == 'point' and shape['label'] == 'FemoralHead':
                     fhs.append(shape)

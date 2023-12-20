@@ -233,7 +233,7 @@ def task_curve():
     '''
     Determine curves
     '''
-    for image_type in IMAGE_TYPES:
+    for image_type in ['ap_whole']:
         for subdir in ['auto', 'reference']:
             infile = RESULT_DIR / subdir / 'keypoints' / image_type / 'final_keypoints.ndjson'
             curve_file = RESULT_DIR / subdir / f'curve_indices_{image_type}.ndjson'
@@ -335,12 +335,12 @@ def task_summary():
     file_dep = []
     for image_type in IMAGE_TYPES:
         for subdir in ['auto', 'reference']:
-            for variant in [''] + VARIANTS:
-                if variant != '' and image_type == 'lateral_whole':
+            for variant in [None] + VARIANTS:
+                if variant is not None and image_type == 'lateral_whole':
                     continue
-                if variant != '' and subdir == 'reference':
+                if variant is not None and subdir == 'reference':
                     continue
-                suffix = f'_{variant}' if variant != '' else ''
+                suffix = f'_{variant}' if variant is not None else ''
                 dep = RESULT_DIR / subdir / f'measures_{image_type}{suffix}.ndjson'
                 file_dep.append(dep)
     targets = [RESULT_DIR / f'ap_whole.csv']
