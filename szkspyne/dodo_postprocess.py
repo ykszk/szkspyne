@@ -268,13 +268,18 @@ def task_measure():
                     continue
                 suffix = f'_{variant}' if variant != '' else ''
                 infile = RESULT_DIR / subdir / 'keypoints' / image_type / f'final_keypoints.ndjson'
+                file_dep = [infile, db_phony]
 
                 # remove bending
                 c1 = f"jq -c '{JQ_REMOVE_BEND}' {infile}"
 
-                #
-                curve_file = RESULT_DIR / subdir / f'curve_indices_{image_type}{suffix}.ndjson'
-                c2 = f'lmrs join --mode left - {curve_file}'
+                if image_type == 'ap_whole':
+                    curve_file = RESULT_DIR / subdir / f'curve_indices_{image_type}{suffix}.ndjson'
+                    c2 = f'lmrs join --mode left - {curve_file}'
+                    file_dep.append(curve_file)
+                else:
+                    c2 = 'cat'  # do nothing
+                    pass
 
                 script = SRC_DIR / 'measure_and_draw.py'
                 parent_dir = SRC_DIR / '../../data/annotation/images/all'
@@ -289,7 +294,7 @@ def task_measure():
                 yield {
                     'name': f'{image_type}-{subdir}{suffix}',
                     'actions': [action],
-                    'file_dep': [curve_file, infile, db_phony],
+                    'file_dep': file_dep,
                     'targets': [ndjson],
                     'clean': True,
                 }
