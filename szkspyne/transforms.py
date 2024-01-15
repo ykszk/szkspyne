@@ -24,7 +24,7 @@ def percentile_normalize(x, percentile, clip=False, sampling_step=10):
     return x
 
 
-def base_transform(x: np.ndarray, kps=None):
+def base_image_transform(x: np.ndarray) -> np.ndarray:
     if x.dtype == np.uint8:
         x = x / 255
     else:
@@ -32,6 +32,11 @@ def base_transform(x: np.ndarray, kps=None):
     if x.ndim == 2:
         x = x[np.newaxis]
     x = x.astype(np.float32)
+    return x
+
+
+def base_transform(x: np.ndarray, kps=None):
+    x = base_image_transform(x)
     if kps is None:
         return x
     else:
@@ -44,8 +49,7 @@ def base_kps_transform(img, kps, flip_pairs) -> Tuple[np.ndarray, point_utils.Po
 
 
 def test_transform(img) -> np.ndarray:
-    img = base_transform(img)
-    assert isinstance(img, np.ndarray)
+    img = base_image_transform(img)
     return img
 
 
@@ -64,7 +68,7 @@ def apply_clahe(img, clipLimit=100, tileGridSize=(32, 32)):
 
 
 class RandomClahe(ImageOnlyTransform):
-    def __init__(self, clipLimitChoices=[10, 100], gridSizeChoices=[16, 32], always_apply=False, p=0.5):
+    def __init__(self, clipLimitChoices=[10, 100, 1000], gridSizeChoices=[16, 32], always_apply=False, p=0.5):
         super(RandomClahe, self).__init__(always_apply, p)
         self.clipLimitChoices = clipLimitChoices
         self.gridSizeChoices = gridSizeChoices
@@ -72,7 +76,9 @@ class RandomClahe(ImageOnlyTransform):
     def apply(self, image, **params):
         clipLimit, gridSize = params['clipLimit'], params['gridSize']
         gridSize = (gridSize, gridSize)
-        return apply_clahe(image, clipLimit, gridSize)
+        if image.dtype != np.uint8 or image.dtype != np.uint16:
+            image = (image * 2048).astype(np.uint16)
+        return (apply_clahe(image, clipLimit, gridSize) / 255).astype(np.float32)
 
     def get_params(self):
         return {'clipLimit': random.choice(self.clipLimitChoices), 'gridSize': random.choice(self.gridSizeChoices)}
@@ -82,8 +88,8 @@ class RandomClahe(ImageOnlyTransform):
 
 
 img_tfs = [
+    RandomClahe(p=0.5),
     A.HorizontalFlip(p=0.25),
-    # RandomClahe(always_apply=True),
     A.RandomBrightnessContrast(brightness_limit=0.4, contrast_limit=0.2, p=0.25),
     A.Affine(scale={'x': (0.9, 1.1), 'y': (0.9, 1.1)}, rotate=[-30, 30], shear=[-10, 10], p=0.25),
     A.GaussNoise(var_limit=0.04, p=0.25),

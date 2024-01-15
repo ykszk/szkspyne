@@ -277,6 +277,7 @@ def main():
     parser.add_argument('--skipped', help='Optional argument', metavar='<name>')
     parser.add_argument('--device', help='Device for pytorch')
     parser.add_argument('--channel_first', help='Heatmap is in channel-first format', action='store_true')
+    parser.add_argument('--history', help='Save optimization history and pca parameters', action='store_true')
     parser.add_argument(
         '--bicubic', help='Use bicubic interpolation instead of bilinear interpolation', action='store_true'
     )
@@ -401,7 +402,10 @@ def main():
                     patience = 0
                     for i in range(args.max_iter):
                         probas = pt_pca(t_heatmaps)
-                        loss = -torch.log(torch.concat(probas)).mean()
+                        loss_hm = -torch.log(torch.concat(probas)).mean()
+                        distances = pt_pca.icp_loss(t_vert_points)
+                        loss_icp = torch.concat(distances, dim=0).mean()
+                        loss = loss_hm + loss_icp
                         history.append(loss.detach().cpu().item())
                         if len(history) == 1 or history[-1] <= best_loss:
                             best_loss = history[-1]
@@ -455,7 +459,8 @@ def main():
         result_shapes.extend(original_shapes)
         result_json['shapes'] = result_shapes
         result_json['flags'] = {best_name: True, 'PCA': True}
-        result_json['pca'] = histories
+        if args.history:
+            result_json['pca'] = histories
         return result_json
 
     n_jobs = args.jobs

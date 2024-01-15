@@ -40,6 +40,7 @@ def main():
     p_single.add_argument('--preproc', help='Save preprocessed input image')
     p_single.add_argument('--labelme', help='Save labelme json file')
     p_single.add_argument('--heatmap', help='Save heatmap file')
+    p_single.add_argument('--clahe', help='Clahe in preprocessing', action='store_true')
     p_single.add_argument('--height', help='Image height: %(default)s', metavar='<int>', type=int, default=768)
     p_single.set_defaults(mode='single')  # not using func to enable lazy loading of the modules
 
@@ -51,6 +52,7 @@ def main():
     p_batch.add_argument('--ext', help='Input image file extension: %(default)s', default='.png')
     p_batch.add_argument('--labelme', help='Save labelme json file', action='store_true')
     p_batch.add_argument('--heatmap', help='Save heatmap', action='store_true')
+    p_batch.add_argument('--clahe', help='Clahe in preprocessing', action='store_true')
     p_batch.add_argument('--height', help='Image height: %(default)s', metavar='<int>', type=int, default=768)
     p_batch.add_argument('--workers', help='The number of workers: %(default)s', metavar='<int>', type=int, default=4)
     p_batch.add_argument('--batch_size', help='Batch size: %(default)s', metavar='<int>', type=int, default=4)
@@ -83,7 +85,10 @@ def main():
     def load(filename: Union[str, Path], height, pad: bool, clahe: bool):
         # x, _ = mhd.read(filename)
         if str(filename).endswith('.dcm') or str(filename).endswith('.dicom'):
-            x = pydicom.dcmread(filename).pixel_array
+            dcm = pydicom.dcmread(filename)
+            x = dcm.pixel_array
+            if dcm.PhotometricInterpretation == 'MONOCHROME1':
+                x = x.max() - x
         else:
             img = Image.open(filename)
             x = np.array(img)
@@ -134,7 +139,7 @@ def main():
         lit_model = load_model(args, device)
         lit_model.eval()
         logger.info('load image')
-        x, original_shape = load(args.input, args.height, True, False)
+        x, original_shape = load(args.input, args.height, True, args.clahe)
         if args.preproc:
             mhd.write(args.preproc, x)
         assert isinstance(x, np.ndarray)
@@ -178,7 +183,9 @@ def main():
             print("No image file found in ", args.input)
             return 1
         xs, original_shapes = zip(
-            *Parallel(n_jobs=n_jobs)(delayed(load)(fn, args.height, False, False) for fn in tqdm.tqdm(input_filenames))
+            *Parallel(n_jobs=n_jobs)(
+                delayed(load)(fn, args.height, False, args.clahe) for fn in tqdm.tqdm(input_filenames)
+            )
         )
         shapes = [x.shape for x in xs]
         max_shape = np.max(shapes, axis=0)
