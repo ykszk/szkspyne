@@ -14,7 +14,7 @@ from sklearn.model_selection import KFold
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Train and Test.')
+    parser = argparse.ArgumentParser(description='Prepare dataset for experiments.')
     parser.add_argument('--output', help='Output directory', metavar='<dirname>', required=True)
     parser.add_argument(
         '--fold', help='The number of folds in k-fold CV: %(default)s', metavar='<n>', type=int, default=5

@@ -5,12 +5,79 @@ import shutil
 import sys
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Dict, List, Union
+from typing import Any, DefaultDict, Dict, List, Optional, Set, Union
 
 import numpy as np
 from joblib import Parallel, delayed
 from logzero import logger
+from pydantic import BaseModel
 from tqdm import tqdm
+
+
+class LabelMe(BaseModel):
+    class Shape(BaseModel):
+        label: str
+        points: List[List[float]]
+        group_id: Optional[str]
+        shape_type: str
+        flags: Dict[str, bool]
+
+    version: str
+    shapes: List[Shape]
+    imagePath: str
+    imageData: Optional[str]
+    imageHeight: int
+    imageWidth: int
+    flags: Dict[str, bool]
+
+    @staticmethod
+    def from_file(filename: Union[str, Path]) -> 'LabelMe':
+        with open(filename) as f:
+            return LabelMe.model_validate_json(f.read())
+
+    def into_shape_dict(self) -> Dict[str, Dict[str, list]]:
+        '''
+        Dict[shape: str, Dict[label: str, points: list]]
+        '''
+        shape_dict: DefaultDict[str, DefaultDict[str, list]] = defaultdict(lambda: defaultdict(list))
+        for shape in self.shapes:
+            shape_dict[shape.shape_type][shape.label].append(shape.points)
+
+        # defaultdict -> dict
+        output = {k: {kk: vv for kk, vv in v.items()} for k, v in shape_dict.items()}
+        return output
+
+    def flag_set(self) -> Set[str]:
+        return {k for k, v in self.flags.items() if v}
+
+
+class ShapeDict(BaseModel):
+    shapes: Dict[str, Dict[str, list]]
+    imagePath: str
+    imageHeight: int
+    imageWidth: int
+    flags: Set[str]
+
+
+class ShapeDictLine(BaseModel):
+    content: ShapeDict
+    filename: str
+
+
+class LabelMeLine(BaseModel):
+    content: LabelMe
+    filename: str
+
+    def into_shape_dict_line(self) -> ShapeDictLine:
+        shapes = self.content.into_shape_dict()
+        shape_dict = ShapeDict(
+            shapes=shapes,
+            imagePath=self.content.imagePath,
+            imageHeight=self.content.imageHeight,
+            imageWidth=self.content.imageWidth,
+            flags=self.content.flag_set(),
+        )
+        return ShapeDictLine(content=shape_dict, filename=self.filename)
 
 
 def conv2shape_dict(json_data: dict) -> dict:
