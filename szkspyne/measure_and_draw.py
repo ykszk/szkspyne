@@ -662,23 +662,23 @@ def measure_json(
             text_elm.set_desc(title=gid)
             grp.add(text_elm)
             measures['L5IncidenceAngle'] = angle_deg
-            # Lumbosacral Angle
-            gid = 'LumbosacralAngle'
-            logger.debug(gid)
-            drawings.append((gid, 'Lumbosacral Angle (p.105)'))
-            color = line_colors[gid]
-            grp = dwg.add(
-                dwg.g(
-                    id=gid,
-                    class_=gid,
-                    stroke=color,
-                    stroke_width=LINE_WIDTH,
-                    fill='none',
-                    visibility=d_visibility[gid],
-                )
+        # Lumbosacral Angle
+        gid = 'LumbosacralAngle'
+        logger.debug(gid)
+        drawings.append((gid, 'Lumbosacral Angle (p.105)'))
+        color = line_colors[gid]
+        grp = dwg.add(
+            dwg.g(
+                id=gid,
+                class_=gid,
+                stroke=color,
+                stroke_width=LINE_WIDTH,
+                fill='none',
+                visibility=d_visibility[gid],
             )
-            angle_deg = dwg.draw_cobb(vert_inf_cnrs[-1], sacrum_tltr, grp, title=gid, text_attrs=text_attrs)
-            measures[gid] = angle_deg
+        )
+        angle_deg = dwg.draw_cobb(vert_inf_cnrs[-1], sacrum_tltr, grp, title=gid, text_attrs=text_attrs)
+        measures[gid] = angle_deg
 
     if calc_slopes:
         grps = {}
