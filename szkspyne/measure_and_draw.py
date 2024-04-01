@@ -565,12 +565,12 @@ def measure_json(
             femoral_heads = np.array(circles['FemoralHead'])
             grp.add(dwg.line(sacrum_tltr[0], sacrum_tltr[1]))
             for femoral_head in femoral_heads:
-                grp.add(dwg.circle(center=femoral_head[0].tolist(), r=2, stroke=color, fill=color))
-                r = np.linalg.norm(femoral_head[0] - femoral_head[1])
-                grp.add(dwg.circle(center=femoral_head[0].tolist(), r=r, stroke=color, fill='none'))
+                grp.add(dwg.circle(center=femoral_head[0].tolist(), r=POINT_RADIUS, stroke=color, fill=color))
+                # r = np.linalg.norm(femoral_head[0] - femoral_head[1])
+                # grp.add(dwg.circle(center=femoral_head[0].tolist(), r=r, stroke=color, fill='none'))
             grp.add(dwg.line(femoral_heads[0, 0], femoral_heads[1, 0]))
             femoral_center = femoral_heads[:, 0].mean(axis=0)
-            grp.add(dwg.circle(center=femoral_center.tolist(), r=2, stroke=color, fill=color))
+            grp.add(dwg.circle(center=femoral_center.tolist(), r=POINT_RADIUS, stroke=color, fill=color))
             grp.add(dwg.line(femoral_center.tolist(), sacrum_center.tolist()))
 
             sacrum_perp = perp(sacrum_tltr[1] - sacrum_tltr[0])
@@ -579,6 +579,35 @@ def measure_json(
             angle_deg = 90 - np.rad2deg(angle)
             txt_angle = '{:.2f}°'.format(angle_deg)
             text_elm = dwg.text(txt_angle, insert=sacrum_center, **text_attrs)
+            text_elm.set_desc(title=gid)
+            grp.add(text_elm)
+            measures['PelvicIncidence'] = angle_deg
+
+            # Pelvic Tilt
+            gid = 'PelvicTilt'
+            logger.debug(gid)
+            drawings.append((gid, 'Pelvic Tilt (p.98)'))
+            color = line_colors[gid]
+            grp = dwg.add(dwg.g(id=gid, class_=gid, stroke=color, visibility=d_visibility[gid]))
+            grp.add(dwg.line(sacrum_tltr[0].tolist(), sacrum_tltr[1].tolist()))
+            for femoral_head in femoral_heads:
+                grp.add(dwg.circle(center=femoral_head[0].tolist(), r=POINT_RADIUS, stroke=color, fill=color))
+                # r = np.linalg.norm(femoral_head[0] - femoral_head[1])
+                # grp.add(dwg.circle(center=femoral_head[0].tolist(), r=r, stroke=color, fill='none'))
+            grp.add(dwg.line(femoral_heads[0, 0], femoral_heads[1, 0]))
+            femoral_center = femoral_heads[:, 0].mean(axis=0)
+            grp.add(dwg.circle(center=femoral_center.tolist(), r=POINT_RADIUS, stroke=color, fill=color))
+            grp.add(dwg.line(femoral_center.tolist(), sacrum_center.tolist()))
+            vrl_len = 1.5 * (sacrum_center[1] - femoral_center[1])
+            grp.add(dwg.line(femoral_center.tolist(), (femoral_center[0], femoral_center[1] + vrl_len)))
+            angle = np.abs(
+                calc_angle(
+                    (femoral_center, sacrum_center), (femoral_center, (femoral_center[0], femoral_center[1] + vrl_len))
+                )
+            )
+            angle_deg = np.rad2deg(angle)
+            txt_angle = '{:.2f}°'.format(angle_deg)
+            text_elm = dwg.text(txt_angle, insert=femoral_center, **text_attrs)
             text_elm.set_desc(title=gid)
             grp.add(text_elm)
             measures['PelvicIncidence'] = angle_deg
