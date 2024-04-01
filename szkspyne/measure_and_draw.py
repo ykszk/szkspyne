@@ -561,7 +561,16 @@ def measure_json(
             logger.debug(gid)
             drawings.append((gid, 'Pelvic Incidence (p.97)'))
             color = line_colors[gid]
-            grp = dwg.add(dwg.g(id=gid, class_=gid, stroke=color, fill='none', visibility=d_visibility[gid]))
+            grp = dwg.add(
+                dwg.g(
+                    id=gid,
+                    class_=gid,
+                    stroke=color,
+                    stroke_width=LINE_WIDTH,
+                    fill='none',
+                    visibility=d_visibility[gid],
+                )
+            )
             femoral_heads = np.array(circles['FemoralHead'])
             grp.add(dwg.line(sacrum_tltr[0], sacrum_tltr[1]))
             for femoral_head in femoral_heads:
@@ -588,7 +597,9 @@ def measure_json(
             logger.debug(gid)
             drawings.append((gid, 'Pelvic Tilt (p.98)'))
             color = line_colors[gid]
-            grp = dwg.add(dwg.g(id=gid, class_=gid, stroke=color, visibility=d_visibility[gid]))
+            grp = dwg.add(
+                dwg.g(id=gid, class_=gid, stroke=color, stroke_width=LINE_WIDTH, visibility=d_visibility[gid])
+            )
             grp.add(dwg.line(sacrum_tltr[0].tolist(), sacrum_tltr[1].tolist()))
             for femoral_head in femoral_heads:
                 grp.add(dwg.circle(center=femoral_head[0].tolist(), r=POINT_RADIUS, stroke=color, fill=color))
@@ -617,7 +628,9 @@ def measure_json(
             logger.debug(gid)
             drawings.append((gid, 'Pelvic Radius Angle (p.101)'))
             color = line_colors[gid]
-            grp = dwg.add(dwg.g(id=gid, class_=gid, stroke=color, visibility=d_visibility[gid]))
+            grp = dwg.add(
+                dwg.g(id=gid, class_=gid, stroke=color, stroke_width=LINE_WIDTH, visibility=d_visibility[gid])
+            )
             grp.add(dwg.line(sacrum_tltr[0].tolist(), sacrum_tltr[1].tolist()))
             grp.add(dwg.line(femoral_center.tolist(), sacrum_tltr[1].tolist()))
             angle = np.abs(calc_angle(sacrum_tltr, (femoral_center, sacrum_tltr[1])))
@@ -632,7 +645,9 @@ def measure_json(
             logger.debug(gid)
             drawings.append((gid, 'L5 Incidence Angle (p.102)'))
             color = line_colors[gid]
-            grp = dwg.add(dwg.g(id=gid, class_=gid, stroke=color, visibility=d_visibility[gid]))
+            grp = dwg.add(
+                dwg.g(id=gid, class_=gid, stroke=color, stroke_width=LINE_WIDTH, visibility=d_visibility[gid])
+            )
             l5_sup = vert_sup_cnrs[-1]
             l5_sup_center = l5_sup.mean(axis=0)
             l5_perp = perp(l5_sup[1] - l5_sup[0])
