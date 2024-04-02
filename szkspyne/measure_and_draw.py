@@ -443,7 +443,6 @@ def measure_json(
             drawings.append((gid, 'Sacral Obliquity (p.94)'))
             logger.debug(drawings[-1][1])
             color = line_colors[gid]
-            x_pos1, x_pos2 = femoral_kps[:, 0]
             grp = dwg.add(
                 dwg.g(
                     id=gid,
@@ -454,13 +453,31 @@ def measure_json(
                     visibility=d_visibility[gid],
                 )
             )
-            (_, y_pos1), (_, y_pos2) = dwg.draw_line(sacrum_tltr[0], sacrum_tltr[1], grp, xrange=(x_pos1, x_pos2))
-
-            angle_deg = dwg.draw_cobb(
-                np.array([[x_pos1, y_pos1], [x_pos2, y_pos2]]), femoral_kps, grp, 1, title=gid, text_attrs=text_attrs
+            # femoral head reference line
+            grp.add(dwg.line(femoral_kps[0], femoral_kps[1]))
+            angle = -calc_angle(femoral_kps, sacrum_tltr)
+            if angle > 0:
+                aux_perp_btm = femoral_kps[0] + 0.2 * (femoral_kps[1] - femoral_kps[0])
+            else:
+                aux_perp_btm = femoral_kps[0] + 0.8 * (femoral_kps[1] - femoral_kps[0])
+            u_aux_perp = perp(femoral_kps[0] - femoral_kps[1])
+            aux_pts = Line.from_points(sacrum_tltr[0], sacrum_tltr[1]).intersect_line(
+                Line.from_points(aux_perp_btm, aux_perp_btm + u_aux_perp)
             )
-            for pos in np.concatenate((femoral_kps, sacrum_tltr), axis=0):
-                grp.add(dwg.circle(center=pos.tolist(), r=POINT_RADIUS, stroke=color, fill=color))
+            tv = np.linalg.norm(aux_pts - aux_perp_btm)
+            aux_len = tv * 1.25
+            # perp line
+            grp.add(dwg.line(aux_perp_btm, (aux_perp_btm + aux_len * u_aux_perp)))
+            # translated FHRL
+            grp.add(dwg.line(femoral_kps[0] + tv * u_aux_perp, femoral_kps[1] + tv * u_aux_perp))
+            # sacral line
+            grp.add(dwg.line3(sacrum_tltr[0], sacrum_tltr[1], aux_pts))
+
+            angle_deg = np.rad2deg(angle)
+            txt_angle = '{:.2f}°'.format(angle_deg)
+            text_elm = dwg.text(txt_angle, insert=aux_pts, **text_attrs)
+            text_elm.set_desc(title=gid)
+            grp.add(text_elm)
             measures[gid] = angle_deg
     else:  # lateral
         # Thoracic kyphosis
