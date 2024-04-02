@@ -547,7 +547,7 @@ def measure_json(
         text_elm = dwg.text(txt_angle, insert=sacrum_center, **text_attrs)
         text_elm.set_desc(title=gid)
         grp.add(text_elm)
-        measures['SacralSlope'] = angle_deg
+        measures[gid] = angle_deg
 
         # C7-SVA
         gid = 'C7SVA'
@@ -607,7 +607,7 @@ def measure_json(
             text_elm = dwg.text(txt_angle, insert=sacrum_center, **text_attrs)
             text_elm.set_desc(title=gid)
             grp.add(text_elm)
-            measures['PelvicIncidence'] = angle_deg
+            measures[gid] = angle_deg
 
             # Pelvic Tilt
             gid = 'PelvicTilt'
@@ -638,7 +638,7 @@ def measure_json(
             text_elm = dwg.text(txt_angle, insert=femoral_center, **text_attrs)
             text_elm.set_desc(title=gid)
             grp.add(text_elm)
-            measures['PelvicIncidence'] = angle_deg
+            measures[gid] = angle_deg
 
             # Pelvic Radius Angle
             gid = 'PelvicRadiusAngle'
@@ -656,7 +656,7 @@ def measure_json(
             text_elm = dwg.text(txt_angle, insert=sacrum_tltr[1], **text_attrs)
             text_elm.set_desc(title=gid)
             grp.add(text_elm)
-            measures['PelvicRadiusAngle'] = angle_deg
+            measures[gid] = angle_deg
             # L5 Incidence Angle
             gid = 'L5IncidenceAngle'
             logger.debug(gid)
@@ -678,7 +678,7 @@ def measure_json(
             text_elm = dwg.text(txt_angle, insert=l5_sup_center, **text_attrs)
             text_elm.set_desc(title=gid)
             grp.add(text_elm)
-            measures['L5IncidenceAngle'] = angle_deg
+            measures[gid] = angle_deg
         # Lumbosacral Angle
         gid = 'LumbosacralAngle'
         logger.debug(gid)
