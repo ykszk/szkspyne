@@ -187,7 +187,7 @@ def main():
 
     if os.getenv("LOCAL_RANK", '0') != '0':
         print('Exit because LOCAL_RANK != 0')
-        return 1
+        return 0
 
     del dataset, train_loader, val_loader, train_xs, val_xs  # release memory
 
@@ -211,7 +211,9 @@ def main():
     # xs = next(iter(test_loader))
     # mhd.write('tmp_test_xs.mha', xs.cpu().numpy())
     logger.info('Load weight:%s', mc.best_model_path)
-    lit_model.load_from_checkpoint(mc.best_model_path)
+    # lit_model.load_from_checkpoint(mc.best_model_path)
+    lit_model = pretrained_models.LitSMP.load_from_checkpoint(mc.best_model_path)
+    print(type(lit_model))
     logger.info('Start test')
 
     # create new trainer with `devices=1`

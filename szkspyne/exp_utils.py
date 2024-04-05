@@ -23,29 +23,12 @@ def plot_history(df):
 
 def load_data(row, data_root: Path, label_names: Sequence[str]) -> Tuple[np.ndarray, List[np.ndarray]]:
     '''Load data from a row. Keypoints should be np.ndarray'''
-    img_path = data_root / row.filepath
+    img_path = data_root / row.imagePath
     x = np.array(Image.open(img_path))
     kps = [row.get(l) for l in label_names]
     # flip kps to change format from (x, y) to (y, x)
     kps = [np.flip(kp, axis=-1) if isinstance(kp, np.ndarray) else np.array(()) for kp in kps]
     return x, kps
-
-
-def _load_data(row, data_root: Path, label_names: Sequence[str]) -> Tuple[np.ndarray, List[np.ndarray]]:
-    '''Load data from a row'''
-    # img_path = (mha_root / row.filepath).with_suffix('.mha')
-    # x, _ = mhd.read(img_path)
-    img_path = data_root / row.filepath
-    x = np.array(Image.open(img_path))
-    # assert x.dtype == np.uint16, 'np.uint16 is expected'
-    kp = []
-    for l in label_names:
-        px, py = row.get(l + ' x'), row.get(l + ' y')
-        px, py = eval(px), eval(py)
-        pts = np.array(((py, px)))
-        kp.append(pts.T)
-    # kp = np.array(kp)
-    return x, kp
 
 
 def load_dataset(
@@ -81,24 +64,19 @@ def load_dataset(
     return xs, kps
 
 
-def ndjson2csv(filename: Union[str, Path], exclude_flags: Set[str]) -> pd.DataFrame:
+def ndjson2df(filename: Union[str, Path]) -> pd.DataFrame:
     with open(filename) as f:
         lines = f.readlines()
     rows = []
     for line in lines:
-        data = json.loads(line)
-        flags = set(data['flags'])
-        intxn = flags.intersection(exclude_flags)
-        if len(intxn) > 0:
-            print('Skip', data['filepath'], intxn)
-            continue
-        if 'circle' in data:  # TODO: This is temporary. Circles should be handled as circles in the future!
-            data['point'].update(data['circle'])
-        points = {k: np.array(p)[:, 0] for k, p in data['point'].items() if k in LABEL_NAMES}
+        data_line = json.loads(line)
+        data = data_line['content']
+        shapes = data['shapes']
+        points = {k: np.array(p)[:, 0] for k, p in shapes['point'].items() if k in LABEL_NAMES}
         for name in LABEL_NAMES:
             if name not in points.keys():
                 points[name] = np.array(())
-        row = {'filepath': data['filepath'], 'flags': data['flags'], 'group_id': data.get('group_id', None)}
+        row = {'filename': data_line['filename'], 'imagePath': data['imagePath'], 'flags': data['flags'], 'group_id': data_line.get('group_id', None)}
         row.update(points)
         rows.append(row)
     df = pd.DataFrame(rows)
@@ -123,7 +101,7 @@ def main():
     def command_load_data(args):
         csv_filename, data_root, label_names = args.csv, args.data_root, args.label_names
         if csv_filename.endswith('.ndjson'):
-            df = ndjson2csv(csv_filename, set())
+            df = ndjson2df(csv_filename)
         else:
             df = pd.read_csv(csv_filename)
         from img_utils import resize_height
@@ -159,7 +137,7 @@ def main():
         logger.info('Transform')
         csv_filename, data_root, label_names = args.csv, args.data_root, args.label_names
         if csv_filename.endswith('.ndjson'):
-            df = ndjson2csv(csv_filename, set())
+            df = ndjson2df(csv_filename)
         else:
             df = pd.read_csv(csv_filename)
         import settings
@@ -210,7 +188,7 @@ def main():
         logger.info('Loader')
         csv_filename, data_root, label_names = args.csv, args.data_root, args.label_names
         if csv_filename.endswith('.ndjson'):
-            df = ndjson2csv(csv_filename, set())
+            df = ndjson2df(csv_filename)
         else:
             df = pd.read_csv(csv_filename)
         import settings
