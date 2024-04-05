@@ -10,6 +10,7 @@ T1Tilt,blue
 ClavicleAngle,green
 ShoulderHeight,magenta
 PelvicObliquity,cyan
+PelvicTilt,lime
 LegLength,lime
 SacralObliquity,hotpink
 ThoracicKyphosis,red
