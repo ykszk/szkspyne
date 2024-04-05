@@ -8,9 +8,20 @@ readonly SCRIPT_DIR
 readonly result_dir="$1"
 readonly ndjson_filename="$2"
 
-readonly N_SPLIT=5
+readonly N_SPLIT=10
 
-python3 "$SCRIPT_DIR"/preexp.py --fold "$N_SPLIT" --output "$result_dir" --ndjson "$ndjson_filename" #"$3"
+# check if --holdout is set
+if [ "$#" -eq 3 ]; then
+    if [ "$3" != "--holdout" ]; then
+        echo "Usage" "$0" "<result_dir> <ndjson> [--holdout]"
+        exit
+    fi
+    echo "Holdout mode"
+    python3 "$SCRIPT_DIR"/preexp.py --fold "$N_SPLIT" --output "$result_dir" "$ndjson_filename" --holdout
+else
+    echo "Kfold mode"
+    python3 "$SCRIPT_DIR"/preexp.py --fold "$N_SPLIT" --output "$result_dir" "$ndjson_filename"
+fi
 
 for fold_dir in "$result_dir"/folds/*; do
     echo "$fold_dir"
