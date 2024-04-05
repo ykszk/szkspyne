@@ -34,8 +34,15 @@ class LabelMe(BaseModel):
     def from_file(filename: Union[str, Path]) -> 'LabelMe':
         with open(filename) as f:
             return LabelMe.model_validate_json(f.read())
+        
+    def shift(self, tx: float, ty: float) -> "LabelMe":
+        shapes = []
+        for shape in self.shapes:
+            points = [[p[0] + tx, p[1] + ty] for p in shape.points]
+            shapes.append(shape.model_copy(update={'points': points}))
+        return self.model_copy(update={'shapes': shapes})
 
-    def into_shape_dict(self) -> Dict[str, Dict[str, list]]:
+    def _into_dict(self) -> Dict[str, Dict[str, list]]:
         '''
         Dict[shape: str, Dict[label: str, points: list]]
         '''
@@ -46,6 +53,17 @@ class LabelMe(BaseModel):
         # defaultdict -> dict
         output = {k: {kk: vv for kk, vv in v.items()} for k, v in shape_dict.items()}
         return output
+    
+    def into_shape_dict(self) -> "ShapeDict":
+        shapes = self._into_dict()
+        shape_dict = ShapeDict(
+            shapes=shapes,
+            imagePath=self.imagePath,
+            imageHeight=self.imageHeight,
+            imageWidth=self.imageWidth,
+            flags=self.flag_set(),
+        )
+        return shape_dict
 
     def flag_set(self) -> Set[str]:
         return {k for k, v in self.flags.items() if v}
@@ -63,20 +81,18 @@ class ShapeDictLine(BaseModel):
     content: ShapeDict
     filename: str
 
+    @staticmethod
+    def from_file(filename: Union[str, Path]) -> 'ShapeDictLine':
+        with open(filename) as f:
+            return ShapeDictLine.model_validate_json(f.read())
+
 
 class LabelMeLine(BaseModel):
     content: LabelMe
     filename: str
 
     def into_shape_dict_line(self) -> ShapeDictLine:
-        shapes = self.content.into_shape_dict()
-        shape_dict = ShapeDict(
-            shapes=shapes,
-            imagePath=self.content.imagePath,
-            imageHeight=self.content.imageHeight,
-            imageWidth=self.content.imageWidth,
-            flags=self.content.flag_set(),
-        )
+        shape_dict = self.content.into_shape_dict()
         return ShapeDictLine(content=shape_dict, filename=self.filename)
 
 
