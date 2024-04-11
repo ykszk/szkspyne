@@ -76,7 +76,7 @@ def ndjson2df(filename: Union[str, Path]) -> pd.DataFrame:
         for name in LABEL_NAMES:
             if name not in points.keys():
                 points[name] = np.array(())
-        row = {'filename': data_line['filename'], 'imagePath': data['imagePath'], 'flags': data['flags'], 'group_id': data_line.get('group_id', None)}
+        row = {'filename': data_line['filename'], 'imagePath': data['imagePath'], 'flags': data['flags'], 'group_id': data.get('group_id', None)}
         row.update(points)
         rows.append(row)
     df = pd.DataFrame(rows)

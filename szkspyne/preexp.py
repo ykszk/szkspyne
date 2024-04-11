@@ -87,15 +87,16 @@ def main():
             print('all filtered data', len(all_data))
 
             for d in all_data:
-                if d['group_id'] in val_group_ids:
+                group_id = d['content']['group_id']
+                if group_id in val_group_ids:
                     d['set'] = 'val'
-                elif d['group_id'] in train_group_ids:
+                elif group_id in train_group_ids:
                     d['set'] = 'train'
                 else:
                     d['set'] = 'test'
 
             def save_ndjson(group_ids, filename):
-                save_data = filter(lambda d: d['group_id'] in group_ids, all_data)
+                save_data = filter(lambda d: d['content']['group_id'] in group_ids, all_data)
                 with open(filename, 'w') as f:
                     for d in save_data:
                         f.write(json.dumps(d, ensure_ascii=False, separators=(',', ':')))

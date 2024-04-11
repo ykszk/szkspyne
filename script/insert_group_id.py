@@ -78,7 +78,7 @@ class InsertGroupId(DictMapper):
     @classmethod
     def add_arguments(cls, parser: ArgumentParser):
         parser.add_argument(
-            "--src_key", help="Extract group id from this key. default: %(default)s", default="filepath"
+            "--src_key", help="Extract group id from this key. default: %(default)s", default="imagePath"
         )
         parser.add_argument("--id_key", help="Insert group id into this key. default: %(default)s", default="group_id")
         parser.add_argument("--map", help="Save resulting key to gorup_id map as a csv.")
@@ -115,7 +115,7 @@ class AddAnchor(DictMapper):
         pass
 
     def map(self, data: dict) -> dict:
-        d_points = data['point']
+        d_points = data['shapes']['point']
         tl = np.array(sorted(d_points['TL'], key=lambda e: e[0][1]))[:, 0]
         tr = np.array(sorted(d_points['TR'], key=lambda e: e[0][1]))[:, 0]
         d_points['C7-TL'] = [[tl[0].tolist()]]
@@ -154,7 +154,7 @@ def main():
     for line in sys.stdin:
         data = json.loads(line)
         for c in commands:
-            data = c.map(data)
+            data['content'] = c.map(data['content'])
         print(json.dumps(data, ensure_ascii=False, separators=(',', ':')))
     for c in commands:
         c.finalize()

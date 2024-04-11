@@ -243,7 +243,7 @@ def main():
         logger.info('Save preds %s', image_type)
         indices = []
         for i, data in enumerate(test_data):
-            if data['image_type'] == image_type:
+            if image_type in data['content']['flags']:
                 indices.append(i)
         y_preds_it = y_preds[indices].copy()
         mhd.write(outdir / f'y_pred_{image_type}.mha', y_preds_it, {'ElementNumberOfChannels': y_preds_it.shape[-1]})

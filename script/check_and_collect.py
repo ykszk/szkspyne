@@ -8,7 +8,7 @@ from typing import List, Union
 import lmrspy
 import numpy as np
 import tqdm
-
+from szkspyne import labelme_utils
 
 # https://github.com/ykszk/labelme-rs
 
@@ -29,10 +29,11 @@ outdir = Path(args.output)
 ruledir = Path(args.ruledir)
 
 
-def save_ndjson(filename: Union[Path, str], json_list: List[dict]):
+def save_ndjson(filename: Union[Path, str], json_list: List[Path]):
     with open(filename, 'w') as f:
         for j in json_list:
-            json.dump(j, f, ensure_ascii=False)
+            lm_line = labelme_utils.LabelMe.from_file(j).into_labelme_line(str(j))
+            f.write(lm_line.model_dump_json())
             f.write('\n')
 
 
@@ -72,8 +73,8 @@ for kind in ['ap_whole', 'lateral_whole']:
             rule_set = rule_set + rule_dict['lateral-spine']
         validators.append(lmrspy.Validator(rule_set, args.annotators, ignores))
 
-    valid_json = []
-    invalid_json = []
+    valid_json: List[Path] = []
+    invalid_json: List[Path] = []
     for fn in tqdm.tqdm(fns):
         with open(fn) as f:
             json_str = f.read()
@@ -83,14 +84,14 @@ for kind in ['ap_whole', 'lateral_whole']:
             try:
                 result = validator.validate_jsons(json_str)
                 if result:  # passed
-                    valid_json.append(json_data)
+                    valid_json.append(fn)
                     break
                 else:  # skipped
                     # try next validator
                     continue
             except Exception as e:
                 print(fn, e)
-                invalid_json.append(json_data)
+                invalid_json.append(fn)
                 continue
     print('Total file count:', len(fns))
     print('Valid:', len(valid_json))

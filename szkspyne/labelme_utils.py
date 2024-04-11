@@ -54,6 +54,9 @@ class LabelMe(BaseModel):
         output = {k: {kk: vv for kk, vv in v.items()} for k, v in shape_dict.items()}
         return output
     
+    def into_labelme_line(self, filename: str) -> "LabelMeLine":
+        return LabelMeLine(content=self, filename=filename)
+    
     def into_shape_dict(self) -> "ShapeDict":
         shapes = self._into_dict()
         shape_dict = ShapeDict(
