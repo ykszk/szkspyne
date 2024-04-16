@@ -19,6 +19,7 @@ from szkspyne.utils.measure import (
     calc_angle,
     is_crossing,
 )
+from szkspyne.labelme_utils import LabelMeLine
 
 
 def determine_curves(lm_data, curve_algo):
@@ -264,20 +265,19 @@ def main():
 
     args = parser.parse_args()
     if args.input == '-':
-        ndjson = [json.loads(line) for line in sys.stdin]
+        ndjson = [LabelMeLine.model_validate_json(line) for line in sys.stdin]
     else:
         with open(args.input) as f:
-            ndjson = [json.loads(line) for line in f]
-    indir = Path(args.input).parent
-    json_filenames = [indir / data['filename'] for data in ndjson]
+            ndjson = [LabelMeLine.model_validate_json(line) for line in f]
+    json_filenames = [data.filename for data in ndjson]
     if args.jobs <= 0:
         args.jobs = os.cpu_count()
         logger.info("Use %d cores", args.jobs)
-    all_curves = Parallel(n_jobs=args.jobs)(delayed(determine_curves)(data, args.algo) for data in tqdm.tqdm(ndjson))
+    all_curves = Parallel(n_jobs=args.jobs)(delayed(determine_curves)(data.content.model_dump(), args.algo) for data in tqdm.tqdm(ndjson))
     assert all_curves is not None
     with open(args.output, 'w') as f:
         for fn, curve_sets in zip(json_filenames, all_curves):
-            line = {'filename': re.sub(r"\.json$", "", fn.name), 'curve_indices': curve_sets}
+            line = {'filename': fn, 'content': {'curve_indices': curve_sets}}
             f.write(json.dumps(line, ensure_ascii=False, separators=(',', ':')))
             f.write('\n')
     return 0

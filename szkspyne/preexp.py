@@ -41,7 +41,7 @@ def main():
     with open(outroot / 'args.json', 'w') as f:
         json.dump(args.__dict__, f, indent=2)
 
-    output_ndjson_filename = outroot / Path(args.input).name
+    output_ndjson_filename = outroot / 'manual_annotation.ndjson' # filename has to be this because post processing uses this name
     shutil.copy(args.input, output_ndjson_filename)
     df_all = exp_utils.ndjson2df(output_ndjson_filename)
 

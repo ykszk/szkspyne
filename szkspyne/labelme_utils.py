@@ -134,7 +134,7 @@ def kps2shapes(kps, label_names) -> list:
     return shapes
 
 
-def kps2labelme(kps, image_path, image_hw, label_names, flags={}) -> dict:
+def kps2labelme(kps, image_path, image_hw, label_names, flags={}) -> LabelMe:
     '''
     input point format is 'yx'
     '''
@@ -147,7 +147,7 @@ def kps2labelme(kps, image_path, image_hw, label_names, flags={}) -> dict:
         "imageHeight": image_hw[0],
         "imageWidth": image_hw[1],
     }
-    return json_data
+    return LabelMe.model_validate(json_data)
 
 
 def remove_shapes(labelme_json, shape_labels: List[str]):

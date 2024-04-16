@@ -7,7 +7,7 @@ import numpy as np
 from logzero import logger
 from sklearn.decomposition import PCA
 from scipy.interpolate import CubicSpline
-from szkspyne import settings
+from szkspyne import settings, labelme_utils
 
 
 class PointConfig(NamedTuple):
@@ -95,7 +95,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Create PCA model(s) for 2D points.')
     parser.add_argument(
         'input',
-        help='Input ndjson/csv filename',
+        help='Input ndjson filename',
         metavar='<input>',
         nargs='?',
         default='../script/manual_annotation.ndjson',
@@ -128,18 +128,19 @@ if __name__ == '__main__':
         #             L6_POINT_COUNTS + [2] * 5),
     ]
     with open(args.input) as f:
-        all_data = [json.loads(line) for line in f]
+        all_data = [labelme_utils.ShapeDictLine.model_validate_json(line) for line in f]
     logger.info('Original data: %d', len(all_data))
     if args.mirror:
         from settings import FLIP_PAIRS, LABEL_NAMES
 
         mirrored = []
-        for d in all_data:
-            if d['image_type'] != 'ap_whole':
+        for data_line in all_data:
+            if 'ap_whole' not in data_line.content.flags:
                 continue
-            d = copy.deepcopy(d)
-            width = d['imageWidth']
-            kps = d['point']
+            data_line = copy.deepcopy(data_line)
+            d = data_line.content
+            width = d.imageWidth
+            kps = d.shapes['point']
             for point in kps.values():
                 for p in point:
                     p[0][0] = width - p[0][0]
@@ -151,71 +152,77 @@ if __name__ == '__main__':
                     kps[k2] = kps.pop(k1)
                 elif k1 not in kps and k2 in kps:
                     kps[k1] = kps.pop(k2)
-            mirrored.append(d)
+            mirrored.append(data_line)
 
         all_data += mirrored
 
     # preprocess
-    for d in all_data:
-        ns = {k: len(v) for k, v in d['point'].items()}
+    for data_line in all_data:
+        d = data_line.content
+        ns = {k: len(v) for k, v in d.shapes['point'].items()}
         np_pts = {}
-        for label, pts in d['point'].items():
+        for label, pts in d.shapes['point'].items():
             if label in VERT_LABELS:
                 pts.sort(key=lambda v: v[0][1])  # sort by y
             else:
                 pts.sort(key=lambda v: v[0][0])  # sort by x
             np_pts[label] = np.array(pts)[:, 0]  # squeeze (N, 1, 2) -> (N, 2)
-        d['point'] = np_pts
+        d.shapes['point'] = np_pts
     # Create L4 data from L5 (and L5 from L6)
     l4_data = copy.deepcopy(all_data)
-    for d in l4_data:
+    for data_line in l4_data:
+        d = data_line.content
         np_pts = {}
-        for label, pts in d['point'].items():
+        for label, pts in d.shapes['point'].items():
             if label in VERT_LABELS:
                 np_pts[label] = pts[1:].copy()
             else:
                 np_pts[label] = pts.copy()
-        d['point'] = np_pts
+        d.shapes['point'] = np_pts
     all_data += l4_data
 
     # Create L6 data from L5 (and L5 from L4)
     l6_data = copy.deepcopy(all_data)
-    for d in l6_data:
+    for data_line in l6_data:
+        d = data_line.content
         np_pts = {}
-        for label, pts in d['point'].items():
+        for label, pts in d.shapes['point'].items():
             if label in VERT_LABELS:
                 np_pts[label] = extrapolate(pts)
             else:
                 np_pts[label] = pts.copy()
-        d['point'] = np_pts
+        d.shapes['point'] = np_pts
     all_data += l6_data
 
     for config in CONFIGS:
         image_type = config.image_type
         logger.info('%s %s', config.name, image_type)
-        valid_data = []
-        for d in all_data:
-            if d['image_type'] != image_type:
+        valid_data: List[labelme_utils.ShapeDictLine] = []
+        for data_line in all_data:
+            d = data_line.content
+            if image_type not in d.flags:
                 continue
-            ns = {k: len(v) for k, v in d['point'].items()}
+            ns = {k: len(v) for k, v in d.shapes['point'].items()}
             valid = True
             for l, n in zip(config.labels, config.point_counts):
                 if l not in ns or ns[l] != n:
                     valid = False
                     break
             if valid:
-                valid_data.append(d)
+                valid_data.append(data_line)
         logger.info('%d %d', len(all_data), len(valid_data))
 
         pca = PointsPCA(REF_HEIGHT)
 
         vecs = []
-        for vd in valid_data:
-            c7_tl = vd['point']['TL'][0]
-            s_tl = vd['point']['TL'][-1]
+        for vd_line in valid_data:
+            vd = vd_line.content
+            point_data = vd.shapes['point']
+            c7_tl = point_data['TL'][0]
+            s_tl = point_data['TL'][-1]
             pts = []
             for l in config.labels:
-                pts.append(pca.to_ref_space(c7_tl, s_tl, vd['point'][l]))
+                pts.append(pca.to_ref_space(c7_tl, s_tl, point_data[l]))
             pts = np.concatenate(pts).ravel()
             vecs.append(pts)
         vecs = np.stack(vecs)

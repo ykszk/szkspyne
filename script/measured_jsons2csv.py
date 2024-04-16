@@ -2,7 +2,7 @@
 import argparse
 import json
 from pathlib import Path
-from typing import List
+from typing import List, Dict, Any
 
 import pandas as pd
 
@@ -22,13 +22,13 @@ def merge_ndjsons(ndjson_filenames: List[Path], prefixes: List[str]):
             rows = [json.loads(line) for line in f]
 
         for i, json_data in enumerate(rows):
-            data = {'filename': json_data.pop('filename')}
+            data: Dict[str, Any] = {'filename': Path(json_data['filename']).stem}
             set_flags = json_data.pop('flags', {})
             if i_fn == 0:
                 set_flags = set([k for k, v in set_flags.items() if v])
                 flags = {f: f in set_flags for f in flags_required}
                 data.update(flags)
-            data.update({prefix + k: v for k, v in json_data['measures'].items()})
+            data.update({prefix + k: v for k, v in json_data['content']['measures'].items()})
             rows[i] = data  # update
         df = pd.DataFrame(rows)
         df.set_index('filename', drop=True, inplace=True)

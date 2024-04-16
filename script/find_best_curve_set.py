@@ -43,8 +43,9 @@ def obj2vertebrae(obj: dict):
 
 
 d_indices = {}
-for file_id, ref_indices_obj in ref_indices_ndjson.items():
-    in_indices_obj = input_indices_ndjson[file_id]
+for file_id, ref_indices_obj_line in ref_indices_ndjson.items():
+    ref_indices_obj = ref_indices_obj_line['content']
+    in_indices_obj = input_indices_ndjson[file_id]['content']
     ref_measures = ref_indices_obj['measures']
     ref_indices = ref_measures['curve_indices']
     all_alt_measures = in_indices_obj['curve_indices']
@@ -64,7 +65,8 @@ for file_id, ref_indices_obj in ref_indices_ndjson.items():
     best_indices['name'] = 'Best'
     d_indices[file_id] = {
         'filename': file_id,
-        'curve_indices': [best_indices],
+        'content': {
+        'curve_indices': [best_indices]}
     }
 
 

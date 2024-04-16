@@ -38,12 +38,12 @@ def main():
     conn.commit()
 
     for jobj, hm in tqdm(zip(ndjson, heatmaps), total=len(heatmaps)):
-        filename = jobj['filename'] + '.png'
+        filename = str(Path(jobj['filename']).with_suffix('.png'))
         if args.skip:
             cursor.execute("SELECT 1 FROM image WHERE name=?", (filename,))
             if cursor.fetchone() is not None:
                 continue
-        width = int(round(jobj['imageWidth'] * hm.shape[0] / jobj['imageHeight']))
+        width = int(round(jobj['content']['imageWidth'] * hm.shape[0] / jobj['content']['imageHeight']))
         hm = hm[:, :width]
         hm = hm / hm.max()
         r = hm[..., :2].max(axis=-1)  # TL and TR

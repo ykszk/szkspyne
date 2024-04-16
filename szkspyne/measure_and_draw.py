@@ -71,7 +71,7 @@ def measure_json(
     if imagedb:
         with sqlite3.connect(imagedb) as conn:
             cursor = conn.cursor()
-            filename = lm_data['filename'] + '.png'
+            filename = Path(lm_data['imagePath']).stem + '.png'
             cursor.execute("SELECT binary FROM image WHERE name = ?", (filename,))
             binary_data = cursor.fetchone()
         if binary_data:
@@ -846,7 +846,7 @@ def main():
             return do_ndjson(fn, lm_data)
 
         def do_ndjson(fn: Path, lm_data):
-            stem = re.sub(r"\.json$", "", Path(lm_data['filename']).name)
+            stem = Path(lm_data['imagePath']).stem
             measure_filename = outdir / (stem + '.json') if args.measure else None
             html = outdir / (stem + '.html') if args.html else None
             if args.parent_dir:
@@ -883,17 +883,17 @@ def main():
             else:
                 with open(args.input) as f:
                     ndjson = [json.loads(line) for line in f]
-            indir = Path(args.input).parent
-            json_filenames = [indir / data['filename'] for data in ndjson]
+            json_filenames = [data['filename'] for data in ndjson]
             all_measures = Parallel(n_jobs=args.workers)(
-                delayed(do_ndjson)(Path(args.input), data) for data in tqdm.tqdm(ndjson)
+                delayed(do_ndjson)(Path(args.input), data['content']) for data in tqdm.tqdm(ndjson)
             )
         assert all_measures is not None
         if args.ndjson:
             with open(args.ndjson, 'w') as f:
                 for fn, ms in zip(json_filenames, all_measures):
-                    ms['filename'] = re.sub(r"\.json$", "", fn.name)  # not using `fn.stem` to avoid stripping too much
-                    f.write(json.dumps(ms, ensure_ascii=False, separators=(',', ':')))
+                    ms_line = {'filename': fn, 'content': ms}
+                    # ms['filename'] = re.sub(r"\.json$", "", fn.name)  # not using `fn.stem` to avoid stripping too much
+                    f.write(json.dumps(ms_line, ensure_ascii=False, separators=(',', ':')))
                     f.write('\n')
         return 0
 

@@ -121,7 +121,7 @@ FLAG_COLS = ['術後', 'EOS', 'L4', 'L5', "L6"]
 DELETE_COLS = ["除外", "左屈", "右屈", "先天性側彎"]
 
 manual_annotations = labelme_utils.load_ndjson(result_dir / 'manual_annotation.ndjson')
-d_group_id = {Path(a['filepath']).stem: a['group_id'] for a in manual_annotations}
+d_group_id = {Path(a['filename']).stem: a['content']['group_id'] for a in manual_annotations}
 
 for i, d in enumerate([d_ap, d_lateral]):
     if skip_lateral and i == 1:
@@ -164,7 +164,7 @@ for i, d in enumerate([d_ap, d_lateral]):
     for datatype in ['reference', 'auto']:
         with open(result_dir / f'{datatype}/measures_{name}_whole.ndjson') as f:
             jsons = [json.loads(l) for l in f]
-        flags = [[(obj['filename'], k) for k in obj['flags'].keys() if k.startswith('L')] for obj in jsons]
+        flags = [[(Path(obj['filename']).stem, k) for k in obj['content']['flags'].keys() if k.startswith('L')] for obj in jsons]
         flags = {f[0][0]: f[0][1] for f in flags if f and f[0][0] in filename_set}
         ref_auto_flags.append(flags)
     ref_flags, pred_flags = ref_auto_flags

@@ -135,7 +135,8 @@ def concat(files, output):
                 shutil.copyfileobj(fd, wfd)
 
 
-FLAGS = RESULT_DIR / 'flags.ndjson'
+# FLAGS = RESULT_DIR / 'flags.ndjson'
+FLAGS = {'ap_whole': RESULT_DIR / 'flags_ap_whole.ndjson', 'lateral_whole': RESULT_DIR / 'flags_lateral_whole.ndjson'}
 
 
 def task_flags():
@@ -144,16 +145,18 @@ def task_flags():
     '''
     # jq =
     jqs = [
-        '.filepath |= (split("/")[-1] |sub(".jpg";""))',
-        '{"flags": .flags, "filename": .filepath}',
-        '.flags = (.flags - ["L4","L5","L6"])',
-        '.flags |= reduce .[] as $flag ({}; .[$flag] = true)',
+        '{"content": {"flags": .content.flags}, "filename": .filename}',
+        # '.filename |= split("/")[-1]',
+        '.content.flags = (.content.flags - ["L4","L5","L6"])',
+        '.content.flags |= reduce .[] as $flag ({}; .[$flag] = true)',
     ]
     infile = RESULT_DIR / 'manual_annotation.ndjson'
-    start = f'cat {infile}'  # TODO: remove linux dependency
-    action = ' | '.join([start] + [f"jq -c '{j}'" for j in jqs])
-    action += f' > {FLAGS}'
-    return {'actions': [action], 'file_dep': [infile], 'targets': [FLAGS]}
+    for image_type in IMAGE_TYPES:
+        start = f"grep {image_type} {infile}"
+        action = ' | '.join([start] + [f"jq -c '{j}'" for j in jqs])
+        target = FLAGS[image_type]
+        action += f' > {target}'
+        yield {'name': f'flags-{image_type}', 'actions': [action], 'file_dep': [infile], 'targets': [target]}
 
 
 def task_collect():
@@ -182,12 +185,13 @@ def task_collect():
         outfile = RESULT_DIR / 'auto/keypoints' / image_type / 'final_keypoints.ndjson'
         proc = ' '.join([str(e) for e in ['python', script, image_type, infile, '--output', '-']])
         jq = "jq -c 'del(.pca)'"
-        join = f"lmrs join --mode left - {FLAGS}"
+        flags = FLAGS[image_type]
+        join = f"lmrs join --mode left - {flags}"
         action = ' | '.join([proc, jq, join]) + f' > {outfile}'
         yield {
             'name': f'mod-{image_type}',
             'actions': [action],
-            'file_dep': [infile, FLAGS],
+            'file_dep': [infile, flags],
             'targets': [outfile],
             'clean': True,
         }

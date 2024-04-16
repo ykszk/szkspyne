@@ -1,12 +1,13 @@
 import argparse
 import json
 import sys
+from typing import Tuple
 
 import numpy as np
 from szkmipy import mhd
 
 from szkspyne import labelme_utils, point_utils, settings
-
+from szkspyne.labelme_utils import LabelMeLine, ShapeDictLine
 
 PROB_MAX = settings.PROB_MAX
 
@@ -63,13 +64,14 @@ def main():
 
         outdir = Path(outdir)
         with open(ndjson_filename) as f:
-            json_data = [json.loads(l) for l in f.readlines()]
+            json_data = [ShapeDictLine.model_validate_json(l) for l in f.readlines()]
 
-        def save_json(args):
-            heatmap, data = args
+        def save_json(args: Tuple[np.ndarray, ShapeDictLine]) -> LabelMeLine:
+            heatmap, data_line = args
+            data = data_line.content
             heatmap = heatmap.transpose((2, 0, 1))  # from (Y,X,Ch) to (Ch,Y,X)
-            original_shape = data['imageHeight'], data['imageWidth']
-            filepath = Path(data['filepath'])
+            original_shape = data.imageHeight, data.imageWidth
+            filepath = Path(data_line.filename)
             stem = filepath.stem
             if save_heatmap:
                 mhd.write(outdir / f'{stem}.mha', heatmap)
@@ -86,12 +88,11 @@ def main():
                 data = hm2labelme(
                     heatmap, original_shape, f'{stem}.jpg', settings.LABEL_NAMES, min_thresh=0.1 * PROB_MAX
                 )
-            data['filename'] = stem
-            return data
+            return data.into_labelme_line(data_line.filename)
 
         logger.info('start heatmap2labelme')
         heatmaps, _ = mhd.read(heatmap_filename)
-        # create a generator so that heatmaps can be released immediately after they get processed
+        # slice 4d array into list of 3d arrays so that each heatmap (3d array) can be released immediately after they get processed
         heatmaps = [h.copy() for h in heatmaps]
 
         def create_generator(heatmaps: list):
@@ -108,7 +109,7 @@ def main():
         if save_ndjson:
             with open(save_ndjson, 'w') as f:
                 for d in data:
-                    f.write(json.dumps(d, ensure_ascii=False, separators=(',', ':')))
+                    f.write(d.model_dump_json())
                     f.write('\n')
 
     heatmap2labelme(args.heatmap, args.ndjson, args.output, args.save_heatmap, args.save_ndjson, args.jobs)

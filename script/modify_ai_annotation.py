@@ -119,7 +119,8 @@ with JsonsDirIO(input, output) if input.is_dir() else NDJsonIO(input, output) as
         # convert FemoralHead points to circles based on average vertebra sizes
         logger.info('lateral')
         for rw in ios:
-            data = rw.read()
+            data_line = rw.read()
+            data = data_line['content']
             fhs = []
             shapes = data['shapes']
             shapes = list(filter(lambda e: e['label'] not in AP_ONLY, shapes))
@@ -154,12 +155,13 @@ with JsonsDirIO(input, output) if input.is_dir() else NDJsonIO(input, output) as
                         arc_top[1] -= 0.8 * median_width
                         points = np.stack((center, arc_top))
                         fh['points'] = points.tolist()
-            rw.write(data)
+            rw.write(data_line)
 
     elif args.image_type == 'ap_whole':
         logger.info('ap')
         for rw in ios:
-            data = rw.read()
+            data_line = rw.read()
+            data = data_line['content']
             shapes = labelme_utils.conv2shape_dict(data)
             for label in ['C7-TL', 'C7-TR', 'S-TL', 'S-TR']:
                 for shape in data['shapes']:
@@ -194,6 +196,6 @@ with JsonsDirIO(input, output) if input.is_dir() else NDJsonIO(input, output) as
                                         del_shapes.append(shape)
                         for ds in del_shapes:
                             data['shapes'].remove(ds)
-            rw.write(data)
+            rw.write(data_line)
     else:
         print('Invalid image_type', args.image_type)

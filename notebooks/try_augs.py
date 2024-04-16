@@ -9,7 +9,7 @@ LABEL_NAMES = settings.LABEL_NAMES
 NUM_WORKERS = 4
 height = 768
 data_root = ''
-df = exp_utils.ndjson2csv('../script/manual_annotation.ndjson', set())
+df = exp_utils.ndjson2df('../script/manual_annotation.ndjson')
 data_root = Path('../../data')
 N = int(os.environ.get('N_SAMPLES', 3))
 xs, kps = exp_utils.load_dataset(df.sample(n=N), height, data_root, LABEL_NAMES, NUM_WORKERS, 256, clahe=False)

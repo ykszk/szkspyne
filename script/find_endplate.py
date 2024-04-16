@@ -48,10 +48,10 @@ def obj2vertebrae(obj: dict):
 
 d_indices = {}
 for file_id, indices_obj in ref_indices_ndjson.items():
-    input_obj = input_points_ndjson[file_id]
-    curves = indices_obj['measures']['curve_indices']
+    input_obj = input_points_ndjson[file_id]['content']
+    curves = indices_obj['content']['measures']['curve_indices']
     input_verts = obj2vertebrae(input_obj).reshape(-1, 2, 2, 2)  # [index, top/bottom, lr, point2d]
-    ref_verts = obj2vertebrae(ref_points_ndjson[file_id]).reshape(-1, 2, 2, 2)
+    ref_verts = obj2vertebrae(ref_points_ndjson[file_id]['content']).reshape(-1, 2, 2, 2)
     closest_indices = {}
     for label, indices in curves.items():
         if indices is None:
@@ -65,7 +65,7 @@ for file_id, indices_obj in ref_indices_ndjson.items():
             tr_dist = spatial.distance.cdist(ref_points[[1]], input_points[:, 1])[0]
             dist = tl_dist + tr_dist
             closest_indices[label].append(int(np.argmin(dist)))
-    d_indices[file_id] = {'filename': file_id, 'curve_indices': [{'name': 'Closest', 'indices': closest_indices}]}
+    d_indices[file_id] = {'filename': file_id, 'content': {'curve_indices': [{'name': 'Closest', 'indices': closest_indices}]} }
 
 
 with open(output_indices_filename, 'w') as f:

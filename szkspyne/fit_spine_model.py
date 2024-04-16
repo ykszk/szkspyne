@@ -521,11 +521,11 @@ def main():
             torch.set_num_threads(args.threads)
             file_id = original_json['filename']
             try:
-                result = fit(original_json, heatmaps)
+                result = fit(original_json['content'], heatmaps)
             except Exception as e:
                 return f"{file_id},{e}"
             result_json = result
-            return result_json
+            return {'filename': file_id, 'content': result_json}
 
         logger.info('Fit')
         result_skipped = Parallel(n_jobs=n_jobs)(
