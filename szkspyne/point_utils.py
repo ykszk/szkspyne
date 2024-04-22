@@ -265,7 +265,8 @@ def local_center_of_masses(heatmaps, min_thresh=0.25):
         else:
             bbox = boundingbox.bbox(ch > 0)
             # bbox_w_ch = (np.insert(bbox[0], [0], 0), np.insert(bbox[1], [0], heatmaps.shape[0]-1)) # no cropping in channel axis
-            ch = boundingbox.crop(ch, bbox, margin=1)
+            margin = 1
+            ch = boundingbox.crop(ch, bbox, margin=margin)
             # thresh = max(min_thresh, max_value / 2)
             thresh = min_thresh
             all_labels = measure.label(ch >= thresh)
@@ -275,7 +276,7 @@ def local_center_of_masses(heatmaps, min_thresh=0.25):
                 island[all_labels != i] = ch.min()
                 local_max = island.max()
                 center = center_of_mass(island == local_max)
-                center = np.array(center) + bbox[0]
+                center = np.array(center) + bbox[0] - margin
                 local_centers.append(center)
         local_centers_per_ch.append(local_centers)
     return local_centers_per_ch
