@@ -17,6 +17,7 @@ def main():
     parser.add_argument('heatmap', help='heatmap mhd filename')
     parser.add_argument('ndjson', help='ndjson with filename keys')
     parser.add_argument('output', help='output sqlite3 database name')
+    parser.add_argument('--abspath', help='use absolute path for filename', action='store_true')
     parser.add_argument(
         '--skip', help='skip saving heatmap if the image already exists in the db.', action='store_true'
     )
@@ -39,6 +40,8 @@ def main():
 
     for jobj, hm in tqdm(zip(ndjson, heatmaps), total=len(heatmaps)):
         filename = str(Path(jobj['filename']).with_suffix('.png'))
+        if not args.abspath:
+            filename = Path(filename).name
         if args.skip:
             cursor.execute("SELECT 1 FROM image WHERE name=?", (filename,))
             if cursor.fetchone() is not None:
