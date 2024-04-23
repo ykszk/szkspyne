@@ -39,7 +39,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 
-torch.backends.cudnn.benchmark = True  # due to random cropping
+torch.backends.cudnn.benchmark = True
 
 
 def main():
@@ -61,11 +61,10 @@ def main():
     )
     parser.add_argument('--sigma', help='Sigma: %(default)s', metavar='<sigma>', type=float, default=10.0)
     parser.add_argument(
-        '--crop', help='Cropping probability in collation: %(default)s', metavar='<value>', type=float, default=0.2
+        '--crop_labels', help='Label names used for cropping. Cropped images will be added to the training datset if specified', nargs="*", type=str, default=[]
     )
     parser.add_argument('--max-epochs', help='Max epochs: %(default)s', type=int, default=128)
     parser.add_argument('--debug', help='Run in debug mode', action='store_true')
-    parser.add_argument('--train_cropped', help='Train for cropped images', action='store_true')
     parser.add_argument('--save_best', help='Save best weights', action='store_true')
     parser.add_argument('--clahe', help='Use CLAHE for image normalization', action='store_true')
 
@@ -102,9 +101,8 @@ def main():
     lit_model = pretrained_models.LitSMP(n_chs, N_CLASSES, args)
     down_factor = 256
 
-    height = None if args.train_cropped else HEIGHT
     if os.getenv("LOCAL_RANK", '0') == '0':
-        lit_model.summary([BATCH_SIZE, n_chs, height, height])
+        lit_model.summary([BATCH_SIZE, n_chs, HEIGHT, HEIGHT])
         import pickle
 
         with open(outdir / 'model_hparams.pickle', 'wb') as f:
@@ -112,7 +110,7 @@ def main():
 
     logger.info('load train set')
     train_xs, train_kps = exp_utils.load_dataset(
-        df_train, height, data_root, LABEL_NAMES, NUM_WORKERS, down_factor, args.clahe
+        df_train, HEIGHT, data_root, LABEL_NAMES, NUM_WORKERS, down_factor, args.clahe, args.crop_labels
     )
     logger.info('Pad to %s', train_xs[0].shape)
 
@@ -122,7 +120,7 @@ def main():
     logger.info('train size %d', len(train_xs))
     logger.info('load val set')
     val_xs, val_kps = exp_utils.load_dataset(
-        df_val, height, data_root, LABEL_NAMES, NUM_WORKERS, down_factor, args.clahe
+        df_val, HEIGHT, data_root, LABEL_NAMES, NUM_WORKERS, down_factor, args.clahe, args.crop_labels
     )
     logger.info('Pad to %s', val_xs[0].shape)
     logger.info('val size %d', len(val_xs))
@@ -136,7 +134,7 @@ def main():
         train_kps,
         None,
         flip_pairs,
-        transforms.random_crop_transform if args.train_cropped else transforms.random_transform,
+        transforms.random_transform,
         sigma=SIGMA,
     )
     train_loader = DataLoader(
@@ -154,7 +152,7 @@ def main():
         val_kps,
         None,
         flip_pairs,
-        transforms.base_crop_transform if args.train_cropped else transforms.base_kps_transform,
+        transforms.base_kps_transform,
         sigma=SIGMA,
     )
     val_loader = DataLoader(dataset, shuffle=False, drop_last=True, **loader_kwargs)
@@ -166,8 +164,8 @@ def main():
     early_stop_callback = EarlyStopping(monitor='val_loss', patience=args.patience, verbose=False, mode='min')
     mc = ModelCheckpoint(monitor='val_loss', dirpath=outdir / 'checkpoint')
     csv_logger = CSVLogger(str(outdir), name='logs')
-    wandb_logger = WandbLogger(project='scoliosis', name='/'.join(outdir.parts[-2:]), config=args)
-    precision = 16 if args.accelerator != 'cpu' else 32
+    wandb_logger = WandbLogger(project='scoliosis', name='/'.join(outdir.parts[-2:]), save_dir=str(outdir), config=args)
+    precision = '16-mixed' if args.accelerator != 'cpu' else 32
     trainer = pl.Trainer(
         accelerator=args.accelerator,
         devices=args.devices,
@@ -202,7 +200,7 @@ def main():
         logger.error('Failed to plot history: %s', e)
 
     test_xs, test_kps = exp_utils.load_dataset(
-        df_test, height, data_root, LABEL_NAMES, NUM_WORKERS, down_factor, args.clahe
+        df_test, HEIGHT, data_root, LABEL_NAMES, NUM_WORKERS, down_factor, args.clahe
     )
     logger.info('test size %d', len(test_xs))
 

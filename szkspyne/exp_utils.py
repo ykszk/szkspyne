@@ -33,28 +33,50 @@ def load_data(row, data_root: Path, label_names: Sequence[str]) -> Tuple[np.ndar
 
 def load_dataset(
     df: pd.DataFrame,
-    height: Union[int, None],
+    height: int,
     data_root: Path,
     label_names: Sequence[str],
     num_workers: int,
     down_factor: int,
     clahe: bool,
+    crop_label_names: Sequence[str] = []
 ):
     '''
     load images and keypoints
     '''
 
+    crop_indices = [label_names.index(c) for c in crop_label_names]
+
     def load(row):
         x, kp = load_data(row, data_root, label_names)
         assert kp[0].size != 0
-        if height is not None:
-            x, kp = img_utils.resize_height(height, x, kp)
+        ret_x, ret_kp = [], []
+        if crop_indices:
+            margin = height // 10 # TODO: magic number!
+            cropping_kps = [kp[i] for i in crop_indices]
+            tl = np.min(np.concatenate(cropping_kps, axis=0), axis=0) - margin
+            br = np.max(np.concatenate(cropping_kps, axis=0), axis=0) + margin
+            tl = np.clip(tl, 0, x.shape[:2]).astype(int)
+            br = np.clip(br, 0, x.shape[:2]).astype(int)
+            # logger.warning('Crop: %s %s %s %s', tl, br, x.shape, row.imagePath)
+            cropped_x = x[tl[0]:br[0], tl[1]:br[1]].copy()
+            cropped_kp = [(kps - tl) if len(kps)>0 else kps for kps in kp]
+            cropped_x, cropped_kp = img_utils.resize_height(height, cropped_x, cropped_kp)
+            ret_x.append(cropped_x)
+            ret_kp.append(cropped_kp)
+        x, kp = img_utils.resize_height(height, x, kp)
+        ret_x.append(x)
+        ret_kp.append(kp)
         if clahe:
-            x = transforms.apply_clahe(x)
-        return x, kp
+            ret_x = [transforms.apply_clahe(x) for x in ret_x]
+        return ret_x, ret_kp
 
     data = Parallel(n_jobs=num_workers)(delayed(load)(row) for _, row in tqdm(df.iterrows(), total=len(df)))
+
     xs, kps = zip(*data)
+    # flatten nested lists
+    xs = [x for sublist in xs for x in sublist]
+    kps = [kp for sublist in kps for kp in sublist]
 
     shapes = [x.shape for x in xs]
     max_shape = np.max(shapes, axis=0)
