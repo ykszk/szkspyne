@@ -23,7 +23,7 @@ def hm2labelme(pred, original_shape, image_filename: str, label_names, min_thres
 def save_kps_json(pred, original_shape, image_filename: str, json_filename: str, label_names, min_thresh: float):
     json_data = hm2labelme(pred, original_shape, image_filename, label_names, min_thresh)
     with open(json_filename, 'w') as f:
-        json.dump(json_data, f, indent=2)
+        f.write(json_data.model_dump_json())
     return json_data
 
 
