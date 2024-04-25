@@ -23,7 +23,7 @@ def merge_ndjsons(ndjson_filenames: List[Path], prefixes: List[str]):
 
         for i, json_data in enumerate(rows):
             data: Dict[str, Any] = {'filename': Path(json_data['filename']).stem}
-            set_flags = json_data.pop('flags', {})
+            set_flags = json_data['content'].pop('flags', {})
             if i_fn == 0:
                 set_flags = set([k for k, v in set_flags.items() if v])
                 flags = {f: f in set_flags for f in flags_required}
