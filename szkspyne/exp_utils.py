@@ -11,9 +11,23 @@ from joblib import Parallel, delayed
 from logzero import logger
 from PIL import Image
 from tqdm import tqdm
+import pydicom
 
 from szkspyne import img_utils, transforms
 from szkspyne.settings import LABEL_NAMES
+
+def load_dicom(filename: Union[str, Path]) -> np.ndarray:
+    dcm = pydicom.dcmread(filename)
+    x = dcm.pixel_array
+    if dcm.PhotometricInterpretation == 'MONOCHROME1':
+        x = np.amax(x) - x
+    # x = (x - np.min(x)) / (np.max(x) - np.min(x))
+    # convert to uint16
+    x = x - np.min(x)
+    x = np.clip(x, 0, 2 ** 16 - 1)
+    x = x.astype(np.uint16)
+
+    return x
 
 
 def plot_history(df):
@@ -24,12 +38,25 @@ def plot_history(df):
 def load_data(row, data_root: Path, label_names: Sequence[str]) -> Tuple[np.ndarray, List[np.ndarray]]:
     '''Load data from a row. Keypoints should be np.ndarray'''
     img_path = data_root / row.imagePath
-    x = np.array(Image.open(img_path))
+    if Path(img_path).suffix == '.dcm':
+        x = load_dicom(img_path)
+    else:
+        x = np.array(Image.open(img_path))
     kps = [row.get(l) for l in label_names]
     # flip kps to change format from (x, y) to (y, x)
     kps = [np.flip(kp, axis=-1) if isinstance(kp, np.ndarray) else np.array(()) for kp in kps]
     return x, kps
 
+def crop_by_kps(x, kps, crop_indices, margin):
+    cropping_kps = [kps[i] for i in crop_indices]
+    tl = np.min(np.concatenate(cropping_kps, axis=0), axis=0) - margin
+    br = np.max(np.concatenate(cropping_kps, axis=0), axis=0) + margin
+    tl = np.clip(tl, 0, x.shape[:2]).astype(int)
+    br = np.clip(br, 0, x.shape[:2]).astype(int)
+    # logger.warning('Crop: %s %s %s %s', tl, br, x.shape, row.imagePath)
+    cropped_x = x[tl[0]:br[0], tl[1]:br[1]]
+    cropped_kp = [(kp - tl) if len(kp)>0 else kp for kp in kps]
+    return cropped_x, cropped_kp
 
 def load_dataset(
     df: pd.DataFrame,
@@ -53,14 +80,7 @@ def load_dataset(
         ret_x, ret_kp = [], []
         if crop_indices:
             margin = height // 10 # TODO: magic number!
-            cropping_kps = [kp[i] for i in crop_indices]
-            tl = np.min(np.concatenate(cropping_kps, axis=0), axis=0) - margin
-            br = np.max(np.concatenate(cropping_kps, axis=0), axis=0) + margin
-            tl = np.clip(tl, 0, x.shape[:2]).astype(int)
-            br = np.clip(br, 0, x.shape[:2]).astype(int)
-            # logger.warning('Crop: %s %s %s %s', tl, br, x.shape, row.imagePath)
-            cropped_x = x[tl[0]:br[0], tl[1]:br[1]].copy()
-            cropped_kp = [(kps - tl) if len(kps)>0 else kps for kps in kp]
+            cropped_x, cropped_kp = crop_by_kps(x, kp, crop_indices, margin)
             cropped_x, cropped_kp = img_utils.resize_height(height, cropped_x, cropped_kp)
             ret_x.append(cropped_x)
             ret_kp.append(cropped_kp)
@@ -205,6 +225,8 @@ def main():
     p_loader.add_argument('--output', help='Optional output image. e.g. kp_dataset.svg')
     p_loader.add_argument('--mhd_x', help='Optional output mhd image for training input. e.g. kp_dataset.mhd')
     p_loader.add_argument('--mhd_y', help='Optional output mhd image for training output. e.g. kp_dataset.mhd')
+    p_loader.add_argument('-l','--crop_label_names', help='Label names for cropping', nargs='*', type=str)
+    p_loader.add_argument('--clahe', help='Apply CLAHE', action='store_true')
 
     def command_loader(args):
         logger.info('Loader')
@@ -219,29 +241,34 @@ def main():
         from point_utils import KeypointDataset, flatten_nest, partition
         from torch.utils.data import DataLoader
 
+        logger.info("Crop label names: %s", args.crop_label_names)
+
         flip_pairs = settings.FLIP_PAIRS
         down_factor = 256
-        xs, kps = load_dataset(df.sample(n=args.rows), args.height, Path(data_root), label_names, 4, down_factor, True)
+        crop_label_names = args.crop_label_names if args.crop_label_names else []
+        xs, kps = load_dataset(df.sample(n=args.rows), args.height, Path(data_root), label_names, 4, down_factor, args.clahe, crop_label_names)
+
+        print(len(xs), len(kps))
 
         tf = transforms.random_transform if args.transform == 'random' else transforms.base_kps_transform
         dataset = KeypointDataset(xs, kps, None, flip_pairs, tf, sigma=args.sigma)
         loader = DataLoader(
             dataset,
             shuffle=False,
-            batch_size=args.rows,
+            batch_size=len(xs),
             num_workers=4,
         )
         plt.figure(figsize=(10, 10))
         for batch_xs, batch_ys in loader:
-            for i_subplot, (x, y) in enumerate(zip(batch_xs, batch_ys)):
-                plt.subplot(args.rows, len(y) + 1, i_subplot * (len(y) + 1) + 1)
-                plt.imshow(x.squeeze(), 'gray')
-                plt.axis('off')
-                for i, hm in enumerate(y):
-                    u8img = np.round(np.clip(hm.numpy(), 0, 1) * 255).astype(np.uint8)
-                    plt.subplot(args.rows, len(y) + 1, i_subplot * (len(y) + 1) + i + 2)
-                    plt.imshow(u8img, 'gray')
-                    plt.axis('off')
+            # for i_subplot, (x, y) in enumerate(zip(batch_xs, batch_ys)):
+            #     plt.subplot(args.rows, len(y) + 1, i_subplot * (len(y) + 1) + 1)
+            #     plt.imshow(x.squeeze(), 'gray')
+            #     plt.axis('off')
+            #     for i, hm in enumerate(y):
+            #         u8img = np.round(np.clip(hm.numpy(), 0, 1) * 255).astype(np.uint8)
+            #         plt.subplot(args.rows, len(y) + 1, i_subplot * (len(y) + 1) + i + 2)
+            #         plt.imshow(u8img, 'gray')
+            #         plt.axis('off')
             if args.mhd_x:
                 from szkmipy import mhd
 
@@ -253,8 +280,11 @@ def main():
                 from szkmipy import mhd
 
                 logger.info('Save y batch')
-                batch_ys = batch_ys.reshape((-1, batch_ys.shape[2], batch_ys.shape[3]))  # merge channel and batch dims
-                mhd.write(args.mhd_y, batch_ys.cpu().numpy())
+                # batch_ys = batch_ys.reshape((-1, batch_ys.shape[2], batch_ys.shape[3]))  # merge channel and batch dims
+                # to channel last
+                batch_ys = batch_ys.permute(0, 2, 3, 1)
+                h = {'ElementNumberOfChannels': batch_ys.shape[-1]}
+                mhd.write(args.mhd_y, batch_ys.cpu().numpy(), h)
         if args.output:
             plt.gcf().savefig(args.output, transparent=True, bbox_inches='tight')
         else:
