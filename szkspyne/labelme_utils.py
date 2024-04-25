@@ -79,6 +79,30 @@ class ShapeDict(BaseModel):
     imageWidth: int
     flags: Set[str]
 
+    def into_labelme(self) -> "LabelMe":
+        shapes = []
+        for shape_type, labels in self.shapes.items():
+            for label, points in labels.items():
+                for p in points:
+                    shapes.append(
+                        LabelMe.Shape(
+                            label=label,
+                            points=p,
+                            group_id=None,
+                            shape_type=shape_type,
+                            flags={},
+                        )
+                    )
+        return LabelMe(
+            version="4.5.7",
+            shapes=shapes,
+            imagePath=self.imagePath,
+            imageData=None,
+            imageHeight=self.imageHeight,
+            imageWidth=self.imageWidth,
+            flags={k: True for k in self.flags},
+        )
+
 
 class ShapeDictLine(BaseModel):
     content: ShapeDict
@@ -88,6 +112,9 @@ class ShapeDictLine(BaseModel):
     def from_file(filename: Union[str, Path]) -> 'ShapeDictLine':
         with open(filename) as f:
             return ShapeDictLine.model_validate_json(f.read())
+        
+    def into_labelme_line(self) -> "LabelMeLine":
+        return LabelMeLine(content=self.content.into_labelme(), filename=self.filename)
 
 
 class LabelMeLine(BaseModel):
@@ -287,6 +314,8 @@ def sort_kps(points):
     kps = {k: np.array(sorted(v, key=lambda e: e[1])) for k, v in points.items()}
     return kps
 
+def crop_image(inname: str, outname: str):
+    pass
 
 def main():
     import argparse
@@ -352,6 +381,28 @@ def main():
         copy_image(args.input, args.output)
 
     p_copy.set_defaults(func=command_copy)
+
+    p_shape2lm = subparsers.add_parser('shape2lm', help="Convert shape dict into labelme.")
+    p_shape2lm.add_argument('input', nargs='?', type=argparse.FileType('r'), default=sys.stdin, help='Input ndjson filename')
+
+    def command_p_shape2lm(args):
+        for line in args.input:
+            data = ShapeDictLine.model_validate_json(line)
+            labelme_data = data.into_labelme_line()
+            print(labelme_data.model_dump_json())
+
+    p_shape2lm.set_defaults(func=command_p_shape2lm)
+
+    p_lm2shape = subparsers.add_parser('lm2shape', help="Convert labelme into shape dict.")
+    p_lm2shape.add_argument('input', nargs='?', type=argparse.FileType('r'), default=sys.stdin, help='Input ndjson filename')
+
+    def command_p_lm2shape(args):
+        for line in args.input:
+            data = LabelMeLine.model_validate_json(line)
+            shape_data = data.into_shape_dict_line()
+            print(shape_data.model_dump_json())
+    
+    p_lm2shape.set_defaults(func=command_p_lm2shape)
 
     args = parser.parse_args()
     if not hasattr(args, 'func'):
