@@ -68,7 +68,7 @@ def apply_clahe(img, clipLimit=100, tileGridSize=(32, 32)):
 
 
 class RandomClahe(ImageOnlyTransform):
-    def __init__(self, clipLimitChoices=[10, 100, 1000], gridSizeChoices=[16, 32], always_apply=False, p=0.5):
+    def __init__(self, clipLimitChoices=[10, 100, 1000], gridSizeChoices=[8, 16, 32], always_apply=False, p=0.5):
         super(RandomClahe, self).__init__(always_apply, p)
         self.clipLimitChoices = clipLimitChoices
         self.gridSizeChoices = gridSizeChoices
@@ -90,10 +90,10 @@ class RandomClahe(ImageOnlyTransform):
 img_tfs = [
     RandomClahe(p=0.5),
     A.HorizontalFlip(p=0.25),
-    A.RandomBrightnessContrast(brightness_limit=0.4, contrast_limit=0.2, p=0.25),
-    A.Affine(scale={'x': (0.9, 1.1), 'y': (0.9, 1.1)}, rotate=[-30, 30], shear=[-10, 10], p=0.25),
-    A.GaussNoise(var_limit=0.04, p=0.25),
-    A.Blur(p=0.25),
+    A.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.1, p=0.25),
+    A.Affine(scale={'x': (0.9, 1.1), 'y': (0.9, 1.1)}, rotate=[-15, 15], shear=[-10, 10], p=0.25),
+    A.GaussNoise(var_limit=0.02, p=0.25),
+    A.Blur(blur_limit=(1, 3), p=0.25),
     # A.Normalize(mean=0.485, std=0.229),
     ToTensorV2(),
 ]

@@ -109,7 +109,7 @@ def main():
         x = x.astype(np.float32)
         return x, original_shape
 
-    def apply_clahe(img, clipLimit=5000, tileGridSize=(32, 32)):
+    def apply_clahe(img, clipLimit=100, tileGridSize=(16, 16)):
         clahe = cv2.createCLAHE(clipLimit=clipLimit, tileGridSize=tileGridSize)  # type: ignore
         cl = clahe.apply(img)
         return cl
