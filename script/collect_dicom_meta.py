@@ -40,8 +40,13 @@ meta_list = [
     'StudyInstanceUID',
     'SeriesInstanceUID',
     'StudyTime',
+    'PatientName',
+    'PatientAge',
+    'PatientSex',
+    'PatientBirthDate',
+    'PatientSize',
+    'PatientWeight',
 ]
-
 
 def extract_metadata(zip_filename):
     with zipfile.ZipFile(zip_filename) as zf:
@@ -56,19 +61,45 @@ def extract_metadata(zip_filename):
             ms.append(meta)
         return ms
 
+def collect_metadata(dicom_filename):
+    ds = pydicom.dcmread(dicom_filename, stop_before_pixels=True)
+    meta = {'filename': dicom_filename.name}
+    meta.update({m: getattr(ds, m, '') for m in meta_list})
+    return meta
 
 def main():
-    parser = argparse.ArgumentParser(description='Collect metadata from zipped dicom files.')
-    parser.add_argument('input', help='Input zipped dicom directory', metavar='<input>')
+    parser = argparse.ArgumentParser(description='Collect metadata from (zipped) dicom files.')
+    parser.add_argument('input', help='Input (zipped) dicom directory', metavar='<input>')
     parser.add_argument('output', help='Output metadata csv', metavar='<output>')
+    parser.add_argument('-j', '--jobs', help='Number of jobs to run in parallel', default=8, type=int)
 
     args = parser.parse_args()
 
-    rows = Parallel(n_jobs=8)(
-        delayed(extract_metadata)(arg) for arg in tqdm.tqdm(sorted(Path(args.input).glob('*.zip')))
-    )
+    filenames = sorted(Path(args.input).glob('*.zip'))
+    if filenames:
+        logger.info('Collecting metadata from zip files')
+        rows = Parallel(n_jobs=args.jobs)(
+            delayed(extract_metadata)(arg) for arg in tqdm.tqdm(filenames)
+        )
+    else:
+        rows = None
     if rows is not None:
-        rows = itertools.chain.from_iterable(rows)
+        rows = list(itertools.chain.from_iterable(rows))
+    else:
+        rows = []
+
+    filenames = sorted(Path(args.input).glob('*.dcm'))
+    if filenames:
+        logger.info('Collecting metadata from dicom files')
+        dcm_rows = Parallel(n_jobs=args.jobs)(
+            delayed(collect_metadata)(arg) for arg in tqdm.tqdm(filenames)
+        )
+    else:
+        dcm_rows = None
+
+    if dcm_rows is not None:
+        rows.extend(dcm_rows)
+
     logger.info('Saving dataframe')
     df = pd.DataFrame(rows)
     df.to_csv(args.output, index=False, encoding='utf8')
