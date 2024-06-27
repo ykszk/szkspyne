@@ -5,7 +5,7 @@ import argparse
 import json
 import sys
 import argparse
-from szkspyne import settings
+from szkspyne import settings, labelme_utils
 
 from logzero import logger
 
@@ -46,19 +46,21 @@ def main():
             lines = [line for line in f]
     new_dataset = []
     for line in tqdm(lines):
-        original = json.loads(line)
+        original_line = labelme_utils.LabelMeLine.model_validate_json(line)
+        original = original_line.content
 
         dtron2_data = {
-            'file_name': str(image_dir / original['imagePath']),
-            'height': original['imageHeight'],
-            'width': original['imageWidth'],
-            'image_id': original['imagePath'],
+            'file_name': str(image_dir / original.imagePath),
+            'height': original.imageHeight,
+            'width': original.imageWidth,
+            'image_id': original.imagePath,
             'annotations': [],
         }
         BBOX_MODE = detectron2.structures.BoxMode.XYXY_ABS
         VISIBILITY = 2  # all points are visible
 
-        shape_dict = labelme_utils.conv2shape_dict(original)
+        # shape_dict = labelme_utils.conv2shape_dict(original)
+        shape_dict = original.into_shape_dict().shapes
         if args.mode == 'vertebrae':
             kps = {}
             for l in ['TL', 'TR', 'BR', 'BL']:
@@ -105,7 +107,7 @@ def main():
                 for bbox in bboxes:
                     bbox = np.array(bbox)
                     if bbox.size != 4:
-                        logger.warning('Skipping invalid rectangle points: %s, in %s', bbox, original['imagePath'])
+                        logger.warning('Skipping invalid rectangle points: %s, in %s', bbox, original.imagePath)
                         continue
                     anno = {
                         'bbox': bbox.reshape(-1).tolist(),
