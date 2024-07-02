@@ -164,7 +164,7 @@ for i, d in enumerate([d_ap, d_lateral]):
     for datatype in ['reference', 'auto']:
         with open(result_dir / f'{datatype}/measures_{name}_whole.ndjson') as f:
             jsons = [json.loads(l) for l in f]
-        flags = [[(Path(obj['filename']).stem, k) for k in obj['content']['flags'].keys() if k.startswith('L')] for obj in jsons]
+        flags = [[(obj['filename'], k) for k in obj['content']['flags'].keys() if k.startswith('L')] for obj in jsons]
         flags = {f[0][0]: f[0][1] for f in flags if f and f[0][0] in filename_set}
         ref_auto_flags.append(flags)
     ref_flags, pred_flags = ref_auto_flags
