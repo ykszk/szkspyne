@@ -6,14 +6,14 @@ from pathlib import Path
 # moving_dir = Path('./devsubset/imgs_for_annotation')
 # outdir = Path('./devsubset/aligned')
 
-fixed_dir = Path('/poseidon/users/suzuki/projects/scoliosis/data/dicom/misaligned')
+# fixed_dir = Path('/poseidon/users/suzuki/projects/scoliosis/data/dicom/misaligned')
+# moving_dir = Path('/poseidon/users/suzuki/projects/scoliosis/data/dicom/imgs_for_annotation')
+# outdir = Path('/poseidon/users/suzuki/projects/scoliosis/data/dicom/misaligned_aligned')
+
+
+fixed_dir = Path('/poseidon/users/suzuki/projects/scoliosis/data/dicom/mismatch_jpg')
 moving_dir = Path('/poseidon/users/suzuki/projects/scoliosis/data/dicom/imgs_for_annotation')
-outdir = Path('/poseidon/users/suzuki/projects/scoliosis/data/dicom/misaligned_aligned')
-
-
-# fixed_dir = Path('./mismatch_jpg')
-# moving_dir = Path('./imgs_for_annotation')
-# outdir = Path('./aligned')
+outdir = Path('/poseidon/users/suzuki/projects/scoliosis/data/dicom/aligned')
 
 #%%
 from torch import nn
@@ -66,7 +66,8 @@ class RigidRegistration(nn.Module):
         return F.grid_sample(moving, grid, padding_mode='zeros', align_corners=True)
     
     def fit(self, moving, fixed, n_iter, lr):
-        optimizer = torch.optim.Adam(self.parameters(), lr=lr)
+        # optimizer = torch.optim.Adam(self.parameters(), lr=lr)
+        optimizer = torch.optim.RMSprop(self.parameters(), lr=lr)
         moving = moving.clone().detach().requires_grad_(True)
         progress_bar = tqdm(range(n_iter), total=n_iter)
         for _ in progress_bar:
@@ -129,13 +130,6 @@ for fixed_path in sorted(fixed_dir.glob('*.jpg')):
     original_fixed = np.array(Image.open(fixed_path))
     original_moving = np.array(Image.open(moving_path))
     padded_moving = pad_moving(original_fixed, original_moving)
-    regs = []
-    reg = RigidRegistration()
-    reg.align_by_phase_correlation(original_moving, original_fixed)
-    regs.append(reg)
-    reg = RigidRegistration()
-    reg.align_by_center_of_mass(original_moving, original_fixed)
-    regs.append(reg)
 
     def register(reg, n_iter, sample_rate, lr):
         reg.n_iter = n_iter
@@ -147,19 +141,28 @@ for fixed_path in sorted(fixed_dir.glob('*.jpg')):
         reg.fit(moving, fixed, n_iter, lr)
 
 
-    for reg in regs:
-        for (sample_rate, n_iter, lr) in [(10, 200, 0.03)]:
-            register(reg, n_iter, sample_rate, lr)
+    regs = []
+    reg = RigidRegistration()
+    reg.align_by_phase_correlation(original_moving, original_fixed)
+    regs.append(('Phase correlation 1', reg, (10, 200, 0.01)))
 
-    regs.sort(key=lambda x: x.losses[-1])
-    if regs[0].losses[-1] > regs[1].losses[-1]:
-        print('Use center of mass')
-        reg = regs[1]
-    else:
-        print('Use phase correlation')
-        reg = regs[0]
+    reg = RigidRegistration()
+    reg.align_by_phase_correlation(original_moving, original_fixed)
+    regs.append(('Phase correlation 3', reg, (10, 200, 0.03)))
 
-    for (sample_rate, n_iter, lr) in [(5, 100, 0.002), (2, 100, 0.001)]:
+
+    reg = RigidRegistration()
+    reg.align_by_center_of_mass(original_moving, original_fixed)
+    regs.append(('Center of mass', reg, (10, 200, 0.04)))
+
+    for name, reg, (sample_rate, n_iter, lr) in regs:
+        register(reg, n_iter, sample_rate, lr)
+
+    regs.sort(key=lambda x: x[1].losses[-1])
+    reg = regs[0][1]
+    print('Use', regs[0][0], reg.losses[-1])
+
+    for (sample_rate, n_iter, lr) in [(5, 100, 0.002), (2, 100, 0.0002)]:
         register(reg, n_iter, sample_rate, lr)
     reg.to('cpu')
     moved = reg.transform(torch.tensor(padded_moving[np.newaxis, np.newaxis], dtype=torch.float32)).detach().numpy().squeeze()
