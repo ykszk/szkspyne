@@ -1,7 +1,7 @@
 #%%
 import torch
 from pathlib import Path
-
+import argparse
 # fixed_dir = Path('./devsubset/mismatch_jpg')
 # moving_dir = Path('./devsubset/imgs_for_annotation')
 # outdir = Path('./devsubset/aligned')
@@ -93,6 +93,7 @@ from scipy import signal
 from PIL import Image
 # from torchreg import AffineRegistration
 import matplotlib.pyplot as plt
+import gc
 # from torchmetrics.clustering import MutualInfoScore
 
 def pad_moving(fixed: np.ndarray, moving: np.ndarray) -> np.ndarray:
@@ -119,14 +120,33 @@ def downsample(image: np.ndarray, factor: int) -> np.ndarray:
     tmp = signal.decimate(image, factor, axis=0)
     return np.ascontiguousarray(signal.decimate(tmp, factor, axis=1))
 
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
+# device and skip option using argparse
+parser = argparse.ArgumentParser()
+parser.add_argument('--device', type=str, default='cuda' if torch.cuda.is_available() else 'cpu')
+parser.add_argument('--skip_existing', action='store_true')
+parser.add_argument('--jobs', type=int, default=1)
+args = parser.parse_args()
 
-for fixed_path in sorted(fixed_dir.glob('*.jpg')):
+device = args.device
+skip_existing = True
+fixed_paths = sorted(fixed_dir.glob('*.jpg'))
+# for fixed_path in fixed_paths:
+def run(fixed_path: Path, job_id: int):
+    torch.cuda.empty_cache()
+    if device=='cuda':
+        # randomly set current device
+        torch.cuda.set_device(f'cuda:{job_id % torch.cuda.device_count()}')
+
+    params_fn = outdir / f"params_{fixed_path.stem}.npy"
+    if args.skip_existing and params_fn.exists():
+        print(f"Skipping {fixed_path}")
+        return
+
     print(f"Processing {fixed_path}")
     moving_path = moving_dir / fixed_path.name
     if not moving_path.exists():
         print(f"Moving file not found: {moving_path}")
-        continue
+        return
     original_fixed = np.array(Image.open(fixed_path))
     original_moving = np.array(Image.open(moving_path))
     padded_moving = pad_moving(original_fixed, original_moving)
@@ -140,7 +160,6 @@ for fixed_path in sorted(fixed_dir.glob('*.jpg')):
         reg.to(device)
         reg.fit(moving, fixed, n_iter, lr)
 
-
     regs = []
     reg = RigidRegistration()
     reg.align_by_phase_correlation(original_moving, original_fixed)
@@ -153,10 +172,14 @@ for fixed_path in sorted(fixed_dir.glob('*.jpg')):
 
     reg = RigidRegistration()
     reg.align_by_center_of_mass(original_moving, original_fixed)
-    regs.append(('Center of mass', reg, (10, 200, 0.04)))
+    regs.append(('Center of mass', reg, (10, 200, 0.02)))
 
     for name, reg, (sample_rate, n_iter, lr) in regs:
-        register(reg, n_iter, sample_rate, lr)
+        try:
+            register(reg, n_iter, sample_rate, lr)
+        except RuntimeError as e:
+            print(f"Failed {name}: {e}")
+            continue
 
     regs.sort(key=lambda x: x[1].losses[-1])
     reg = regs[0][1]
@@ -179,6 +202,9 @@ for fixed_path in sorted(fixed_dir.glob('*.jpg')):
     plt.clf()
 
     params = reg.t.detach().numpy()
-    np.save(outdir / f"params_{fixed_path.stem}.npy", params)
+    np.save(params_fn, params)
 
     # break
+from joblib import Parallel, delayed
+Parallel(n_jobs=args.jobs)(delayed(run)(path, job_id)
+                        for job_id, path in enumerate(tqdm(fixed_paths)))
