@@ -8,9 +8,7 @@ if os.name == 'posix':
     matplotlib.use('Agg')
 import argparse
 import json
-import shutil
 from pathlib import Path
-from typing import Tuple, Union
 
 import matplotlib.pyplot as plt
 import torch
@@ -30,13 +28,10 @@ import point_utils
 import pretrained_models
 import torch
 import transforms
-from joblib import Parallel, delayed
 from logzero import logger
 from settings import FLIP_PAIRS, LABEL_NAMES
-from sklearn.model_selection import KFold
 from szkmipy import mhd
 from torch.utils.data import DataLoader
-from tqdm import tqdm
 
 
 torch.backends.cudnn.benchmark = True

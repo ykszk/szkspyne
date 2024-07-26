@@ -2,10 +2,10 @@
 import json
 import os
 from collections import defaultdict
-from datetime import datetime
 from pathlib import Path
+from collections import namedtuple
 
-import japanize_matplotlib
+# import japanize_matplotlib
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
@@ -24,7 +24,7 @@ from szkspyne.utils.stats import pearsonr_ci
 
 mpl.rcParams["figure.dpi"] = 100
 
-sns.set(context="notebook", style="whitegrid", font="IPAexGothic")
+sns.set_theme(context="notebook", style="whitegrid")#, font="IPAexGothic")
 
 template_directory = Path(szkspyne.__file__).parent / 'template'
 env = Environment(loader=FileSystemLoader(template_directory, encoding='utf8'))
@@ -34,10 +34,10 @@ result_dir = Path(os.environ["INPUT_DIR"])
 include_visualization = not ('NO_VIS' in os.environ)
 
 # %%
-from collections import namedtuple
 
 
-HIDE = os.environ.get('HIDE', 'Heatmap').split(' ')
+
+HIDDEN_COMPONENTS = os.environ.get('HIDE', 'Heatmap').split(' ')
 
 DATA_SUFFIX = os.environ.get('DATA_SUFFIX', '')
 ap_filename = f'ap_whole{DATA_SUFFIX}.csv' if DATA_SUFFIX else 'ap_whole.csv'
@@ -46,14 +46,14 @@ dir_suffix = os.environ.get("DIR_SUFFIX", '_whole')
 # df_birthday = pd.read_csv('../../data/anonymized_birthday.csv')
 # dict_sex_bday = {row.PatientID:(row.PatientSex, datetime.strptime(str(row.Birthday), '%Y%m%d')) for _, row in df_birthday.iterrows()}
 ImageType = namedtuple("ImageType", ["name", "filename", "angle_cols", "key_cols"])
-d_ap = ImageType(
+DEF_AP = ImageType(
     name="ap",
     filename=ap_filename,
     angle_cols=["MT", "PT", "TLL", "T1Tilt", "ClavicleAngle", "PelvicObliquity", "SacralObliquity"],
     key_cols=["MT", "PelvicObliquity"],
 )
 
-d_lateral = ImageType(
+DEF_LAT = ImageType(
     name="lateral",
     filename="lateral_whole.csv",
     angle_cols=[
@@ -123,7 +123,7 @@ DELETE_COLS = ["除外", "左屈", "右屈", "先天性側彎"]
 manual_annotations = labelme_utils.load_ndjson(result_dir / 'manual_annotation.ndjson')
 d_group_id = {Path(a['filename']).stem: a['content']['group_id'] for a in manual_annotations}
 
-for i, d in enumerate([d_ap, d_lateral]):
+for i, d in enumerate([DEF_AP, DEF_LAT]):
     if skip_lateral and i == 1:
         break
     name, filename, angle_cols, key_cols = d
@@ -141,18 +141,6 @@ for i, d in enumerate([d_ap, d_lateral]):
     print("# of images", len(df))
     print("# of unique patients", len(set(pids)))
 
-    # sexes, ages = [], []
-    # for fn in df["filename"]:
-    #     pid = fn.split("_")[0].split("-")[0]
-    # pid, study_date = fn.split('_')[:2]
-    # study_date = datetime.strptime(study_date, '%Y%m%d')
-    # sex, bdate = dict_sex_bday[pid]
-    # age = (study_date - bdate).days/365
-    # sexes.append(sex)
-    # ages.append(age)
-    # display(pd.DataFrame(sexes, columns=['PatientSex']).value_counts())
-    # display(pd.DataFrame(ages, columns=['PatientAge']).describe().T)
-
     df.set_index("filename", inplace=True, drop=True)
 
     df_flags = df[FLAG_COLS]
@@ -164,7 +152,7 @@ for i, d in enumerate([d_ap, d_lateral]):
     for datatype in ['reference', 'auto']:
         with open(result_dir / f'{datatype}/measures_{name}_whole.ndjson') as f:
             jsons = [json.loads(l) for l in f]
-        flags = [[(obj['filename'], k) for k in obj['content']['flags'].keys() if k.startswith('L')] for obj in jsons]
+        flags = [[(Path(obj['filename']).stem, k) for k in obj['content']['flags'].keys() if k.startswith('L')] for obj in jsons]
         flags = {f[0][0]: f[0][1] for f in flags if f and f[0][0] in filename_set}
         ref_auto_flags.append(flags)
     ref_flags, pred_flags = ref_auto_flags
@@ -229,7 +217,7 @@ for i, d in enumerate([d_ap, d_lateral]):
     for col_name in ['Heatmap', 'Points', 'VertebralNumber', 'CurveApex', 'SpinalLine'] + [
         c[5:] for c in df.columns if c.startswith('pred ') and not c.endswith('curve_indices')
     ]:
-        cbs.append(t_cb.render(name=col_name, label=col_name, checked='' if col_name in HIDE else 'checked'))
+        cbs.append(t_cb.render(name=col_name, label=col_name, checked='' if col_name in HIDDEN_COMPONENTS else 'checked'))
     cbs = '\n'.join(cbs)
     cbs = (
         '<h2>Show/Hide</h2>'

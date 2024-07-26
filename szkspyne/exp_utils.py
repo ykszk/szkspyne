@@ -294,6 +294,54 @@ def main():
 
     p_loader.set_defaults(handler=command_loader)
 
+    p_test_loader = subparsers.add_parser('test_loader', help="Test loader by loading all data with augmentation.")
+    p_test_loader.add_argument('--sigma', help='Sigma for heatmaps: %(default)d', type=int, default=5)
+    p_test_loader.add_argument('--batch_size', help='Batch size: %(default)d', type=int, default=8)
+    p_test_loader.add_argument('--workers', help='Number of workers: %(default)d', type=int, default=8)
+    p_test_loader.add_argument(
+        '--transform', help='Transformation: %(default)s', choices=['random', 'base'], default='random'
+    )
+    p_test_loader.add_argument('-l','--crop_label_names', help='Label names for cropping', nargs='*', type=str)
+    p_test_loader.add_argument('--clahe', help='Apply CLAHE', action='store_true')
+
+    def command_test_loader(args):
+        logger.info('Test Loader')
+        csv_filename, data_root, label_names = args.csv, args.data_root, args.label_names
+        if csv_filename.endswith('.ndjson'):
+            df = ndjson2df(csv_filename)
+        else:
+            df = pd.read_csv(csv_filename)
+        import settings
+        import transforms
+        from point_utils import KeypointDataset
+        from torch.utils.data import DataLoader
+
+        logger.info("Crop label names: %s", args.crop_label_names)
+
+        flip_pairs = settings.FLIP_PAIRS
+        down_factor = 256
+        crop_label_names = args.crop_label_names if args.crop_label_names else []
+        logger.info("Load dataset")
+        print(df.iloc[238].filename)
+        xs, kps = load_dataset(df.iloc[238:239], args.height, Path(data_root), label_names, args.workers, down_factor, args.clahe, crop_label_names)
+
+        print(len(xs), len(kps))
+
+        tf = transforms.random_transform if args.transform == 'random' else transforms.base_kps_transform
+        dataset = KeypointDataset(xs, kps, None, flip_pairs, tf, sigma=args.sigma)
+        loader = DataLoader(
+            dataset,
+            shuffle=False,
+            batch_size=args.batch_size,
+            num_workers=args.workers,
+        )
+        logger.info("Test loader")
+        for i, (batch_xs, batch_ys) in enumerate(loader):
+            print(i, batch_xs.shape, batch_ys.shape)
+        return 0
+
+    p_test_loader.set_defaults(handler=command_test_loader)
+
     args = parser.parse_args()
     if not hasattr(args, 'handler'):
         print('No command was specified.')

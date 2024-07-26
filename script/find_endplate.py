@@ -48,6 +48,8 @@ def obj2vertebrae(obj: dict):
 
 d_indices = {}
 for file_id, indices_obj in ref_indices_ndjson.items():
+    if file_id not in input_points_ndjson:
+        continue
     input_obj = input_points_ndjson[file_id]['content']
     curves = indices_obj['content']['measures']['curve_indices']
     input_verts = obj2vertebrae(input_obj).reshape(-1, 2, 2, 2)  # [index, top/bottom, lr, point2d]

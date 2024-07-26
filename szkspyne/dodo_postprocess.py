@@ -186,7 +186,7 @@ def task_collect():
         proc = ' '.join([str(e) for e in ['python', script, image_type, infile, '--output', '-']])
         jq = "jq -c 'del(.pca)'"
         flags = FLAGS[image_type]
-        join = f"lmrs join --mode left - {flags}"
+        join = f"lmrs join --mode left --missing continue - {flags}"
         action = ' | '.join([proc, jq, join]) + f' > {outfile}'
         yield {
             'name': f'mod-{image_type}',
@@ -266,6 +266,7 @@ def task_measure():
     for image_type in IMAGE_TYPES:
         for subdir in ['auto', 'reference']:
             for variant in [''] + VARIANTS:
+                pipeline = []
                 if variant != '' and image_type == 'lateral_whole':
                     continue
                 if variant != '' and subdir == 'reference':
@@ -276,6 +277,7 @@ def task_measure():
 
                 # remove bending
                 c1 = f"jq -c '{JQ_REMOVE_BEND}' {infile}"
+                pipeline.append(c1)
 
                 if image_type == 'ap_whole':
                     curve_file = RESULT_DIR / subdir / f'curve_indices_{image_type}{suffix}.ndjson'
@@ -284,6 +286,12 @@ def task_measure():
                 else:
                     c2 = 'cat'  # do nothing
                     pass
+                pipeline.append(c2)
+
+                if subdir == 'reference':
+                    # extension of imagePath from dcm to jpg
+                    pipeline.append("jq -c '.content[\"imagePath\"] |= sub(\".dcm\"; \".jpg\")'")
+                    
 
                 script = SRC_DIR / 'measure_and_draw.py'
                 parent_dir = SRC_DIR / '../../data/annotation/images/all'
@@ -293,7 +301,8 @@ def task_measure():
                 ndjson = RESULT_DIR / subdir / f'measures_{image_type}{suffix}.ndjson'
                 imagedb = HM_IMAGE_DB
                 c3 = f'python {script} --hide {MES_HIDE} --height 1200 --points --numbers --image_type {image_type.split("_")[0]} --parent_dir {parent_dir} --title "{subdir} {image_type}" --config {config} --imagedb {imagedb} batch - {outdir} --html --ndjson {ndjson} --workers 4'
-                action = ' | '.join([c1, c2, c3])
+                pipeline.append(c3)
+                action = ' | '.join(pipeline)
 
                 yield {
                     'name': f'{image_type}-{subdir}{suffix}',

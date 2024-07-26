@@ -38,6 +38,11 @@ def main():
     src_outdir.mkdir(parents=True, exist_ok=True)
     for fn in Path(__file__).parent.glob('*.py'):
         shutil.copy(fn, src_outdir)
+    for subdir in ['utils']:
+        src_subdir = src_outdir / subdir
+        src_subdir.mkdir(parents=True, exist_ok=True)
+        for fn in Path(__file__).parent.glob(f'{subdir}/*.py'):
+            shutil.copy(fn, src_subdir)
     with open(outroot / 'args.json', 'w') as f:
         json.dump(args.__dict__, f, indent=2)
 

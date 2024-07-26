@@ -34,7 +34,7 @@ def load_ndjson(filename: Path):
 
 ref_indices_ndjson = load_ndjson(ref_indices_filename)
 input_indices_ndjson = load_ndjson(input_indices_filename)
-assert len(ref_indices_ndjson) == len(input_indices_ndjson)
+# assert len(ref_indices_ndjson) == len(input_indices_ndjson)
 
 
 def obj2vertebrae(obj: dict):
@@ -44,6 +44,8 @@ def obj2vertebrae(obj: dict):
 
 d_indices = {}
 for file_id, ref_indices_obj_line in ref_indices_ndjson.items():
+    if file_id not in input_indices_ndjson:
+        continue
     ref_indices_obj = ref_indices_obj_line['content']
     in_indices_obj = input_indices_ndjson[file_id]['content']
     ref_measures = ref_indices_obj['measures']
