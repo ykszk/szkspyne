@@ -185,6 +185,8 @@ def measure_json(
                     )
                 )
                 for apex in apexes.values():
+                    if apex is None:
+                        continue
                     apex_corners = dwg.vertebrae.vert_disc_corners[apex]
                     grp.add(
                         dwg.polygon(
