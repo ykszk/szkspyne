@@ -4,9 +4,8 @@ from typing import List, Optional, Tuple, Dict
 import argparse
 
 import numpy as np
-from pydantic import BaseModel, Field
-from utils import measure
-from utils.measure import VertebraDiscIndex
+from pydantic import BaseModel
+from szkspyne.utils.measure import VertebraDiscIndex
 
 
 class Curve(BaseModel):
@@ -150,23 +149,6 @@ class CurveInfoAll(BaseModel):
 class CurveInfoAllLine(BaseModel):
     filename: str
     content: CurveInfoAll
-
-
-# class PyCurve(BaseModel):
-#     curve_indices: List[Optional[CurveAngle]]
-
-
-# test_input = '''
-# {"curves":{"PT":[{"sup":1,"inf":4},-2.3623974],"MT":[{"sup":4,"inf":11},37.24298],"TLL":[{"sup":11,"inf":14},-16.772045]},"apices":{"PT":5,"MT":16,"TLL":25},"major_curve":"MT","all_curves":[[{"sup":11,"inf":14},-16.772045,25],[{"sup":14,"inf":16},-8.394589,29],[{"sup":4,"inf":11},37.24298,16],[{"sup":1,"inf":4},-2.3623974,5]]}
-# '''
-
-# info = CurveInfoAll.model_validate_json(test_input, strict=True)
-# primary_info = info.to_curve_info()
-# curve_dict = {'Primary': primary_info}
-# second_info = info.second_info()
-# if second_info:
-#     curve_dict['Secondary'] = second_info
-
 
 def main():
     import sys

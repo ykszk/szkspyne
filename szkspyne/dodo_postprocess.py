@@ -242,9 +242,12 @@ def task_curve():
             infile = RESULT_DIR / subdir / 'keypoints' / image_type / 'final_keypoints.ndjson'
             curve_file = RESULT_DIR / subdir / f'curve_indices_{image_type}.ndjson'
             c1 = f"jq -c '{JQ_REMOVE_BEND}' {infile}"
-            script = SRC_DIR / 'determine_curves.py'
-            c2 = f'python {script} - {curve_file} --algo {ALGO} --jobs 4'
-            action1 = ' | '.join([c1, c2])
+            script = SCRIPT_DIR / 'sort_points.py'
+            c2 = f'python {script} -'
+            c3 = f'scolrs curve --all -'
+            script = SRC_DIR / 'curve.py'
+            c4 = f'python {script}'
+            action1 = ' | '.join([c1, c2, c3, c4]) + f' > {curve_file}'
 
             yield {
                 'name': f'{image_type}-{subdir}',

@@ -22,12 +22,13 @@ def main():
     sign = -1 if args.reverse else 1
     pos = 1 if args.x else 0
     for line in lines:
-        obj = json.loads(line)
+        obj_line = json.loads(line)
+        obj = obj_line['content']
         shapes = labelme_utils.conv2shape_dict(obj)
         points = shapes['point']
         kps = {k: sorted([[p[0][1], p[0][0]] for p in v], key=lambda e: sign * e[pos]) for k, v in points.items()}
         obj['shapes'] = labelme_utils.kps2shapes(kps.values(), kps.keys())
-        print(json.dumps(obj))
+        print(json.dumps(obj_line))
 
 
 if __name__ == '__main__':
