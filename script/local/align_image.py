@@ -6,14 +6,14 @@ import argparse
 # moving_dir = Path('./devsubset/imgs_for_annotation')
 # outdir = Path('./devsubset/aligned')
 
-# fixed_dir = Path('/poseidon/users/suzuki/projects/scoliosis/data/dicom/misaligned')
-# moving_dir = Path('/poseidon/users/suzuki/projects/scoliosis/data/dicom/imgs_for_annotation')
-# outdir = Path('/poseidon/users/suzuki/projects/scoliosis/data/dicom/misaligned_aligned')
-
-
-fixed_dir = Path('/poseidon/users/suzuki/projects/scoliosis/data/dicom/mismatch_jpg')
+fixed_dir = Path('/poseidon/users/suzuki/projects/scoliosis/data/dicom/misaligned')
 moving_dir = Path('/poseidon/users/suzuki/projects/scoliosis/data/dicom/imgs_for_annotation')
-outdir = Path('/poseidon/users/suzuki/projects/scoliosis/data/dicom/aligned')
+outdir = Path('/poseidon/users/suzuki/projects/scoliosis/data/dicom/misaligned_aligned')
+
+
+# fixed_dir = Path('/poseidon/users/suzuki/projects/scoliosis/data/dicom/mismatch_jpg')
+# moving_dir = Path('/poseidon/users/suzuki/projects/scoliosis/data/dicom/imgs_for_annotation')
+# outdir = Path('/poseidon/users/suzuki/projects/scoliosis/data/dicom/aligned')
 
 #%%
 from torch import nn
@@ -41,8 +41,8 @@ class RigidRegistration(nn.Module):
     def align_by_center_of_mass(self, moving: np.ndarray, fixed: np.ndarray):
         moving = moving.squeeze()
         fixed = fixed.squeeze()
-        moving_com = ndi.measurements.center_of_mass(moving)
-        fixed_com = ndi.measurements.center_of_mass(fixed)
+        moving_com = ndi.center_of_mass(moving)
+        fixed_com = ndi.center_of_mass(fixed)
         real_t = torch.tensor(moving_com) - torch.tensor(fixed_com)
         scaled_t = real_t / torch.tensor(moving.shape)
         self.t = nn.Parameter(torch.tensor([[scaled_t[1]], [scaled_t[0]]],  dtype=torch.float32, requires_grad=True))
@@ -62,8 +62,8 @@ class RigidRegistration(nn.Module):
     def transform(self, moving):
         affine=  self.get_affine()
         # print('affine', affine)
-        grid = F.affine_grid(affine, moving.shape)
-        return F.grid_sample(moving, grid, padding_mode='zeros', align_corners=True)
+        grid = F.affine_grid(affine, moving.shape, align_corners=False)
+        return F.grid_sample(moving, grid, padding_mode='zeros', align_corners=False)
     
     def fit(self, moving, fixed, n_iter, lr):
         # optimizer = torch.optim.Adam(self.parameters(), lr=lr)

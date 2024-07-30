@@ -8,7 +8,7 @@ readonly SCRIPT_DIR
 readonly result_dir="$1"
 readonly ndjson_filename="$2"
 
-readonly N_SPLIT=5
+readonly N_SPLIT=10
 
 # check if --holdout is set
 if [ "$#" -eq 3 ]; then
@@ -25,5 +25,5 @@ fi
 
 for fold_dir in "$result_dir"/folds/*; do
     echo "$fold_dir"
-    python3 "$SCRIPT_DIR"/exp_single.py --encoder_name efficientnet-b4 --height 1024 --batch_size 3 --lr 0.001 --sigma 3 --max-epochs 128 --input "$fold_dir"
+    python3 "$SCRIPT_DIR"/exp_single.py --encoder_name efficientnet-b4 --height 1024 --batch_size 4 --lr 0.001 --sigma 3 --max-epochs 128 --input "$fold_dir" --crop_labels TL TR BL BR
 done

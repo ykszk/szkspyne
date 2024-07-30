@@ -7,6 +7,5 @@ done
 cat /tmp/ap_whole_manual_annotation.ndjson /tmp/lateral_whole_manual_annotation.ndjson >../code/script/manual_annotation.ndjson
 cat ../code/script/manual_annotation.ndjson | python3 ../code/script/insert_group_id.py insert_group_id anchor >../code/script/group_id_manual_annotation.ndjson
 cd ../code/script
-# cat manual_annotation.ndjson | jq -c '.content.imagePath |= sub("\\.[^.]*$"; ".dcm")' | jq -c '.content.imagePath = "/poseidon/users/suzuki/projects/scoliosis/data/dicom/selected/all/" + (.content.imagePath | split("/")[-1])' | python3 ../szkspyne/labelme_utils.py shape2lm | lmrs resize - 200%  | python3 ../szkspyne/labelme_utils.py lm2shape > dicom_manual_annotation.ndjson
 cat manual_annotation.ndjson | jq -c '.content.imagePath |= sub("\\.[^.]*$"; ".dcm")' | jq -c '.content.imagePath = "/poseidon/users/suzuki/projects/scoliosis/data/dicom/selected/resized_all/" + (.content.imagePath | split("/")[-1])' >dicom_manual_annotation.ndjson
 cat dicom_manual_annotation.ndjson | python3 insert_group_id.py insert_group_id anchor >group_id_dicom_manual_annotation.ndjson

@@ -60,6 +60,7 @@ def single_io(inname: str, outname: str, options):
         d_exif['window_minmax'] = minmax
 
         img = Image.fromarray(arr)
+        # arr = arr[::2, ::2]
         img.thumbnail((options.size, options.size))
         if bbox is not None:
             d_exif['crop_params'] = np.stack(bbox).ravel().tolist()
@@ -86,7 +87,7 @@ def main():
         if not outdir.is_dir():
             print('Output needs to be an directory for directory input')
             return 1
-        for inname in Path(args.input).glob('*.dcm'):
+        for inname in sorted(Path(args.input).glob('*.dcm')):
             outname = outdir / inname.with_suffix(args.ext).name
             single_io(str(inname), str(outname), args)
     else:
