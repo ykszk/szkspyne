@@ -3,8 +3,7 @@ from pathlib import Path
 import functools
 import argparse
 
-from detectron2.data import DatasetCatalog
-from detectron2.data import MetadataCatalog
+from detectron2.data import DatasetCatalog, MetadataCatalog
 
 
 from szkspyne.labelme_utils import load_ndjson
@@ -28,10 +27,13 @@ DATASET_PREFIX = 'mydata'
 with open(DATA_DIR / 'metadata.json') as f:
     dataset_metadata = json.load(f)
 dataset_names = {}
-for train_or_val in ['train', 'val']:
-    dataset_name = f"{DATASET_PREFIX}_{train_or_val}"
-    dataset_names[train_or_val] = dataset_name
-    ndjson_filename = DATA_DIR / f'{train_or_val}.ndjson'
+for set_name in ['train', 'val', 'test']:
+    ndjson_filename = DATA_DIR / f'{set_name}.ndjson'
+    if not ndjson_filename.exists():
+        print(f'{ndjson_filename} does not exist. Skipping.')
+        continue
+    dataset_name = f"{DATASET_PREFIX}_{set_name}"
+    dataset_names[set_name] = dataset_name
     DatasetCatalog.register(dataset_name, functools.partial(load_ndjson, ndjson_filename))
     MetadataCatalog.get(dataset_name).set(**dataset_metadata)
 
@@ -48,6 +50,10 @@ cfg.DATASETS.TRAIN = (dataset_names['train'],)
 cfg.DATASETS.TEST = (dataset_names['val'],)
 cfg.DATALOADER.NUM_WORKERS = 4
 cfg.MODEL.WEIGHTS = "detectron2://COCO-Keypoints/keypoint_rcnn_R_50_FPN_3x/137849621/model_final_a6e10b.pkl"  # Let training initialize from model zoo
+# cfg.MODEL.RETINANET.BBOX_REG_LOSS_TYPE = 'smooth_l1'
+cfg.MODEL.RETINANET.BBOX_REG_LOSS_TYPE = 'ciou'
+# cfg.MODEL.ANCHOR_GENERATOR.ASPECT_RATIOS = [[0.5, 1.0, 2.0]]
+# cfg.MODEL.ANCHOR_GENERATOR.ASPECT_RATIOS = [[0.33, 0.5, 1.0, 2.0, 3.0]]
 cfg.SOLVER.IMS_PER_BATCH = 8
 cfg.SOLVER.BASE_LR = 0.00025  # pick a good LR
 cfg.SOLVER.MAX_ITER = BIG_NUMBER
