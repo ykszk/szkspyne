@@ -120,7 +120,10 @@ with JsonsDirIO(input, output) if input.is_dir() else NDJsonIO(input, output) as
         logger.info('lateral')
         for rw in ios:
             data_line = rw.read()
-            data = data_line['content']
+            if 'content' in data_line:
+                data = data_line['content']
+            else:
+                data = data_line
             fhs = []
             shapes = data['shapes']
             shapes = list(filter(lambda e: e['label'] not in AP_ONLY, shapes))
@@ -161,7 +164,10 @@ with JsonsDirIO(input, output) if input.is_dir() else NDJsonIO(input, output) as
         logger.info('ap')
         for rw in ios:
             data_line = rw.read()
-            data = data_line['content']
+            if 'content' in data_line:
+                data = data_line['content']
+            else:
+                data = data_line
             shapes = labelme_utils.conv2shape_dict(data)
             for label in ['C7-TL', 'C7-TR', 'S-TL', 'S-TR']:
                 for shape in data['shapes']:

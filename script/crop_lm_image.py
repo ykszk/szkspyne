@@ -30,6 +30,8 @@ def crop_labelme_data(
     roi_img = img[roi_bbox[1] : roi_bbox[3], roi_bbox[0] : roi_bbox[2]]
 
     cropped_data = labelme_data.shift(-roi_bbox[0], -roi_bbox[1])
+    cropped_data.imageHeight = roi_img.shape[0]
+    cropped_data.imageWidth = roi_img.shape[1]
 
     return cropped_data, roi_img
 
