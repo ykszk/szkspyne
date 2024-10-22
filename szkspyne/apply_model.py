@@ -12,14 +12,17 @@ PROB_MAX = settings.PROB_MAX
 
 
 def worker(task_args):
-    (pred, original_shape, image_filename, json_filename, hm_filename) = task_args
+    (pred, original_shape, image_filename, json_filename, hm_filename, ch_as_z) = task_args
     if json_filename:
         save_kps_json(
             pred, original_shape, image_filename, json_filename, settings.LABEL_NAMES, min_thresh=0.1 * PROB_MAX
         )
     if hm_filename:
-        pred = np.transpose(pred, [1, 2, 0])
-        mhd.write(hm_filename, pred, {'ElementNumberOfChannels': pred.shape[-1]})
+        if ch_as_z:
+            mhd.write(hm_filename, pred)
+        else:
+            pred = np.transpose(pred, [1, 2, 0])
+            mhd.write(hm_filename, pred, {'ElementNumberOfChannels': pred.shape[-1]})
 
 
 def main():
@@ -42,6 +45,7 @@ def main():
     p_single.add_argument('--heatmap', help='Save heatmap file')
     p_single.add_argument('--clahe', help='Clahe in preprocessing', action='store_true')
     p_single.add_argument('--height', help='Image height: %(default)s', metavar='<int>', type=int, default=768)
+    p_single.add_argument('--ch_as_z', help='Use channel as z axis', action='store_true')
     p_single.set_defaults(mode='single')  # not using func to enable lazy loading of the modules
 
     p_batch = subparsers.add_parser('batch', help="Apply to a single image.")
@@ -55,6 +59,7 @@ def main():
     p_batch.add_argument('--clahe', help='Clahe in preprocessing', action='store_true')
     p_batch.add_argument('--height', help='Image height: %(default)s', metavar='<int>', type=int, default=768)
     p_batch.add_argument('--workers', help='The number of workers: %(default)s', metavar='<int>', type=int, default=4)
+    p_batch.add_argument('--ch_as_z', help='Use channel as z axis', action='store_true')
     p_batch.add_argument('--batch_size', help='Batch size: %(default)s', metavar='<int>', type=int, default=4)
     p_batch.set_defaults(mode='batch')
 
@@ -168,8 +173,11 @@ def main():
                 min_thresh=0.1 * PROB_MAX,
             )
         if args.heatmap:
-            pred = np.transpose(pred, [1, 2, 0])
-            mhd.write(args.heatmap, pred, {'ElementNumberOfChannels': pred.shape[-1]})
+            if args.ch_as_z:
+                mhd.write(args.heatmap, pred)
+            else:
+                pred = np.transpose(pred, [1, 2, 0])
+                mhd.write(args.heatmap, pred, {'ElementNumberOfChannels': pred.shape[-1]})
 
     def apply_batch(args):
         import tqdm
@@ -240,6 +248,7 @@ def main():
                 json_filenames = [fn.with_suffix('.json') if args.labelme else None for fn in filenames]
                 hm_filenames = [fn.with_suffix('.mha') if args.heatmap else None for fn in filenames]
                 for task_args in zip(pred, original_shapes, image_filenames, json_filenames, hm_filenames):
+                    task_args = list(task_args) + [args.ch_as_z]
                     pool.apply_async(worker, (task_args,), callback=callback, error_callback=print)
             pool.close()
             pool.join()
