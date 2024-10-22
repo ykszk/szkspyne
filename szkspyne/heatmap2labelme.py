@@ -1,7 +1,7 @@
 import argparse
 import json
 import sys
-from typing import Tuple
+from typing import Tuple, Dict, Optional
 
 import numpy as np
 from szkmipy import mhd
@@ -12,16 +12,36 @@ from szkspyne.labelme_utils import LabelMeLine, ShapeDictLine
 PROB_MAX = settings.PROB_MAX
 
 
-def hm2labelme(pred, original_shape, image_filename: str, label_names, min_thresh: float):
+def hm2labelme(
+    pred,
+    original_shape,
+    image_filename: str,
+    label_names,
+    min_thresh: float,
+    max_num_points: Optional[Dict[str, int]] = None,
+):
     kps_per_ch = point_utils.local_center_of_masses(pred, min_thresh)
+    for kps, label in zip(kps_per_ch, label_names):
+        max_num = max_num_points.get(label, len(kps)) if max_num_points else len(kps)
+        if len(kps) > max_num:
+            hm_values = [pred[int(kp[0]), int(kp[1])] for kp in kps]
+            kps = [kp for _, kp in sorted(zip(hm_values, kps), reverse=True)[:max_num]]
     scale = original_shape[0] / pred.shape[1]
     kps_per_ch = [(np.array(kps, dtype=np.float32) * scale).tolist() for kps in kps_per_ch]
     json_data = labelme_utils.kps2labelme(kps_per_ch, image_filename, original_shape, label_names)
     return json_data
 
 
-def save_kps_json(pred, original_shape, image_filename: str, json_filename: str, label_names, min_thresh: float):
-    json_data = hm2labelme(pred, original_shape, image_filename, label_names, min_thresh)
+def save_kps_json(
+    pred,
+    original_shape,
+    image_filename: str,
+    json_filename: str,
+    label_names,
+    min_thresh: float,
+    max_num_points: Optional[Dict[str, int]] = None,
+):
+    json_data = hm2labelme(pred, original_shape, image_filename, label_names, min_thresh, max_num_points)
     with open(json_filename, 'w') as f:
         f.write(json_data.model_dump_json())
     return json_data
@@ -79,14 +99,15 @@ def main():
                 data = save_kps_json(
                     heatmap,
                     original_shape,
-                    f'{stem}.jpg',
+                    data.imagePath,
                     str(outdir / f'{stem}.json'),
                     settings.LABEL_NAMES,
                     min_thresh=0.1 * PROB_MAX,
+                    max_num_points=settings.MAX_NUM_POINTS,
                 )
             else:
                 data = hm2labelme(
-                    heatmap, original_shape, f'{stem}.jpg', settings.LABEL_NAMES, min_thresh=0.1 * PROB_MAX
+                    heatmap, original_shape, data.imagePath, settings.LABEL_NAMES, min_thresh=0.1 * PROB_MAX
                 )
             return data.into_labelme_line(data_line.filename)
 
