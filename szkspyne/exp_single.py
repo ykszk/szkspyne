@@ -56,7 +56,11 @@ def main():
     )
     parser.add_argument('--sigma', help='Sigma: %(default)s', metavar='<sigma>', type=float, default=10.0)
     parser.add_argument(
-        '--crop_labels', help='Label names used for cropping. Cropped images will be added to the training datset if specified', nargs="*", type=str, default=[]
+        '--crop_labels',
+        help='Label names used for cropping. Cropped images will be added to the training datset if specified',
+        nargs="*",
+        type=str,
+        default=[],
     )
     parser.add_argument('--max-epochs', help='Max epochs: %(default)s', type=int, default=128)
     parser.add_argument('--debug', help='Run in debug mode', action='store_true')
@@ -159,7 +163,9 @@ def main():
     early_stop_callback = EarlyStopping(monitor='val_loss', patience=args.patience, verbose=False, mode='min')
     mc = ModelCheckpoint(monitor='val_loss', dirpath=outdir / 'checkpoint')
     csv_logger = CSVLogger(str(outdir), name='logs')
-    wandb_logger = WandbLogger(project='scoliosis', name='/'.join(outdir.parts[-2:]), save_dir=str(outdir), config=args)
+    wandb_logger = WandbLogger(
+        project='scoliosis', name='/'.join(outdir.parts[-2:]), save_dir=str(outdir), config=args
+    )
     precision = '16-mixed' if args.accelerator != 'cpu' else 32
     trainer = pl.Trainer(
         accelerator=args.accelerator,
@@ -231,17 +237,21 @@ def main():
     if args.save_best:
         torch.save(lit_model.model.to('cpu').state_dict(), outdir / 'best_weights.pth')
     # y_preds = np.moveaxis(y_preds, 1, -1).copy()  # to channel last
-    test_data = labelme_utils.load_ndjson(outdir / 'test.ndjson')
-    for image_type in ['ap_whole', 'lateral_whole']:
-        logger.info('Save preds %s', image_type)
-        indices = []
-        for i, data in enumerate(test_data):
-            if image_type in data['content']['flags']:
-                indices.append(i)
-        y_preds_it = y_preds[indices].copy()
-        mhd.write(outdir / f'y_pred_{image_type}.mha', y_preds_it, {'ElementNumberOfChannels': y_preds_it.shape[-1]})
-        it_data = [test_data[i] for i in indices]
-        labelme_utils.save_ndjson(it_data, outdir / f'test_{image_type}.ndjson')
+    mhd.write(outdir / f'y_pred.mha', y_preds, {'ElementNumberOfChannels': y_preds.shape[-1]})
+    # test_data = labelme_utils.load_ndjson(outdir / 'test.ndjson')
+    # for image_type in ['ap_whole', 'lateral_whole']:
+    #     logger.info('Save preds %s', image_type)
+    #     indices = []
+    #     for i, data in enumerate(test_data):
+    #         if image_type in data['content']['flags']:
+    #             indices.append(i)
+    #     if not indices:
+    #         logger.info('No data for %s', image_type)
+    #         continue
+    #     y_preds_it = y_preds[indices].copy()
+    #     mhd.write(outdir / f'y_pred_{image_type}.mha', y_preds_it, {'ElementNumberOfChannels': y_preds_it.shape[-1]})
+    #     it_data = [test_data[i] for i in indices]
+    #     labelme_utils.save_ndjson(it_data, outdir / f'test_{image_type}.ndjson')
     logger.info('End saving results')
 
     return 0

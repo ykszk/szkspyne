@@ -1,7 +1,7 @@
 import json
 import sys
 from pathlib import Path
-from typing import List, Sequence, Set, Tuple, Union
+from typing import List, Sequence, Optional, Tuple, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -16,6 +16,7 @@ import pydicom
 from szkspyne import img_utils, transforms
 from szkspyne.settings import LABEL_NAMES
 
+
 def load_dicom(filename: Union[str, Path]) -> np.ndarray:
     dcm = pydicom.dcmread(filename)
     x = dcm.pixel_array
@@ -24,7 +25,7 @@ def load_dicom(filename: Union[str, Path]) -> np.ndarray:
     # x = (x - np.min(x)) / (np.max(x) - np.min(x))
     # convert to uint16
     x = x - np.min(x)
-    x = np.clip(x, 0, 2 ** 16 - 1)
+    x = np.clip(x, 0, 2**16 - 1)
     x = x.astype(np.uint16)
 
     return x
@@ -35,9 +36,12 @@ def plot_history(df):
     sns.lineplot(data=melted, x='step', y='loss', hue='subset')
 
 
-def load_data(row, data_root: Path, label_names: Sequence[str]) -> Tuple[np.ndarray, List[np.ndarray]]:
+def load_data(row, data_root: Optional[Path], label_names: Sequence[str]) -> Tuple[np.ndarray, List[np.ndarray]]:
     '''Load data from a row. Keypoints should be np.ndarray'''
-    img_path = data_root / row.imagePath
+    if data_root is None:
+        img_path = row.imagePath
+    else:
+        img_path = data_root / row.imagePath
     if Path(img_path).suffix == '.dcm':
         x = load_dicom(img_path)
     else:
@@ -47,6 +51,7 @@ def load_data(row, data_root: Path, label_names: Sequence[str]) -> Tuple[np.ndar
     kps = [np.flip(kp, axis=-1) if isinstance(kp, np.ndarray) else np.array(()) for kp in kps]
     return x, kps
 
+
 def crop_by_kps(x, kps, crop_indices, margin):
     cropping_kps = [kps[i] for i in crop_indices]
     tl = np.min(np.concatenate(cropping_kps, axis=0), axis=0) - margin
@@ -54,19 +59,20 @@ def crop_by_kps(x, kps, crop_indices, margin):
     tl = np.clip(tl, 0, x.shape[:2]).astype(int)
     br = np.clip(br, 0, x.shape[:2]).astype(int)
     # logger.warning('Crop: %s %s %s %s', tl, br, x.shape, row.imagePath)
-    cropped_x = x[tl[0]:br[0], tl[1]:br[1]]
-    cropped_kp = [(kp - tl) if len(kp)>0 else kp for kp in kps]
+    cropped_x = x[tl[0] : br[0], tl[1] : br[1]]
+    cropped_kp = [(kp - tl) if len(kp) > 0 else kp for kp in kps]
     return cropped_x, cropped_kp
+
 
 def load_dataset(
     df: pd.DataFrame,
     height: int,
-    data_root: Path,
+    data_root: Optional[Path],
     label_names: Sequence[str],
     num_workers: int,
     down_factor: int,
     clahe: bool,
-    crop_label_names: Sequence[str] = []
+    crop_label_names: Sequence[str] = [],
 ):
     '''
     load images and keypoints
@@ -79,7 +85,7 @@ def load_dataset(
         assert kp[0].size != 0
         ret_x, ret_kp = [], []
         if crop_indices:
-            margin = height // 10 # TODO: magic number!
+            margin = height // 10  # TODO: magic number!
             cropped_x, cropped_kp = crop_by_kps(x, kp, crop_indices, margin)
             cropped_x, cropped_kp = img_utils.resize_height(height, cropped_x, cropped_kp)
             ret_x.append(cropped_x)
@@ -118,7 +124,12 @@ def ndjson2df(filename: Union[str, Path]) -> pd.DataFrame:
         for name in LABEL_NAMES:
             if name not in points.keys():
                 points[name] = np.array(())
-        row = {'filename': data_line['filename'], 'imagePath': data['imagePath'], 'flags': data['flags'], 'group_id': data.get('group_id', None)}
+        row = {
+            'filename': data_line['filename'],
+            'imagePath': data['imagePath'],
+            'flags': data['flags'],
+            'group_id': data.get('group_id', None),
+        }
         row.update(points)
         rows.append(row)
     df = pd.DataFrame(rows)
@@ -132,7 +143,7 @@ def main():
 
     parser = argparse.ArgumentParser(description='Try utility functions for debugging.')
     parser.add_argument('csv', help='CSV or NDJSON filename: %(default)s', nargs='?', default='../script/verse.csv')
-    parser.add_argument('data_root', help='Data root directory: %(default)s', nargs='?', default='../../data')
+    parser.add_argument('--data_root', help='Data root directory: %(default)s', nargs='?')
     parser.add_argument('--label_names', help='Label names: %(default)s', nargs='?', default=LABEL_NAMES)
     parser.add_argument('--height', help='Resized image height: %(default)d', default=1024)
 
@@ -225,7 +236,7 @@ def main():
     p_loader.add_argument('--output', help='Optional output image. e.g. kp_dataset.svg')
     p_loader.add_argument('--mhd_x', help='Optional output mhd image for training input. e.g. kp_dataset.mhd')
     p_loader.add_argument('--mhd_y', help='Optional output mhd image for training output. e.g. kp_dataset.mhd')
-    p_loader.add_argument('-l','--crop_label_names', help='Label names for cropping', nargs='*', type=str)
+    p_loader.add_argument('-l', '--crop_label_names', help='Label names for cropping', nargs='*', type=str)
     p_loader.add_argument('--clahe', help='Apply CLAHE', action='store_true')
 
     def command_loader(args):
@@ -246,7 +257,16 @@ def main():
         flip_pairs = settings.FLIP_PAIRS
         down_factor = 256
         crop_label_names = args.crop_label_names if args.crop_label_names else []
-        xs, kps = load_dataset(df.sample(n=args.rows), args.height, Path(data_root), label_names, 4, down_factor, args.clahe, crop_label_names)
+        xs, kps = load_dataset(
+            df.sample(n=args.rows),
+            args.height,
+            data_root,
+            label_names,
+            4,
+            down_factor,
+            args.clahe,
+            crop_label_names,
+        )
 
         print(len(xs), len(kps))
 
@@ -301,7 +321,7 @@ def main():
     p_test_loader.add_argument(
         '--transform', help='Transformation: %(default)s', choices=['random', 'base'], default='random'
     )
-    p_test_loader.add_argument('-l','--crop_label_names', help='Label names for cropping', nargs='*', type=str)
+    p_test_loader.add_argument('-l', '--crop_label_names', help='Label names for cropping', nargs='*', type=str)
     p_test_loader.add_argument('--clahe', help='Apply CLAHE', action='store_true')
 
     def command_test_loader(args):
@@ -323,7 +343,16 @@ def main():
         crop_label_names = args.crop_label_names if args.crop_label_names else []
         logger.info("Load dataset")
         print(df.iloc[238].filename)
-        xs, kps = load_dataset(df.iloc[238:239], args.height, Path(data_root), label_names, args.workers, down_factor, args.clahe, crop_label_names)
+        xs, kps = load_dataset(
+            df,
+            args.height,
+            data_root,
+            label_names,
+            args.workers,
+            down_factor,
+            args.clahe,
+            crop_label_names,
+        )
 
         print(len(xs), len(kps))
 
