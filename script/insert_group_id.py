@@ -44,6 +44,8 @@ def filepath2groupid(filepath: str) -> str:
     filepath = Path(filepath.replace('\\', '/')).name
     if filepath.startswith("OSC"):
         group_id = filepath.split("_")[0]
+    elif filepath.startswith("Dairo"):
+        group_id = filepath.split("_")[0]
     elif filepath.startswith("CMCAISY"):
         m = re.search(r"\d+", filepath)
         if m is None:
