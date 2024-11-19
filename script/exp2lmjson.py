@@ -8,7 +8,7 @@ from tqdm import tqdm
 
 parser = argparse.ArgumentParser(description='From ndjson for exp to ndjson of labelme.')
 parser.add_argument('input', help='Input ndjson filename. "-" to use stdin', metavar='<input>')
-parser.add_argument('output', help='Output directory', metavar='<output>')
+parser.add_argument('output', help='Output directory or ndjson', metavar='<output>')
 args = parser.parse_args()
 outdir = Path(args.output)
 
@@ -40,13 +40,12 @@ for data_line in tqdm(exp_data):
         "version": "4.5.7",
         'flags': {f: True for f in flags},
         'shapes': new_shapes,
-        'imagePath': image_path.name,
+        'imagePath': old.imagePath,
         'imageData': None,
         'imageHeight': old.imageHeight,
         'imageWidth': old.imageWidth,
     }
     new = labelme_utils.LabelMe.model_validate(new_dict)
-
 
     if outdir.suffix == '.ndjson':
         new_line = new.into_labelme_line(data_line.filename)
