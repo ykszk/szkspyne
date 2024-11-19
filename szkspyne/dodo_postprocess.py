@@ -22,6 +22,25 @@ IMAGE_TYPES = ['ap_whole', 'lateral_whole']
 TGT_PCA = 'pca_ap_whole_L4.npz'
 
 
+def task_split():
+    '''
+    Split y_pred.mha into subsets
+    '''
+    script = SCRIPT_DIR / 'split_exp_result.py'
+    for fold_dir in FOLD_DIRS:
+        infile1 = fold_dir / 'y_pred.mha'
+        infile2 = fold_dir / 'test.ndjson'
+        action = ['python', script, infile1, infile2, fold_dir]
+        targets = [fold_dir / f'y_pred_{image_type}.mha' for image_type in IMAGE_TYPES]
+        targets += [fold_dir / f'test_{image_type}.ndjson' for image_type in IMAGE_TYPES]
+        yield {
+            'name': fold_dir.name,
+            'actions': [action],
+            'file_dep': [infile1, infile2],
+            'targets': targets,
+        }
+
+
 def task_pca():
     '''
     Create pca models
@@ -30,7 +49,7 @@ def task_pca():
     for fold_dir in FOLD_DIRS:
         infile = fold_dir / 'train_val.ndjson'
         outfile = fold_dir / TGT_PCA
-        action = ['python', script, infile, fold_dir, '--mirror']
+        action = ['python', script, infile, fold_dir, '--mirror', '--ext']
         yield {
             'name': fold_dir.name,
             'actions': [action],
@@ -210,21 +229,34 @@ def task_collect():
 
 
 def task_ref():
-    infile = RESULT_DIR / 'manual_annotation.ndjson'
     script = SCRIPT_DIR / 'exp2lmjson.py'
     for image_type in IMAGE_TYPES:
-        c1 = f'grep {image_type} {infile}'
+        file_dep = [fold_dir / f'test_{image_type}.ndjson' for fold_dir in FOLD_DIRS]
         outdir = RESULT_DIR / f'reference/keypoints/{image_type}'
         outdir.mkdir(parents=True, exist_ok=True)
-        outfile = outdir / 'final_keypoints.ndjson'
-        c2 = f'python {script} - {outfile}'
-        action = ' | '.join([c1, c2])
+        outfile = outdir / 'final_keypoints_exp.ndjson'
+
         yield {
-            'name': image_type,
-            'actions': [action],
+            'name': f'cat-test-{image_type}',
+            'actions': [
+                (
+                    concat,
+                    [file_dep, outfile],
+                )
+            ],
+            'file_dep': file_dep,
+            'targets': [outfile],
+            # 'clean': True,
+        }
+
+        infile = outfile
+        outfile = outdir / 'final_keypoints.ndjson'
+
+        yield {
+            'name': f'exp2lm-{image_type}',
+            'actions': [['python', script, infile, outfile]],
             'file_dep': [infile],
             'targets': [outfile],
-            'clean': True,
         }
 
 
@@ -294,7 +326,6 @@ def task_measure():
                 if subdir == 'reference':
                     # extension of imagePath from dcm to jpg
                     pipeline.append("jq -c '.content[\"imagePath\"] |= sub(\".dcm\"; \".jpg\")'")
-                    
 
                 script = SRC_DIR / 'measure_and_draw.py'
                 parent_dir = SRC_DIR / '../../data/annotation/images/all'
