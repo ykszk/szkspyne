@@ -63,13 +63,9 @@ def measure_json(
     line_colors: Dict[str, str],
     image_type: str,
     html_filename_title: tuple[Optional[Path], str],
-    hide: List[str],
+    hide: Optional[List[str]],
     imagedb: Optional[str],
 ):
-
-    d_visibility = defaultdict(lambda: 'visible')
-    d_visibility.update({gid: 'hidden' for gid in hide})
-
     img = None
     if imagedb:
         lm_data = json.loads(lm_json)
@@ -109,8 +105,7 @@ def main():
     parser.add_argument('--title', help='html title', default='Scoliosis Measuaraments')
     parser.add_argument('--image_type', help='Image type', choices=['ap', 'lateral'], default='ap')
     parser.add_argument('--imagedb', help='image database filename for heatmap overlay')
-    parser.add_argument('--hide', help='Hide specified drawings', nargs='*', default=[])
-
+    parser.add_argument('--hide', help='Hide specified drawings', nargs='*', default=None)
     parser.add_argument('--resize', help='Resize parameter. default: %(default)s', type=str, default="1024x1024")
     # parser.add_argument('--slopes', help='Add slopes to measuremens json', action='store_true')
 

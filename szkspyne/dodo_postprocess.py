@@ -260,8 +260,15 @@ def task_ref():
         }
 
 
+AP_HIDE = (
+    'T1TiltAngle CoronalBalance ClavicleAngle ShoulderHeight PelvicObliquity SacralObliquity LegLengthDiscrepancy'
+)
+LATERAL_HIDE = 'PelvicIncidence PelvicTilt SacralSlope L5IncidenceAngle PelvicRadiusAngle LumbosacralAngle'
+hide_dict = {'ap_whole': AP_HIDE, 'lateral_whole': LATERAL_HIDE}
+
+
 MES_HIDE = 'CurveApex SpinalLine APT CoronalBalance T1Tilt ClavicleAngle ShoulderHeight Pelvis FemoralHead PelvicObliquity LegLength SacralObliquity Mid/LowerThoracicKyphosis ProximalThoracicKyphosis SacralSlope PelvicIncidence PelvicRadiusAngle L5IncidenceAngle LumbosacralAngle'
-JQ_REMOVE_BEND = '. | select(.flags."除外" or .flags."左屈" or .flags."右屈" or .flags."先天性側彎"|not)'
+JQ_REMOVE_BEND = '. | select(.content.flags."除外" or .content.flags."左屈" or .content.flags."右屈" or .content.flags."先天性側彎"|not)'
 ALGO = 'no-cross2'
 
 
@@ -290,6 +297,13 @@ def task_curve():
             }
 
 
+def remove_bend(infile, outfile):
+    import subprocess
+
+    with open(outfile, 'w') as wfd:
+        subprocess.run(['jq', '-c', JQ_REMOVE_BEND, infile], stdout=wfd)
+
+
 def task_native():
     '''
     Convert labels to native format
@@ -299,8 +313,21 @@ def task_native():
         subdirs = ['reference', 'auto']
         for subdir in subdirs:
             infile = RESULT_DIR / subdir / 'keypoints' / image_type / f'final_keypoints.ndjson'
-            file_dep = [infile, db_phony]
-            outfile = infile.with_name(infile.name.replace('final_keypoints', 'final_keypoints_native'))
+            outfile = infile.with_name('no-bend_final_keypoints.ndjson')
+
+            # remove bending
+            yield {
+                'name': f'remove-bend-{image_type}-{subdir}',
+                'actions': [
+                    (remove_bend, [infile, outfile]),
+                ],
+                'file_dep': [infile, db_phony],
+                'targets': [outfile],
+            }
+
+            # measure
+            infile = outfile
+            outfile = infile.with_name('no-bend_final_keypoints_native.ndjson')
             from_format = 'Labelme'
             to_format = 'ScoliosisCoronal' if image_type == 'ap_whole' else 'ScoliosisSagittal'
             yield {
@@ -319,12 +346,12 @@ def task_native():
                         '--spacing',
                     ]
                 ],
-                'file_dep': file_dep,
+                'file_dep': [infile],
                 'targets': [outfile],
             }
 
             infile = outfile
-            outfile = RESULT_DIR / subdir / f'measures_{image_type}.ndjson'
+            outfile = RESULT_DIR / subdir / f'no-bend_measures_{image_type}.ndjson'
             command = "coronal" if image_type == "ap_whole" else "sagittal"
             yield {
                 'name': f'measure-{image_type}-{subdir}',
@@ -332,11 +359,40 @@ def task_native():
                 'file_dep': [infile],
                 'targets': [outfile],
             }
+
+            # draw
+            script = SRC_DIR / 'measure_and_draw.py'
+            yield {
+                'name': f'draw-{image_type}-{subdir}',
+                'actions': [
+                    [
+                        'python',
+                        script,
+                        '--config',
+                        SRC_DIR / '../../data/annotation/config.yaml',
+                        '--resize',
+                        '1024x1024',
+                        '--image_type',
+                        image_type.split('_')[0],
+                        '--title',
+                        f'{subdir} {image_type}',
+                        'batch',
+                        infile,
+                        RESULT_DIR / subdir / image_type,
+                        '--html',
+                        '--workers',
+                        '4',
+                    ]
+                ],
+                'file_dep': [infile],
+                'targets': [],
+            }
+
         scirpt = SCRIPT_DIR / 'compare_measures.py'
-        infile1 = RESULT_DIR / 'reference' / f'measures_{image_type}.ndjson'
-        infile2 = RESULT_DIR / 'auto' / f'measures_{image_type}.ndjson'
-        outfile = RESULT_DIR / f'measures_{image_type}_diff.ndjson'
-        outifle2 = RESULT_DIR / f'measures_{image_type}_diff.csv'
+        infile1 = RESULT_DIR / 'reference' / f'no-bend_measures_{image_type}.ndjson'
+        infile2 = RESULT_DIR / 'auto' / f'no-bend_measures_{image_type}.ndjson'
+        outfile = RESULT_DIR / f'no-bend_measures_{image_type}_diff.ndjson'
+        outifle2 = RESULT_DIR / f'no-bend_measures_{image_type}_diff.csv'
         yield {
             'name': f'diff-{image_type}',
             'actions': [['python', scirpt, infile1, infile2, outfile, '--dataframe', outifle2]],
@@ -348,7 +404,7 @@ def task_native():
 VARIANTS = ['best_indices', 'closest_indices']
 
 
-def task_measure():
+def _task_measure():
     '''
     Measure and draw into html files
     '''
