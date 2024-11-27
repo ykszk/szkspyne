@@ -1,44 +1,54 @@
-from typing import Any, Dict,  Union
+from typing import Annotated, Any, Dict, Optional, Union
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Discriminator, Tag
+import pandas as pd
 
 
 class MeasureResult(BaseModel):
 
     class Ok(BaseModel):
-        Ok: Union[float, list[float]]
+        Ok: float
 
-        def __init__(self, Ok: Union[float, list[float]]):
-            super().__init__(Ok=Ok)
-
-        def is_ok(self):
-            return True
-        
-        def is_error(self):
-            return False
+        def value(self):
+            return self.Ok
 
     class Error(BaseModel):
         Err: Any
 
-        def __init__(self, Err: Dict[str, Any]):
-            super().__init__(Err=Err)
+        def value(self):
+            return self.Err
 
-        def is_ok(self):
-            return False
-        
-        def is_error(self):
-            return True
+    @staticmethod
+    def get_discriminator_value(v: Any) -> Optional[str]:
+        if isinstance(v, dict):
+            if 'Ok' in v:
+                return 'Ok'
+            elif 'Err' in v:
+                return 'Err'
+            else:
+                return None
 
+        if hasattr(v, 'Ok'):
+            return 'Ok'
+        elif hasattr(v, 'Err'):
+            return 'Err'
+        else:
+            return None
 
-    measurements: Dict[str, Union[Ok, Error]]
+    measurements: Dict[
+        str,
+        Annotated[
+            Union[Annotated[Ok, Tag('Ok')], Annotated[Error, Tag('Err')]], Discriminator(get_discriminator_value)
+        ],
+    ]
     unit_of_length: str
 
     def ok_measurements(self):
         return {k: v for k, v in self.measurements.items() if isinstance(v, self.Ok)}
-    
+
     def error_measurements(self):
         return {k: v for k, v in self.measurements.items() if isinstance(v, self.Error)}
-    
+
     @classmethod
     def differences(cls, a: 'MeasureResult', b: 'MeasureResult') -> 'MeasureResult':
         '''
@@ -51,10 +61,12 @@ class MeasureResult(BaseModel):
             ak = a.measurements.get(k)
             bk = b.measurements.get(k)
             if isinstance(ak, cls.Ok) and isinstance(bk, cls.Ok):
-                measurements[k] = cls.Ok(ak.Ok - bk.Ok)
+                measurements[k] = cls.Ok(Ok=ak.Ok - bk.Ok)
+                pass
             elif isinstance(ak, cls.Error):
                 measurements[k] = ak.model_copy()
             else:
+                assert isinstance(bk, cls.Error)
                 measurements[k] = bk.model_copy()
         return MeasureResult(measurements=measurements, unit_of_length=a.unit_of_length)
 
@@ -63,7 +75,21 @@ class MeasureResult(BaseModel):
         Calculate the differences (self - other) between two MeasureResult objects.
         '''
         return MeasureResult.differences(self, other)
-    
+
+
 class MeasureResultLine(BaseModel):
     filename: str
     content: MeasureResult
+
+    @classmethod
+    def to_dataframe(cls, lines: list['MeasureResultLine']) -> pd.DataFrame:
+        '''
+        Convert a list of MeasureResultLine objects to a pandas DataFrame.
+        '''
+        rows = []
+        for line in lines:
+            row: Dict[str, Any] = {'filename': line.filename, 'unit_of_length': line.content.unit_of_length}
+            row.update({k: v.value() for k, v in line.content.measurements.items()})
+            rows.append(row)
+
+        return pd.DataFrame(rows)

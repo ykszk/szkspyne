@@ -86,6 +86,7 @@ json_str2 = '''
 }
 '''
 
+
 class TestScolrs(unittest.TestCase):
 
     def test_measure_result(self):
@@ -93,7 +94,9 @@ class TestScolrs(unittest.TestCase):
         self.assertIsInstance(result.measurements['CobbPT'], MeasureResult.Ok)
         self.assertEqual(result.measurements['CobbPT'].Ok, -19.35)
         self.assertIsInstance(result.measurements['ShoulderHeight'], MeasureResult.Error)
-        self.assertEqual(result.measurements['ShoulderHeight'].Err, {'InvalidNumberOfPoints': {'IncorrectNumberOfPoints': [2, 0]}})
+        self.assertEqual(
+            result.measurements['ShoulderHeight'].Err, {'InvalidNumberOfPoints': {'IncorrectNumberOfPoints': [2, 0]}}
+        )
         self.assertEqual(result.unit_of_length, 'px')
 
         oks = result.ok_measurements()

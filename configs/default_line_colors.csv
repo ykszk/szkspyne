@@ -1,12 +1,16 @@
 name,color
 PT,red
+CobbPT,red
 MT,green
+CobbMT,green
 TLL,blue
+CobbTLL,blue
 CurveApex,orange
 SpinalLine,orange
 APT,green
 CoronalBalance,blue
 T1Tilt,blue
+T1TiltAngle,blue
 ClavicleAngle,green
 ShoulderHeight,magenta
 PelvicObliquity,cyan

@@ -290,6 +290,61 @@ def task_curve():
             }
 
 
+def task_native():
+    '''
+    Convert labels to native format
+    '''
+    db_phony = RESULT_DIR / PHONY_DB_TGT
+    for image_type in IMAGE_TYPES:
+        subdirs = ['reference', 'auto']
+        for subdir in subdirs:
+            infile = RESULT_DIR / subdir / 'keypoints' / image_type / f'final_keypoints.ndjson'
+            file_dep = [infile, db_phony]
+            outfile = infile.with_name(infile.name.replace('final_keypoints', 'final_keypoints_native'))
+            from_format = 'Labelme'
+            to_format = 'ScoliosisCoronal' if image_type == 'ap_whole' else 'ScoliosisSagittal'
+            yield {
+                'name': f'native-{image_type}-{subdir}',
+                'actions': [
+                    [
+                        'neckrs',
+                        'conv',
+                        infile,
+                        outfile,
+                        '--from',
+                        from_format,
+                        '--to',
+                        to_format,
+                        '--ndjson',
+                        '--spacing',
+                    ]
+                ],
+                'file_dep': file_dep,
+                'targets': [outfile],
+            }
+
+            infile = outfile
+            outfile = RESULT_DIR / subdir / f'measures_{image_type}.ndjson'
+            command = "coronal" if image_type == "ap_whole" else "sagittal"
+            yield {
+                'name': f'measure-{image_type}-{subdir}',
+                'actions': [['scolrs', 'measure', infile, outfile, command]],
+                'file_dep': [infile],
+                'targets': [outfile],
+            }
+        scirpt = SCRIPT_DIR / 'compare_measures.py'
+        infile1 = RESULT_DIR / 'reference' / f'measures_{image_type}.ndjson'
+        infile2 = RESULT_DIR / 'auto' / f'measures_{image_type}.ndjson'
+        outfile = RESULT_DIR / f'measures_{image_type}_diff.ndjson'
+        outifle2 = RESULT_DIR / f'measures_{image_type}_diff.csv'
+        yield {
+            'name': f'diff-{image_type}',
+            'actions': [['python', scirpt, infile1, infile2, outfile, '--dataframe', outifle2]],
+            'file_dep': [infile1, infile2],
+            'targets': [outfile, outifle2],
+        }
+
+
 VARIANTS = ['best_indices', 'closest_indices']
 
 
@@ -323,26 +378,24 @@ def task_measure():
                     pass
                 pipeline.append(c2)
 
-                if subdir == 'reference':
-                    # extension of imagePath from dcm to jpg
-                    pipeline.append("jq -c '.content[\"imagePath\"] |= sub(\".dcm\"; \".jpg\")'")
+                # if subdir == 'reference':
+                #     # extension of imagePath from dcm to jpg
+                #     pipeline.append("jq -c '.content[\"imagePath\"] |= sub(\".dcm\"; \".jpg\")'")
 
                 script = SRC_DIR / 'measure_and_draw.py'
-                parent_dir = SRC_DIR / '../../data/annotation/images/all'
                 config = SRC_DIR / '../../data/annotation/config.yaml'
                 outdir = RESULT_DIR / subdir / f'{image_type}{suffix}'
                 outdir.mkdir(parents=True, exist_ok=True)
-                ndjson = RESULT_DIR / subdir / f'measures_{image_type}{suffix}.ndjson'
                 imagedb = HM_IMAGE_DB
-                c3 = f'python {script} --hide {MES_HIDE} --height 1200 --points --numbers --image_type {image_type.split("_")[0]} --parent_dir {parent_dir} --title "{subdir} {image_type}" --config {config} --imagedb {imagedb} batch - {outdir} --html --ndjson {ndjson} --workers 4'
+                c3 = f'python {script} --hide {MES_HIDE} --resize 1024x1024 --image_type {image_type.split("_")[0]} --title "{subdir} {image_type}" --config {config} --imagedb {imagedb} batch - {outdir} --html --workers 4'
                 pipeline.append(c3)
                 action = ' | '.join(pipeline)
 
                 yield {
-                    'name': f'{image_type}-{subdir}{suffix}',
+                    'name': f'draw-{image_type}-{subdir}{suffix}',
                     'actions': [action],
                     'file_dep': file_dep,
-                    'targets': [ndjson],
+                    'targets': [],
                     'clean': True,
                 }
 
