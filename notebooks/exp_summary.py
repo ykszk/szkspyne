@@ -13,7 +13,7 @@ import pandas as pd
 import seaborn as sns
 import sklearn.metrics
 from bs4 import BeautifulSoup
-from IPython.display import HTML, display
+from IPython.core.display import display, HTML
 from jinja2 import Environment, FileSystemLoader
 from scipy import stats
 
@@ -24,7 +24,7 @@ from szkspyne.utils.stats import pearsonr_ci
 
 mpl.rcParams["figure.dpi"] = 100
 
-sns.set_theme(context="notebook", style="whitegrid")#, font="IPAexGothic")
+sns.set_theme(context="notebook", style="whitegrid")  # , font="IPAexGothic")
 
 template_directory = Path(szkspyne.__file__).parent / 'template'
 env = Environment(loader=FileSystemLoader(template_directory, encoding='utf8'))
@@ -34,7 +34,6 @@ result_dir = Path(os.environ["INPUT_DIR"])
 include_visualization = not ('NO_VIS' in os.environ)
 
 # %%
-
 
 
 HIDDEN_COMPONENTS = os.environ.get('HIDE', 'Heatmap').split(' ')
@@ -152,7 +151,10 @@ for i, d in enumerate([DEF_AP, DEF_LAT]):
     for datatype in ['reference', 'auto']:
         with open(result_dir / f'{datatype}/measures_{name}_whole.ndjson') as f:
             jsons = [json.loads(l) for l in f]
-        flags = [[(Path(obj['filename']).stem, k) for k in obj['content']['flags'].keys() if k.startswith('L')] for obj in jsons]
+        flags = [
+            [(Path(obj['filename']).stem, k) for k in obj['content']['flags'].keys() if k.startswith('L')]
+            for obj in jsons
+        ]
         flags = {f[0][0]: f[0][1] for f in flags if f and f[0][0] in filename_set}
         ref_auto_flags.append(flags)
     ref_flags, pred_flags = ref_auto_flags
@@ -217,7 +219,9 @@ for i, d in enumerate([DEF_AP, DEF_LAT]):
     for col_name in ['Heatmap', 'Points', 'VertebralNumber', 'CurveApex', 'SpinalLine'] + [
         c[5:] for c in df.columns if c.startswith('pred ') and not c.endswith('curve_indices')
     ]:
-        cbs.append(t_cb.render(name=col_name, label=col_name, checked='' if col_name in HIDDEN_COMPONENTS else 'checked'))
+        cbs.append(
+            t_cb.render(name=col_name, label=col_name, checked='' if col_name in HIDDEN_COMPONENTS else 'checked')
+        )
     cbs = '\n'.join(cbs)
     cbs = (
         '<h2>Show/Hide</h2>'

@@ -21,6 +21,10 @@ IMAGE_TYPES = ['ap_whole', 'lateral_whole']
 
 TGT_PCA = 'pca_ap_whole_L4.npz'
 
+OUTPUT_MAIN_DIR = RESULT_DIR / 'postprocess'
+if RESULT_DIR.exists():
+    OUTPUT_MAIN_DIR.mkdir(exist_ok=True, parents=True)
+
 
 def task_split():
     '''
@@ -325,7 +329,7 @@ def task_native():
                 'targets': [outfile],
             }
 
-            # measure
+            # convert from labelme to native
             infile = outfile
             outfile = infile.with_name('no-bend_final_keypoints_native.ndjson')
             from_format = 'Labelme'
@@ -350,6 +354,7 @@ def task_native():
                 'targets': [outfile],
             }
 
+            # measure
             infile = outfile
             outfile = RESULT_DIR / subdir / f'no-bend_measures_{image_type}.ndjson'
             command = "coronal" if image_type == "ap_whole" else "sagittal"
@@ -358,6 +363,17 @@ def task_native():
                 'actions': [['scolrs', 'measure', infile, outfile, command]],
                 'file_dep': [infile],
                 'targets': [outfile],
+            }
+
+            # convert ndjson to csv
+            script = SRC_DIR / 'utils/scolrs.py'
+            yield {
+                'name': f'ndjson2csv-{image_type}-{subdir}',
+                'actions': [
+                    ['python', script, outfile, outfile.with_suffix('.csv')],
+                ],
+                'file_dep': [outfile],
+                'targets': [outfile.with_suffix('.csv')],
             }
 
             # draw
@@ -391,8 +407,8 @@ def task_native():
         scirpt = SCRIPT_DIR / 'compare_measures.py'
         infile1 = RESULT_DIR / 'reference' / f'no-bend_measures_{image_type}.ndjson'
         infile2 = RESULT_DIR / 'auto' / f'no-bend_measures_{image_type}.ndjson'
-        outfile = RESULT_DIR / f'no-bend_measures_{image_type}_diff.ndjson'
-        outifle2 = RESULT_DIR / f'no-bend_measures_{image_type}_diff.csv'
+        outfile = OUTPUT_MAIN_DIR / f'no-bend_measures_{image_type}_diff.ndjson'
+        outifle2 = OUTPUT_MAIN_DIR / f'no-bend_measures_{image_type}_diff.csv'
         yield {
             'name': f'diff-{image_type}',
             'actions': [['python', scirpt, infile1, infile2, outfile, '--dataframe', outifle2]],

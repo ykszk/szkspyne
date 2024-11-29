@@ -93,3 +93,27 @@ class MeasureResultLine(BaseModel):
             rows.append(row)
 
         return pd.DataFrame(rows)
+
+
+import sys
+import argparse
+
+
+def main():
+    parser = argparse.ArgumentParser("Convert ndjson to csv")
+    parser.add_argument('ndjson', type=str, help='ndjson file to load')
+    parser.add_argument('csv', type=str, help='csv file to save')
+    args = parser.parse_args()
+
+    with open(args.ndjson, 'r') as f:
+        lines = f.readlines()
+    lines = [MeasureResultLine.model_validate_json(line) for line in lines]
+
+    df = MeasureResultLine.to_dataframe(lines)
+    df.to_csv(args.csv, index=False)
+
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())
