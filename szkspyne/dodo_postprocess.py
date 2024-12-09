@@ -210,7 +210,8 @@ def task_collect():
         jq = "jq -c 'del(.pca)'"
         flags = FLAGS[image_type]
         join = f"lmrs join --mode left --missing continue - {flags}"
-        action = ' | '.join([proc, jq, join]) + f' > {outfile}'
+        sort_points = 'lmrs sort - --labels TL,TR,BL,BR --inv-label --by-x'
+        action = ' | '.join([proc, jq, join, sort_points]) + f' > {outfile}'
         yield {
             'name': f'mod-{image_type}',
             'actions': [action],
