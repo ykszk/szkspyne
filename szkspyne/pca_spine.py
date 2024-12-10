@@ -102,6 +102,7 @@ if __name__ == '__main__':
     )
     parser.add_argument('output', help='Output directory', metavar='<output>', nargs='?', default='.')
     parser.add_argument('--mirror', help='Add horizontally mirrored point set to the dataset', action='store_true')
+    parser.add_argument('--ext', help='Create extended models', action='store_true')
 
     args, unknown = parser.parse_known_args()
     if unknown:
@@ -120,13 +121,15 @@ if __name__ == '__main__':
         PointConfig('L4', 'lateral_whole', VERT_LABELS, L4_POINT_COUNTS),
         PointConfig('L5', 'lateral_whole', VERT_LABELS, L5_POINT_COUNTS),
         PointConfig('L6', 'lateral_whole', VERT_LABELS, L6_POINT_COUNTS),
-        # PointConfig('L4-EXT', 'ap_whole', LABELS_EXT,
-        #             L4_POINT_COUNTS + [2] * 5),
-        # PointConfig('L5-EXT', 'ap_whole', LABELS_EXT,
-        #             L5_POINT_COUNTS + [2] * 5),
-        # PointConfig('L6-EXT', 'ap_whole', LABELS_EXT,
-        #             L6_POINT_COUNTS + [2] * 5),
     ]
+    if args.ext:
+        CONFIGS.extend(
+            [
+                PointConfig('L4-EXT', 'ap_whole', LABELS_EXT, L4_POINT_COUNTS + [2] * 5),
+                PointConfig('L5-EXT', 'ap_whole', LABELS_EXT, L5_POINT_COUNTS + [2] * 5),
+                PointConfig('L6-EXT', 'ap_whole', LABELS_EXT, L6_POINT_COUNTS + [2] * 5),
+            ]
+        )
     with open(args.input) as f:
         all_data = [labelme_utils.ShapeDictLine.model_validate_json(line) for line in f]
     logger.info('Original data: %d', len(all_data))
