@@ -1,5 +1,6 @@
 # %%
 from pathlib import Path
+import os
 
 import pandas as pd
 from IPython.core.display import HTML
@@ -11,9 +12,10 @@ def display_wrapped(tag: str, inner: str):
     display(HTML(wrapped))
 
 
-result_dir = Path('/poseidon/users/suzuki/projects/scoliosis/result/exp20241113')
+result_dir = Path(os.environ.get('RESULT_DIR', '/poseidon/users/suzuki/projects/scoliosis/result/exp20241113'))
 
-image_type = 'ap_whole'
+image_type = os.environ.get('IMAGE_TYPE', 'ap_whole')
+
 display_wrapped('h1', f'Analyze results for {image_type}')
 df_ref = pd.read_csv(result_dir / f'reference/no-bend_measures_{image_type}.csv', index_col='filename')
 df_ai = pd.read_csv(result_dir / f'auto/no-bend_measures_{image_type}.csv', index_col='filename')
@@ -79,7 +81,8 @@ display(additional_desc(df_ref, df_ai).T)
 # %%
 import seaborn as sns
 from matplotlib import pyplot as plt
-
+import subprocess
+import numpy as np
 
 sns.set_theme(context="notebook", style="whitegrid")
 
@@ -88,9 +91,80 @@ display_wrapped('h2', 'Plots')
 df_merged = pd.concat([df_ref, df_ai], axis=1)
 df_merged.columns = pd.MultiIndex.from_product([['Reference', 'AI'], df_ref.columns])
 
-for col in ['CobbPT', 'CobbMT', 'CobbTLL']:
+cols = ['CobbPT', 'CobbMT', 'CobbTLL']
+if image_type == 'lateral_whole':
+    cols = [
+        'ThoracicKyphosis',
+        'ProximalThoracicKyphosis',
+        'MidLowerThoracicKyphosis',
+        'LumbarLordosis',
+    ]
+
+for col in cols:
     display_wrapped('h3', col)
     sns.scatterplot(data=df_merged, x=('Reference', col), y=('AI', col))
     plt.xlabel('Reference')
     plt.ylabel('AI')
     plt.show()
+
+    df_sorted = df_diff[col].abs().sort_values(ascending=False).dropna()
+    N = 5
+    worst = (
+        "Worst",
+        slice(0, N),
+    )
+    first_q = (
+        "First quartile",
+        slice(1 * (len(df_sorted) // 4) - N // 2, int(1 * (len(df_sorted) // 4) + np.ceil(N / 2))),
+    )
+    second_q = (
+        "Second quartile",
+        slice(len(df_sorted) // 2 - N // 2, int(len(df_sorted) // 2 + np.ceil(N / 2))),
+    )
+    third_q = (
+        "Third quartile",
+        slice(3 * (len(df_sorted) // 4) - N // 2, int(3 * (len(df_sorted) // 4) + np.ceil(N / 2))),
+    )
+    # p_90 = (
+    #     "90 percentile",
+    #     slice(9 * (len(df_sorted) // 10) - N // 2, int(9 * (len(df_sorted) // 10) + np.ceil(N / 2))),
+    # )
+    # p_95 = (
+    #     "95 percentile",
+    #     slice(95 * (len(df_sorted) // 100) - N // 2, int(95 * (len(df_sorted) // 100) + np.ceil(N / 2))),
+    # )
+    # p_99 = (
+    #     "99 percentile",
+    #     slice(
+    #         99 * (len(df_sorted) // 100) - N // 2,
+    #         min(len(df_sorted), int(99 * (len(df_sorted) // 100) + np.ceil(N / 2))),
+    #     ),
+    # )
+    # best = (
+    #     "Best",
+    #     slice(-N, None),
+    # )
+
+    for name, sl in [worst, first_q, second_q, third_q]:
+        df_sub = pd.DataFrame(df_sorted[sl])
+        display_wrapped('h4', name)
+        display(df_sub)
+
+        # create side by side comparison
+        ref_render_dir = result_dir / f'reference/{image_type}'
+        ai_render_dir = result_dir / f'auto/{image_type}'
+        side_by_side_dir = result_dir / f'postprocess/side_by_side'
+        side_by_side_dir.mkdir(exist_ok=True, parents=True)
+        filenames = []
+        for i, row in enumerate(df_sub.itertuples()):
+            fn = str(row.Index)
+            fn = fn[:-5]  # strip ".json"
+            ref_file = ref_render_dir / f'{fn}.html'
+            ai_file = ai_render_dir / f'{fn}.html'
+            filenames.extend([ref_file, ai_file])
+        out_file = side_by_side_dir / f'{image_type}_{col}_{name}.html'
+        title = f'{col} | First: reference, Second: AI'
+        args = ['neckrs', 'catalog', *filenames, out_file, '--title', title]
+        args = [str(arg) for arg in args]
+        # print(' '.join(args))
+        subprocess.check_output(args)

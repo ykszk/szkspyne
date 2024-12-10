@@ -211,7 +211,10 @@ def task_collect():
         flags = FLAGS[image_type]
         join = f"lmrs join --mode left --missing continue - {flags}"
         sort_points = 'lmrs sort - --labels TL,TR,BL,BR --inv-label --by-x'
-        action = ' | '.join([proc, jq, join, sort_points]) + f' > {outfile}'
+        pipeline = [proc, jq, join, sort_points]
+        if image_type == 'lateral_whole':
+            pipeline = [' '.join(['cat', str(infile)]), jq, join, sort_points]
+        action = ' | '.join(pipeline) + f' > {outfile}'
         yield {
             'name': f'mod-{image_type}',
             'actions': [action],
@@ -506,7 +509,7 @@ def task_alt():
     }
 
 
-def task_summary():
+def _task_summary():
     ''' '
     Create summary
     '''
@@ -552,6 +555,32 @@ def task_summary():
         action = ' | '.join([c1, c2])
         yield {
             'name': name,
+            'actions': [action],
+            'file_dep': file_dep,
+            'targets': [outfile],
+            'clean': True,
+        }
+
+
+def task_summary():
+    ''' '
+    Create summary
+    '''
+    file_dep = []
+    script = ROOT_DIR / 'notebooks/analyze_results.py'
+    for image_type in IMAGE_TYPES:
+        for subdir in ['auto', 'reference']:
+            dep = RESULT_DIR / subdir / f'no-bend_measures_{image_type}.csv'
+            file_dep.append(dep)
+
+    for image_type in IMAGE_TYPES:
+        outfile = OUTPUT_MAIN_DIR / f'summary_{image_type}.html'
+        title = f'{{"title":"summary {image_type}"}}'
+        c1 = f"jupytext --to ipynb --output - {script} --update-metadata '{title}'"
+        c2 = f'RESULT_DIR={RESULT_DIR} IMAGE_TYPE={image_type} jupyter nbconvert --stdin --to html --execute --no-input --output {outfile}'
+        action = ' | '.join([c1, c2])
+        yield {
+            'name': f'summary-{image_type}-{subdir}',
             'actions': [action],
             'file_dep': file_dep,
             'targets': [outfile],
