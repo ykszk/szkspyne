@@ -1,5 +1,6 @@
 import argparse
 import sys
+from pathlib import Path
 
 import numpy as np
 from szkmipy import mhd
@@ -48,14 +49,15 @@ def main():
     p_single.add_argument('--ch_as_z', help='Use channel as z axis', action='store_true')
     p_single.set_defaults(mode='single')  # not using func to enable lazy loading of the modules
 
-    p_batch = subparsers.add_parser('batch', help="Apply to a single image.")
-    p_batch.add_argument('--output', help='Optional output image. e.g. keypoints.svg')
+    p_batch = subparsers.add_parser('batch', help="Apply to a batch of images.")
+    p_batch.add_argument('--output', help='Output directory', type=Path)
 
-    p_batch.add_argument('input', help='Input directory:', metavar='<input>')
+    p_batch.add_argument('input', help='Input directory or text file containing files', metavar='<input>')
     add_model_params(p_batch)
     p_batch.add_argument('--ext', help='Input image file extension: %(default)s', default='.png')
     p_batch.add_argument('--labelme', help='Save labelme json file', action='store_true')
     p_batch.add_argument('--heatmap', help='Save heatmap', action='store_true')
+    p_batch.add_argument('--keep_image_path', help='Keep image path', action='store_true')
     p_batch.add_argument('--clahe', help='Clahe in preprocessing', action='store_true')
     p_batch.add_argument('--height', help='Image height: %(default)s', metavar='<int>', type=int, default=768)
     p_batch.add_argument('--workers', help='The number of workers: %(default)s', metavar='<int>', type=int, default=4)
@@ -74,7 +76,6 @@ def main():
     logzero.setup_default_logger(formatter=formatter)
     logger.info('Load modules')
 
-    from pathlib import Path
     from typing import Union
 
     import cv2
@@ -186,7 +187,11 @@ def main():
         logger.info('load images')
         indir = Path(args.input)
         n_jobs = args.workers
-        input_filenames = sorted(indir.glob('*' + args.ext))
+        if indir.is_file():
+            with open(indir) as f:
+                input_filenames = [Path(line.strip()) for line in f]
+        else:
+            input_filenames = sorted(indir.glob('*' + args.ext))
         if len(input_filenames) == 0:
             print("No image file found in ", args.input)
             return 1
@@ -244,9 +249,15 @@ def main():
 
                 filenames = [Path(fn) for fn in filenames]
                 original_shapes = list(zip(*[t.to('cpu').tolist() for t in original_shapes]))
-                image_filenames = [fn.name for fn in filenames]
+                if args.keep_image_path:
+                    image_filenames = [str(fn) for fn in filenames]
+                else:
+                    image_filenames = [fn.name for fn in filenames]
                 json_filenames = [fn.with_suffix('.json') if args.labelme else None for fn in filenames]
                 hm_filenames = [fn.with_suffix('.mha') if args.heatmap else None for fn in filenames]
+                if args.output:
+                    json_filenames = [args.output / fn.with_suffix('.json').name for fn in filenames]
+                    hm_filenames = [args.output / fn.with_suffix('.mha').name for fn in filenames]
                 for task_args in zip(pred, original_shapes, image_filenames, json_filenames, hm_filenames):
                     task_args = list(task_args) + [args.ch_as_z]
                     pool.apply_async(worker, (task_args,), callback=callback, error_callback=print)

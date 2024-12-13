@@ -1,7 +1,13 @@
 import os
 import sys
 from pathlib import Path
+from logzero import logger
 
+log_level = os.environ.get('LOG_LEVEL', 'INFO').upper()
+logger.setLevel(log_level)
+
+HOLD_OUT = bool(os.environ.get('HOLD_OUT', False))
+logger.debug(f'HOLD_OUT: {HOLD_OUT}')
 
 RESULT_DIR = Path(os.environ.get('RESULT_DIR', ''))
 if RESULT_DIR == '':
@@ -106,6 +112,47 @@ def task_heat2lm():
             }
 
 
+#  python3 /poseidon/users/suzuki/projects/scoliosis/code/szkspyne/fit_spine_model.py auto/ap_whole/ --output pca/ap_whole/ -m ../exp20241113/folds/0/pca_ap_whole_L?.npz --sigma 1 --max_iter 400 --l2_reg 0.001 --skipped skipped_ap.txt --jobs 4
+PCA_FIT_PARAMS = [
+    '--sigma',
+    '1',
+    '--max_iter',
+    '400',
+    '--l2_reg',
+    '0.001',
+    '--device',
+    'cpu',
+    '--jobs',
+    '4',
+]
+
+
+def task_holdout_fit():
+    if not HOLD_OUT:
+        return
+    script = SRC_DIR / 'fit_spine_model.py'
+    for image_type in IMAGE_TYPES:
+        indir = RESULT_DIR / 'auto/output' / image_type
+        outdir = RESULT_DIR / 'auto/pca' / image_type
+        outdir.mkdir(parents=True, exist_ok=True)
+
+        model_dir = Path(os.environ.get('MODEL_DIR'))
+        models = [
+            '-m',
+            model_dir / f'pca_{image_type}_L4.npz',
+            model_dir / f'pca_{image_type}_L5.npz',
+            model_dir / f'pca_{image_type}_L6.npz',
+        ]
+        params = PCA_FIT_PARAMS + ['--skipped', outdir / f'skipped_{image_type}.txt']
+        action = ['python', script, indir, '--output', outdir] + params + models
+        yield {
+            'name': f'holdout-fit-{image_type}',
+            'actions': [action],
+            'file_dep': [],
+            'targets': [],
+        }
+
+
 def task_fit():
     '''
     Fit PCA model
@@ -118,20 +165,8 @@ def task_fit():
             pca_model = fold_dir / TGT_PCA
             outdir = fold_dir / 'auto' / image_type
             outfile = outdir / 'pca_keypoints.ndjson'
-            params = [
-                '--sigma',
-                '1',
-                '--max_iter',
-                '400',
-                '--l2_reg',
-                '0.001',
-                '--device',
-                'cpu',
-                '--skipped',
-                outdir / 'skipped.txt',
-                '--jobs',
-                '4',
-            ]
+
+            params = PCA_FIT_PARAMS + ['--skipped', outdir / 'skipped.txt']
             models = [
                 '-m',
                 fold_dir / f'pca_{image_type}_L4.npz',
@@ -173,7 +208,10 @@ def task_flags():
         '.content.flags = (.content.flags - ["L4","L5","L6"])',
         '.content.flags |= reduce .[] as $flag ({}; .[$flag] = true)',
     ]
-    infile = RESULT_DIR / 'manual_annotation.ndjson'
+    if HOLD_OUT:
+        infile = RESULT_DIR / 'holdout_group_id_dicom_manual_annotation.ndjson'
+    else:
+        infile = RESULT_DIR / 'manual_annotation.ndjson'
     for image_type in IMAGE_TYPES:
         start = f"grep {image_type} {infile}"
         action = ' | '.join([start] + [f"jq -c '{j}'" for j in jqs])
@@ -182,10 +220,27 @@ def task_flags():
         yield {'name': f'flags-{image_type}', 'actions': [action], 'file_dep': [infile], 'targets': [target]}
 
 
+def _task_holdout_collect():
+    for image_type in IMAGE_TYPES:
+        indir = RESULT_DIR / 'auto/pca' / image_type
+        outfile = RESULT_DIR / 'auto/keypoints' / image_type / 'pca_keypoints.ndjson'
+        command = ['lmrs', 'ndjson', '--parent', 'remove', str(indir)]
+        action = ' '.join(command) + f' > {outfile}'
+        yield {
+            'name': f'cat-ref-auto-{image_type}',
+            'actions': [action],
+            'file_dep': [],
+            'targets': [outfile],
+        }
+
+
 def task_collect():
     '''
     Colelct results from splits
     '''
+    if HOLD_OUT:
+        yield from _task_holdout_collect()
+        return
     for image_type in IMAGE_TYPES:
         infiles = [fold / f'auto/{image_type}/pca_keypoints.ndjson' for fold in FOLD_DIRS]
         outdir = RESULT_DIR / 'auto/keypoints' / image_type
@@ -203,25 +258,7 @@ def task_collect():
             'targets': [outfile],
             'clean': True,
         }
-        script = SCRIPT_DIR / 'modify_ai_annotation.py'
-        infile = outfile
-        outfile = RESULT_DIR / 'auto/keypoints' / image_type / 'final_keypoints.ndjson'
-        proc = ' '.join([str(e) for e in ['python', script, image_type, infile, '--output', '-']])
-        jq = "jq -c 'del(.pca)'"
-        flags = FLAGS[image_type]
-        join = f"lmrs join --mode left --missing continue - {flags}"
-        sort_points = 'lmrs sort - --labels TL,TR,BL,BR --inv-label --by-x'
-        pipeline = [proc, jq, join, sort_points]
-        if image_type == 'lateral_whole':
-            pipeline = [' '.join(['cat', str(infile)]), jq, join, sort_points]
-        action = ' | '.join(pipeline) + f' > {outfile}'
-        yield {
-            'name': f'mod-{image_type}',
-            'actions': [action],
-            'file_dep': [infile, flags],
-            'targets': [outfile],
-            'clean': True,
-        }
+
     # heatmap image db
     infiles = []
     for image_type in IMAGE_TYPES:
@@ -236,8 +273,55 @@ def task_collect():
     }
 
 
-def task_ref():
-    script = SCRIPT_DIR / 'exp2lmjson.py'
+def task_modify_keypoints():
+    '''
+    Modify keypoints
+    '''
+    for image_type in IMAGE_TYPES:
+        script = SCRIPT_DIR / 'modify_ai_annotation.py'
+        outdir = RESULT_DIR / 'auto/keypoints' / image_type
+        outdir.mkdir(exist_ok=True, parents=True)
+        infile = outdir / 'pca_keypoints.ndjson'
+        outfile = outdir / 'final_keypoints.ndjson'
+        proc = ' '.join([str(e) for e in ['python', script, image_type, infile, '--output', '-']])
+        jq = "jq -c 'del(.pca)'"
+        flags = FLAGS[image_type]
+        join = f"lmrs join --mode left --missing continue - {flags}"
+        sort_points = 'lmrs sort - --labels TL,TR,BL,BR --inv-label --by-x'
+        pipeline = [proc, jq, join, sort_points]
+        # if image_type == 'lateral_whole':
+        #     pipeline = [' '.join(['cat', str(infile)]), jq, join, sort_points]
+        action = ' | '.join(pipeline) + f' > {outfile}'
+        yield {
+            'name': f'mod-{image_type}',
+            'actions': [action],
+            'file_dep': [infile, flags],
+            'targets': [outfile],
+            'clean': True,
+        }
+
+
+def _task_holdout_ref():
+    infile = RESULT_DIR / 'holdout_group_id_dicom_manual_annotation.ndjson'
+    for image_type in IMAGE_TYPES:
+        outdir = RESULT_DIR / f'reference/keypoints/{image_type}'
+        outdir.mkdir(parents=True, exist_ok=True)
+        outfile = outdir / 'final_keypoints_exp.ndjson'
+        jq_command = f'select(.content.flags | index("{image_type}")!=null)'
+
+        yield {
+            'name': f'holdout-ref-jq-{image_type}',
+            'actions': [f"jq -c '{jq_command}' {infile} > {outfile}"],
+            'file_dep': [],
+            'targets': [outfile],
+        }
+
+
+def task_ref_collect():
+    if HOLD_OUT:
+        yield from _task_holdout_ref()
+        return
+
     for image_type in IMAGE_TYPES:
         file_dep = [fold_dir / f'test_{image_type}.ndjson' for fold_dir in FOLD_DIRS]
         outdir = RESULT_DIR / f'reference/keypoints/{image_type}'
@@ -257,14 +341,28 @@ def task_ref():
             # 'clean': True,
         }
 
-        infile = outfile
-        outfile = outdir / 'final_keypoints.ndjson'
+
+def task_ref_exp2lm():
+    script = SCRIPT_DIR / 'exp2lmjson.py'
+    for image_type in IMAGE_TYPES:
+        outdir = RESULT_DIR / f'reference/keypoints/{image_type}'
+        outdir.mkdir(parents=True, exist_ok=True)
+        infile = outdir / 'final_keypoints_exp.ndjson'
+        outfile = outdir / 'final_keypoints_.ndjson'
 
         yield {
             'name': f'exp2lm-{image_type}',
             'actions': [['python', script, infile, outfile]],
             'file_dep': [infile],
             'targets': [outfile],
+        }
+        infile = outfile
+        sort_command = f'lmrs sort {infile} --labels TL,TR,BL,BR | lmrs sort - --labels TL,TR,BL,BR --inv-label --by-x'
+        yield {
+            'name': f'sort-{image_type}',
+            'actions': [f'{sort_command} > {infile.with_name("final_keypoints.ndjson")}'],
+            'file_dep': [infile],
+            'targets': [infile.with_name('final_keypoints.ndjson')],
         }
 
 
@@ -312,6 +410,9 @@ def remove_bend(infile, outfile):
         subprocess.run(['jq', '-c', JQ_REMOVE_BEND, infile], stdout=wfd)
 
 
+SVG_IMAGE_SIZE = 1280
+
+
 def task_native():
     '''
     Convert labels to native format
@@ -322,6 +423,9 @@ def task_native():
         for subdir in subdirs:
             infile = RESULT_DIR / subdir / 'keypoints' / image_type / f'final_keypoints.ndjson'
             outfile = infile.with_name('no-bend_final_keypoints.ndjson')
+            file_dep = [infile, db_phony]
+            if HOLD_OUT:
+                file_dep = [infile]
 
             # remove bending
             yield {
@@ -329,7 +433,7 @@ def task_native():
                 'actions': [
                     (remove_bend, [infile, outfile]),
                 ],
-                'file_dep': [infile, db_phony],
+                'file_dep': file_dep,
                 'targets': [outfile],
             }
 
@@ -382,6 +486,8 @@ def task_native():
 
             # draw
             script = SRC_DIR / 'measure_and_draw.py'
+            outdir = RESULT_DIR / subdir / image_type
+            outdir.mkdir(parents=True, exist_ok=True)
             yield {
                 'name': f'draw-{image_type}-{subdir}',
                 'actions': [
@@ -391,14 +497,14 @@ def task_native():
                         '--config',
                         SRC_DIR / '../../data/annotation/config.yaml',
                         '--resize',
-                        '1024x1024',
+                        f'{SVG_IMAGE_SIZE}x{SVG_IMAGE_SIZE}',
                         '--image_type',
                         image_type.split('_')[0],
                         '--title',
                         f'{subdir} {image_type}',
                         'batch',
                         infile,
-                        RESULT_DIR / subdir / image_type,
+                        outdir,
                         '--html',
                         '--workers',
                         '4',
@@ -415,7 +521,7 @@ def task_native():
         outifle2 = OUTPUT_MAIN_DIR / f'no-bend_measures_{image_type}_diff.csv'
         yield {
             'name': f'diff-{image_type}',
-            'actions': [['python', scirpt, infile1, infile2, outfile, '--dataframe', outifle2]],
+            'actions': [['python', scirpt, infile1, infile2, outfile, '--dataframe', outifle2, '--basename']],
             'file_dep': [infile1, infile2],
             'targets': [outfile, outifle2],
         }
@@ -507,6 +613,58 @@ def task_alt():
         'targets': [out],
         'clean': True,
     }
+
+
+def task_apply_model():
+    if not HOLD_OUT:
+        return
+    for image_type in IMAGE_TYPES:
+        # create path file
+        path_file = RESULT_DIR / f'auto/holdout_{image_type}_path.txt'
+
+        jq_command1 = f'select(.content.flags | index("{image_type}")!=null)'
+        jq_command2 = '.content.imagePath'
+
+        ndjson_filename = 'holdout_group_id_dicom_manual_annotation.ndjson'
+        action = f"jq -c '{jq_command1}' {RESULT_DIR}/{ndjson_filename} | jq -r '{jq_command2}' > {path_file}"
+        yield {
+            'name': f'extract-path-{image_type}',
+            'actions': [action],
+            'file_dep': [RESULT_DIR / ndjson_filename],
+            'targets': [path_file],
+        }
+
+        # apply model
+        script = SRC_DIR / 'apply_model.py'
+        outdir = RESULT_DIR / 'auto/output' / image_type
+        outdir.mkdir(parents=True, exist_ok=True)
+        # search for the best model
+        model_dir = Path(os.environ.get('MODEL_DIR')) / 'checkpoint'
+        logger.debug(f'MODEL_DIR: {model_dir}')
+        model_files = list(model_dir.glob('*.ckpt'))
+        model_files.sort()
+        model_file = model_files[-1]
+        # python3 /poseidon/users/suzuki/projects/scoliosis/code/szkspyne/apply_model.py batch holdout_ap_whole_path.txt --ckpt ../exp20241113/folds/0/checkpoint/epoch=13-step=28210.ckpt --height 1024 --labelme --output auto/ap_whole/ --keep_image_path
+        action = [
+            'python',
+            script,
+            'batch',
+            path_file,
+            '--ckpt',
+            model_file,
+            '--height',
+            '1024',
+            '--labelme',
+            '--output',
+            outdir,
+            '--keep_image_path',
+        ]
+        yield {
+            'name': f'apply-model-{image_type}',
+            'actions': [action],
+            'file_dep': [path_file, model_file],
+            'targets': [],
+        }
 
 
 def _task_summary():

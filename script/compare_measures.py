@@ -5,9 +5,11 @@ from typing import TextIO
 from szkspyne.utils.scolrs import MeasureResultLine
 
 
-def read_ndjson(file_path):
+def read_ndjson(file_path, basename):
     with open(file_path, 'r') as f:
         ndjson = [MeasureResultLine.model_validate_json(line) for line in f]
+    if basename:
+        return {Path(line.filename).name: line.content for line in ndjson}
     return {line.filename: line.content for line in ndjson}
 
 
@@ -23,6 +25,7 @@ def main():
         help='Path to the output ndjson file (optional)',
     )
     parser.add_argument('--dataframe', help='Output as a pandas DataFrame')
+    parser.add_argument('--basename', help='Use basename for filename', action='store_true')
 
     args = parser.parse_args()
 
@@ -30,8 +33,8 @@ def main():
     ai_file = args.ai_file
     output: TextIO = args.output
 
-    ref_data = read_ndjson(ref_file)
-    ai_data = read_ndjson(ai_file)
+    ref_data = read_ndjson(ref_file, args.basename)
+    ai_data = read_ndjson(ai_file, args.basename)
     assert ref_data.keys() == ai_data.keys(), f'Keys are different: {len(ref_data.keys())} != {len(ai_data.keys())}'
 
     lines = []

@@ -485,6 +485,8 @@ def main():
             try:
                 result = fit(original_json, heatmaps)
             except Exception as e:
+                # import traceback
+                # return f"{file_id},{traceback.format_exc()}"
                 return f"{file_id},{e}"
             result_json = result
             with open(outdir / f'{file_id}.json', 'w') as f:

@@ -18,6 +18,7 @@ parser.add_argument('input', help='input directory')
 parser.add_argument(
     '-o', '--output', help='output directory. input is used by default. Specify "-" to use stdout for ndjson'
 )
+parser.add_argument('--head2circle', help='Turn femoral heads to circles', action='store_true')
 args = parser.parse_args()
 root_dir = Path(args.input)
 
@@ -132,9 +133,15 @@ with JsonsDirIO(input, output) if input.is_dir() else NDJsonIO(input, output) as
                 for shape in data['shapes']:
                     if shape['shape_type'] == 'point' and shape['label'] == label:
                         data['shapes'].remove(shape)
+            fhs_to_remove = []
             for shape in data['shapes']:
                 if shape['shape_type'] == 'point' and shape['label'] == 'FemoralHead':
+                    if len(fhs) >= 2:
+                        fhs_to_remove.append(shape)
+                        continue
                     fhs.append(shape)
+            for fh in fhs_to_remove:
+                data['shapes'].remove(fh)
             if len(fhs) > 0:
                 shapes = labelme_utils.conv2shape_dict(data)
                 # calculate median disk width
@@ -148,7 +155,7 @@ with JsonsDirIO(input, output) if input.is_dir() else NDJsonIO(input, output) as
                     dists = cdist(l, r)
                     less_axis = 0 if len(l) <= len(r) else 1
                     disk_widths.append(dists.min(axis=less_axis))
-                if disk_widths:
+                if args.head2circle and disk_widths:
                     median_width = np.median(np.concatenate(disk_widths))
                     # point -> circle
                     for fh in fhs:

@@ -133,19 +133,19 @@ for col in cols:
     #     "95 percentile",
     #     slice(95 * (len(df_sorted) // 100) - N // 2, int(95 * (len(df_sorted) // 100) + np.ceil(N / 2))),
     # )
-    # p_99 = (
-    #     "99 percentile",
-    #     slice(
-    #         99 * (len(df_sorted) // 100) - N // 2,
-    #         min(len(df_sorted), int(99 * (len(df_sorted) // 100) + np.ceil(N / 2))),
-    #     ),
-    # )
+    p_5 = (
+        "5 percentile",
+        slice(
+            5 * (len(df_sorted) // 100) - N // 2,
+            min(len(df_sorted), int(5 * (len(df_sorted) // 100) + np.ceil(N / 2))),
+        ),
+    )
     # best = (
     #     "Best",
     #     slice(-N, None),
     # )
 
-    for name, sl in [worst, first_q, second_q, third_q]:
+    for name, sl in [worst, first_q, second_q, third_q, p_5]:
         df_sub = pd.DataFrame(df_sorted[sl])
         display_wrapped('h4', name)
         display(df_sub)
