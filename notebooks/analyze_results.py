@@ -164,7 +164,7 @@ for col in cols:
             filenames.extend([ref_file, ai_file])
         out_file = side_by_side_dir / f'{image_type}_{col}_{name}.html'
         title = f'{col} | First: reference, Second: AI'
-        args = ['neckrs', 'catalog', *filenames, out_file, '--title', title]
+        args = ['scolrs', 'catalog', *filenames, out_file, '--title', title]
         args = [str(arg) for arg in args]
         # print(' '.join(args))
         subprocess.check_output(args)

@@ -446,7 +446,7 @@ def task_native():
                 'name': f'native-{image_type}-{subdir}',
                 'actions': [
                     [
-                        'neckrs',
+                        'scolrs',
                         'conv',
                         infile,
                         outfile,
@@ -658,7 +658,9 @@ def task_apply_model():
             '--output',
             outdir,
             '--keep_image_path',
+            '--clahe',
         ]
+
         yield {
             'name': f'apply-model-{image_type}',
             'actions': [action],
