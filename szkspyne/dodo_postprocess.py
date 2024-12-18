@@ -6,8 +6,10 @@ from logzero import logger
 log_level = os.environ.get('LOG_LEVEL', 'INFO').upper()
 logger.setLevel(log_level)
 
-HOLD_OUT = bool(os.environ.get('HOLD_OUT', False))
+HOLD_OUT = os.environ.get('HOLD_OUT', False) == 'True'
 logger.debug(f'HOLD_OUT: {HOLD_OUT}')
+APPLY_CLAHE = os.environ.get('APPLY_CLAHE', False) == 'True'
+logger.debug(f'APPLY_CLAHE: {APPLY_CLAHE}')
 
 RESULT_DIR = Path(os.environ.get('RESULT_DIR', ''))
 if RESULT_DIR == '':
@@ -17,9 +19,7 @@ FOLD_DIRS = list((RESULT_DIR / 'folds').glob('*'))
 ROOT_DIR = Path(__file__).parent.parent.resolve()
 SRC_DIR = ROOT_DIR / 'szkspyne'
 SCRIPT_DIR = ROOT_DIR / 'script'
-
 DOIT_CONFIG = {
-    'default_tasks': ['_default'],
     'verbosity': 2,
 }
 
@@ -69,7 +69,7 @@ def task_pca():
 
 
 TGT_HM_KPS = 'all_heatmap_keypoints.ndjson'
-HM_IMAGE_DB = RESULT_DIR / f'heatmap_images.sqlite3'
+HM_IMAGE_DB = OUTPUT_MAIN_DIR / f'heatmap_images.sqlite3'
 PHONY_DB_TGT = 'hm2db.done'
 
 
@@ -78,10 +78,30 @@ def make_phony(filename):
         pass
 
 
+def _task_holdout_heat2lm():
+    for image_type in IMAGE_TYPES:
+        infile = RESULT_DIR / 'auto' / 'output' / image_type
+        infile2 = infile
+        script = SCRIPT_DIR / 'hm2db.py'
+        outfile = HM_IMAGE_DB
+        action = ['python', script, infile, infile2, outfile]
+        phony = OUTPUT_MAIN_DIR / f'holdout_{image_type}_{PHONY_DB_TGT}'
+        apply_model_phony = RESULT_DIR / 'auto/output' / f'holdout_{image_type}_apply_model.done'
+        yield {
+            'name': f'db-holdout-{image_type}',
+            'actions': [action, (make_phony, [phony])],
+            'file_dep': [apply_model_phony],
+            'targets': [phony],  # make phony target
+        }
+
+
 def task_heat2lm():
     '''
     Process heatmap to 1. create labelme files from heatmaps, 2. create heatmap image database
     '''
+    if HOLD_OUT:
+        yield from _task_holdout_heat2lm()
+        return
     for fold_dir in FOLD_DIRS:
         for image_type in IMAGE_TYPES:
             script = SRC_DIR / 'heatmap2labelme.py'
@@ -145,11 +165,17 @@ def task_holdout_fit():
         ]
         params = PCA_FIT_PARAMS + ['--skipped', outdir / f'skipped_{image_type}.txt']
         action = ['python', script, indir, '--output', outdir] + params + models
+
+        ndjson_filename = RESULT_DIR / 'auto/keypoints' / image_type / 'pca_keypoints.ndjson'
+        command = ['lmrs', 'ndjson', '--parent', 'remove', str(outdir)]
+        action_create_ndjson = ' '.join(command) + f' > {ndjson_filename}'
+
+        apply_model_phony = RESULT_DIR / 'auto/output' / f'holdout_{image_type}_apply_model.done'
         yield {
             'name': f'holdout-fit-{image_type}',
-            'actions': [action],
-            'file_dep': [],
-            'targets': [],
+            'actions': [action, action_create_ndjson],
+            'file_dep': [apply_model_phony],
+            'targets': [ndjson_filename],
         }
 
 
@@ -220,26 +246,11 @@ def task_flags():
         yield {'name': f'flags-{image_type}', 'actions': [action], 'file_dep': [infile], 'targets': [target]}
 
 
-def _task_holdout_collect():
-    for image_type in IMAGE_TYPES:
-        indir = RESULT_DIR / 'auto/pca' / image_type
-        outfile = RESULT_DIR / 'auto/keypoints' / image_type / 'pca_keypoints.ndjson'
-        command = ['lmrs', 'ndjson', '--parent', 'remove', str(indir)]
-        action = ' '.join(command) + f' > {outfile}'
-        yield {
-            'name': f'cat-ref-auto-{image_type}',
-            'actions': [action],
-            'file_dep': [],
-            'targets': [outfile],
-        }
-
-
 def task_collect():
     '''
     Colelct results from splits
     '''
     if HOLD_OUT:
-        yield from _task_holdout_collect()
         return
     for image_type in IMAGE_TYPES:
         infiles = [fold / f'auto/{image_type}/pca_keypoints.ndjson' for fold in FOLD_DIRS]
@@ -488,29 +499,37 @@ def task_native():
             script = SRC_DIR / 'measure_and_draw.py'
             outdir = RESULT_DIR / subdir / image_type
             outdir.mkdir(parents=True, exist_ok=True)
+            action = [
+                'python',
+                script,
+                '--config',
+                SRC_DIR / '../../data/annotation/config.yaml',
+                '--resize',
+                f'{SVG_IMAGE_SIZE}x{SVG_IMAGE_SIZE}',
+                '--image_type',
+                image_type.split('_')[0],
+                '--title',
+                f'{subdir} {image_type}',
+            ]
+            batch_args = [
+                'batch',
+                infile,
+                outdir,
+                '--html',
+                '--workers',
+                '4',
+            ]
+            logger.debug(f'HM_IMAGE_DB: {HM_IMAGE_DB}')
+            action += ['--imagedb', HM_IMAGE_DB]
+            action += batch_args
+            file_dep = [infile]
+            if HOLD_OUT:
+                db_phony = OUTPUT_MAIN_DIR / f'holdout_{image_type}_{PHONY_DB_TGT}'
+                file_dep = [infile, db_phony]
             yield {
                 'name': f'draw-{image_type}-{subdir}',
-                'actions': [
-                    [
-                        'python',
-                        script,
-                        '--config',
-                        SRC_DIR / '../../data/annotation/config.yaml',
-                        '--resize',
-                        f'{SVG_IMAGE_SIZE}x{SVG_IMAGE_SIZE}',
-                        '--image_type',
-                        image_type.split('_')[0],
-                        '--title',
-                        f'{subdir} {image_type}',
-                        'batch',
-                        infile,
-                        outdir,
-                        '--html',
-                        '--workers',
-                        '4',
-                    ]
-                ],
-                'file_dep': [infile],
+                'actions': [action],
+                'file_dep': file_dep,
                 'targets': [],
             }
 
@@ -658,14 +677,17 @@ def task_apply_model():
             '--output',
             outdir,
             '--keep_image_path',
-            '--clahe',
         ]
+        if APPLY_CLAHE:
+            action.append('--clahe')
+
+        phony = RESULT_DIR / 'auto/output' / f'holdout_{image_type}_apply_model.done'
 
         yield {
             'name': f'apply-model-{image_type}',
-            'actions': [action],
+            'actions': [action, (make_phony, [phony])],
             'file_dep': [path_file, model_file],
-            'targets': [],
+            'targets': [phony],
         }
 
 
