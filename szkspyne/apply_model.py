@@ -242,9 +242,7 @@ def main():
             if args.clahe:
                 # flatten
                 xs = list(itertools.chain.from_iterable(xs))
-                # logger.debug('Batch size: %s', len(xs))
             xs = pad_batch(xs, DOWN_FACTOR, 0)
-            # logger.debug("Aux: %s", aux)
             return torch.from_numpy(np.stack(xs, axis=0)), zip(*aux)
 
         loader = DataLoader(
@@ -268,13 +266,6 @@ def main():
 
         from multiprocessing import Pool
 
-        def shannon_entropy(p: torch.Tensor, dim: int) -> torch.Tensor:
-            p = p / torch.sum(p, dim=dim, keepdim=True)
-            p = torch.clip(p, 1.0e-8, None)
-            logp = torch.log2(p)
-            e = -torch.sum(p * logp, dim=dim)
-            return e
-
         with Pool(processes=args.workers) as pool:
             for batch, (filenames, original_shapes) in tqdm.tqdm(loader):
                 batch = batch.to(device)
@@ -282,22 +273,10 @@ def main():
                     pred = torch.sigmoid(lit_model(batch))
                     if args.clahe:
                         # from (batch and raw_or_clahe, channel, height, width) to (batch, raw_or_clahe, channel, height, width)
-                        # logger.debug('Pred shape: %s', pred.shape)
                         pred = pred.reshape(pred.shape[0] // 2, 2, *pred.shape[1:])
-                        # logger.debug('Reshaped pred shape: %s', pred.shape)
-                    #     # calculate entropy per channel
-                    #     shape_flat_xy = list(pred.shape[:-2]) + [-1]
-                    #     pred_flat_xy = pred.reshape(shape_flat_xy)
-                    #     entropy_per_ch = shannon_entropy(pred_flat_xy, dim=-1)
-                    #     min_idx = torch.argmin(entropy_per_ch, dim=1)
-                    #     # select the channel with the lowest entropy
-                    #     pred = pred[torch.arange(pred.shape[0]), min_idx]
-
-                    # pred *= PROB_MAX
                     pred = pred.to('cpu').detach().numpy().astype(np.float32)
 
                 filenames = [Path(fn) for fn in filenames]
-                # original_shapes = list(zip(*[t.to('cpu').tolist() for t in original_shapes]))
                 if args.keep_image_path:
                     image_filenames = [str(fn) for fn in filenames]
                 else:

@@ -132,7 +132,6 @@ def task_heat2lm():
             }
 
 
-#  python3 /poseidon/users/suzuki/projects/scoliosis/code/szkspyne/fit_spine_model.py auto/ap_whole/ --output pca/ap_whole/ -m ../exp20241113/folds/0/pca_ap_whole_L?.npz --sigma 1 --max_iter 400 --l2_reg 0.001 --skipped skipped_ap.txt --jobs 4
 PCA_FIT_PARAMS = [
     '--sigma',
     '1',
@@ -549,58 +548,6 @@ def task_native():
 VARIANTS = ['best_indices', 'closest_indices']
 
 
-def _task_measure():
-    '''
-    Measure and draw into html files
-    '''
-    db_phony = RESULT_DIR / PHONY_DB_TGT
-    for image_type in IMAGE_TYPES:
-        for subdir in ['auto', 'reference']:
-            for variant in [''] + VARIANTS:
-                pipeline = []
-                if variant != '' and image_type == 'lateral_whole':
-                    continue
-                if variant != '' and subdir == 'reference':
-                    continue
-                suffix = f'_{variant}' if variant != '' else ''
-                infile = RESULT_DIR / subdir / 'keypoints' / image_type / f'final_keypoints.ndjson'
-                file_dep = [infile, db_phony]
-
-                # remove bending
-                c1 = f"jq -c '{JQ_REMOVE_BEND}' {infile}"
-                pipeline.append(c1)
-
-                if image_type == 'ap_whole':
-                    curve_file = RESULT_DIR / subdir / f'curve_indices_{image_type}{suffix}.ndjson'
-                    c2 = f'lmrs join --mode left - {curve_file}'
-                    file_dep.append(curve_file)
-                else:
-                    c2 = 'cat'  # do nothing
-                    pass
-                pipeline.append(c2)
-
-                # if subdir == 'reference':
-                #     # extension of imagePath from dcm to jpg
-                #     pipeline.append("jq -c '.content[\"imagePath\"] |= sub(\".dcm\"; \".jpg\")'")
-
-                script = SRC_DIR / 'measure_and_draw.py'
-                config = SRC_DIR / '../../data/annotation/config.yaml'
-                outdir = RESULT_DIR / subdir / f'{image_type}{suffix}'
-                outdir.mkdir(parents=True, exist_ok=True)
-                imagedb = HM_IMAGE_DB
-                c3 = f'python {script} --hide {MES_HIDE} --resize 1024x1024 --image_type {image_type.split("_")[0]} --title "{subdir} {image_type}" --config {config} --imagedb {imagedb} batch - {outdir} --html --workers 4'
-                pipeline.append(c3)
-                action = ' | '.join(pipeline)
-
-                yield {
-                    'name': f'draw-{image_type}-{subdir}{suffix}',
-                    'actions': [action],
-                    'file_dep': file_dep,
-                    'targets': [],
-                    'clean': True,
-                }
-
-
 def task_alt():
     '''
     Measure using alternative curves
@@ -663,7 +610,6 @@ def task_apply_model():
         model_files = list(model_dir.glob('*.ckpt'))
         model_files.sort()
         model_file = model_files[-1]
-        # python3 /poseidon/users/suzuki/projects/scoliosis/code/szkspyne/apply_model.py batch holdout_ap_whole_path.txt --ckpt ../exp20241113/folds/0/checkpoint/epoch=13-step=28210.ckpt --height 1024 --labelme --output auto/ap_whole/ --keep_image_path
         action = [
             'python',
             script,
