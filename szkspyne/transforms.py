@@ -69,7 +69,7 @@ def apply_clahe(img, clipLimit=100, tileGridSize=(32, 32)):
 
 class RandomClahe(ImageOnlyTransform):
     def __init__(self, clipLimitChoices=[10, 100, 1000], gridSizeChoices=[8, 16, 32], always_apply=False, p=0.5):
-        super(RandomClahe, self).__init__(always_apply, p)
+        super(RandomClahe, self).__init__(always_apply=always_apply, p=p)
         self.clipLimitChoices = clipLimitChoices
         self.gridSizeChoices = gridSizeChoices
 
@@ -102,7 +102,7 @@ img_tfs = [
 album_transform = A.ReplayCompose(img_tfs, keypoint_params=A.KeypointParams(format='yx', remove_invisible=False))
 
 CROP_HEIGHT, CROP_WIDTH = 512, 512
-CROPPER = A.RandomResizedCrop(CROP_HEIGHT, CROP_WIDTH, [0.05, 0.20], [0.8, 1.2], p=1)
+CROPPER = A.RandomResizedCrop(height=CROP_HEIGHT, width=CROP_WIDTH, scale=[0.05, 0.20], ratio=[0.8, 1.2], p=1)
 album_crop_transform = A.ReplayCompose(
     [CROPPER] + img_tfs, keypoint_params=A.KeypointParams(format='yx', remove_invisible=False)
 )
