@@ -1,10 +1,15 @@
 import argparse
 import sys
 from pathlib import Path
-
+from typing import List
+import itertools
+import scipy.stats
 import numpy as np
-from szkmipy import mhd
+import logzero
+from logzero import logger
+from typing import Union
 
+from szkmipy import mhd
 from szkspyne import settings
 from szkspyne.heatmap2labelme import save_kps_json
 
@@ -13,10 +18,23 @@ PROB_MAX = settings.PROB_MAX
 
 
 def worker(task_args):
-    (pred, original_shape, image_filename, json_filename, hm_filename, ch_as_z) = task_args
+    (pred, original_shape, image_filename, json_filename, hm_filename, ch_as_z, clahe) = task_args
+    if clahe:
+        # flatten x and y
+        flattened = pred.reshape(pred.shape[0], pred.shape[1], -1)
+        entropies = scipy.stats.entropy(flattened, base=2, axis=2)
+        min_idx = np.argmin(entropies, axis=0)
+        pred = pred[min_idx, np.arange(pred.shape[1])]
+    pred *= PROB_MAX
+    pred = pred.astype(np.uint16)
     if json_filename:
         save_kps_json(
-            pred, original_shape, image_filename, json_filename, settings.LABEL_NAMES, min_thresh=0.1 * PROB_MAX
+            pred,
+            original_shape,
+            image_filename,
+            json_filename,
+            settings.LABEL_NAMES,
+            min_thresh=0.1 * PROB_MAX,
         )
     if hm_filename:
         if ch_as_z:
@@ -67,17 +85,12 @@ def main():
 
     args = parser.parse_args()
 
-    # lazy import
-    import logzero
-    from logzero import logger
-
     log_format = '%(color)s[%(levelname)1.1s %(asctime)s.%(msecs)d %(module)s:%(lineno)d]%(end_color)s %(message)s'
     formatter = logzero.LogFormatter(fmt=log_format)
     logzero.setup_default_logger(formatter=formatter)
     logger.info('Load modules')
 
-    from typing import Union
-
+    # lazy import
     import cv2
     import img_utils
     import pretrained_models
@@ -85,11 +98,13 @@ def main():
     import torch
     import transforms
     from PIL import Image
+    from functools import lru_cache
 
     DOWN_FACTOR = 256
 
-    def load(filename: Union[str, Path], height, pad: bool, clahe: bool):
-        # x, _ = mhd.read(filename)
+    # load with cache
+    @lru_cache(maxsize=4)
+    def _load(filename: Union[str, Path]):
         if str(filename).endswith('.dcm') or str(filename).endswith('.dicom'):
             dcm = pydicom.dcmread(filename)
             x = dcm.pixel_array
@@ -102,13 +117,17 @@ def main():
                 x = x.astype(np.uint16)
         if x.ndim == 3:
             x = x[..., 0]
+        return x
+
+    def load(filename: Union[str, Path], height, pad: bool, clahe: bool):
+        x = _load(filename)
         original_shape = x.shape
         # assert x.dtype == np.uint16, 'np.uint16 is expected'
         x = img_utils.resize_height(height, x)
         assert isinstance(x, np.ndarray)
         if pad:
             x = img_utils.pad_to_next_multiple(DOWN_FACTOR, x, [1], 0)
-        logger.info('Padded to %s', x.shape)
+        # logger.info('Padded to %s', x.shape)
         if clahe:
             x = apply_clahe(x)
         x = transforms.percentile_normalize(x, 1)  # , clip=True)
@@ -180,13 +199,19 @@ def main():
                 pred = np.transpose(pred, [1, 2, 0])
                 mhd.write(args.heatmap, pred, {'ElementNumberOfChannels': pred.shape[-1]})
 
+    def pad_batch(xs, factor, value):
+        shapes = [x.shape for x in xs]
+        max_shape = np.max(shapes, axis=0)
+        new_shape = (factor * np.ceil(np.array(max_shape) / factor)).astype(np.int64).tolist()
+        xs = [img_utils.pad_to_shape(x, new_shape, value)[np.newaxis] for x in xs]
+        return xs
+
     def apply_batch(args):
         import tqdm
         from joblib import Parallel, delayed
 
-        logger.info('load images')
+        logger.info('Enumerate input files')
         indir = Path(args.input)
-        n_jobs = args.workers
         if indir.is_file():
             with open(indir) as f:
                 input_filenames = [Path(line.strip()) for line in f]
@@ -195,34 +220,38 @@ def main():
         if len(input_filenames) == 0:
             print("No image file found in ", args.input)
             return 1
-        xs, original_shapes = zip(
-            *Parallel(n_jobs=n_jobs)(
-                delayed(load)(fn, args.height, False, args.clahe) for fn in tqdm.tqdm(input_filenames)
-            )
-        )
-        shapes = [x.shape for x in xs]
-        max_shape = np.max(shapes, axis=0)
-        new_shape = (DOWN_FACTOR * np.ceil(np.array(max_shape) / DOWN_FACTOR)).astype(np.int64).tolist()
-        logger.info('Pad to %s', new_shape)
-        xs = [img_utils.pad_to_shape(x, new_shape, 0)[np.newaxis] for x in xs]
         from torch.utils.data import DataLoader, Dataset
 
         class NDArray(Dataset):
-            def __init__(self, arr, aux):
-                assert len(arr) == len(aux)
-                self.arr = arr
-                self.aux = aux
+            def __init__(self, filenames: List[Path]):
+                self.filenames = filenames
 
             def __getitem__(self, index):
-                return self.arr[index], self.aux[index]
+                filename = self.filenames[index]
+                arr, original_shape = load(filename, args.height, True, args.clahe)
+                if args.clahe:
+                    original_arr, _ = load(filename, args.height, True, False)
+                    arr = [arr, original_arr]
+                return arr, (filename, original_shape)
 
             def __len__(self):
-                return len(self.arr)
+                return len(self.filenames)
+
+        def collate_fn(batch):
+            xs, aux = zip(*batch)
+            if args.clahe:
+                # flatten
+                xs = list(itertools.chain.from_iterable(xs))
+                # logger.debug('Batch size: %s', len(xs))
+            xs = pad_batch(xs, DOWN_FACTOR, 0)
+            # logger.debug("Aux: %s", aux)
+            return torch.from_numpy(np.stack(xs, axis=0)), zip(*aux)
 
         loader = DataLoader(
-            NDArray(xs, [(str(fn), o_s) for fn, o_s in zip(input_filenames, original_shapes)]),
+            NDArray(input_filenames),
             batch_size=args.batch_size,
             num_workers=args.workers,
+            collate_fn=collate_fn,
             shuffle=False,
         )
         device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
@@ -231,7 +260,7 @@ def main():
         lit_model.to(device)
         lit_model.eval()
 
-        task_pbar = tqdm.tqdm(total=len(xs))
+        task_pbar = tqdm.tqdm(total=len(input_filenames))
         logger.info('Apply model')
 
         def callback(_):
@@ -239,16 +268,36 @@ def main():
 
         from multiprocessing import Pool
 
+        def shannon_entropy(p: torch.Tensor, dim: int) -> torch.Tensor:
+            p = p / torch.sum(p, dim=dim, keepdim=True)
+            p = torch.clip(p, 1.0e-8, None)
+            logp = torch.log2(p)
+            e = -torch.sum(p * logp, dim=dim)
+            return e
+
         with Pool(processes=args.workers) as pool:
             for batch, (filenames, original_shapes) in tqdm.tqdm(loader):
                 batch = batch.to(device)
                 with torch.no_grad():
                     pred = torch.sigmoid(lit_model(batch))
-                    pred *= PROB_MAX
-                    pred = pred.to('cpu').detach().numpy().astype(np.uint16)
+                    if args.clahe:
+                        # from (batch and raw_or_clahe, channel, height, width) to (batch, raw_or_clahe, channel, height, width)
+                        # logger.debug('Pred shape: %s', pred.shape)
+                        pred = pred.reshape(pred.shape[0] // 2, 2, *pred.shape[1:])
+                        # logger.debug('Reshaped pred shape: %s', pred.shape)
+                    #     # calculate entropy per channel
+                    #     shape_flat_xy = list(pred.shape[:-2]) + [-1]
+                    #     pred_flat_xy = pred.reshape(shape_flat_xy)
+                    #     entropy_per_ch = shannon_entropy(pred_flat_xy, dim=-1)
+                    #     min_idx = torch.argmin(entropy_per_ch, dim=1)
+                    #     # select the channel with the lowest entropy
+                    #     pred = pred[torch.arange(pred.shape[0]), min_idx]
+
+                    # pred *= PROB_MAX
+                    pred = pred.to('cpu').detach().numpy().astype(np.float32)
 
                 filenames = [Path(fn) for fn in filenames]
-                original_shapes = list(zip(*[t.to('cpu').tolist() for t in original_shapes]))
+                # original_shapes = list(zip(*[t.to('cpu').tolist() for t in original_shapes]))
                 if args.keep_image_path:
                     image_filenames = [str(fn) for fn in filenames]
                 else:
@@ -259,7 +308,7 @@ def main():
                     json_filenames = [args.output / fn.with_suffix('.json').name for fn in filenames]
                     hm_filenames = [args.output / fn.with_suffix('.mha').name for fn in filenames]
                 for task_args in zip(pred, original_shapes, image_filenames, json_filenames, hm_filenames):
-                    task_args = list(task_args) + [args.ch_as_z]
+                    task_args = list(task_args) + [args.ch_as_z, args.clahe]
                     pool.apply_async(worker, (task_args,), callback=callback, error_callback=print)
             pool.close()
             pool.join()
