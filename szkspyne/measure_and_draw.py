@@ -18,7 +18,7 @@ import pyscol
 import szkspyne.utils.measure as utils
 
 
-logger.setLevel(os.environ.get('LOGLEVEL', 'INFO').upper())
+logger.setLevel(os.environ.get('LOG_LEVEL', 'INFO').upper())
 
 LINE_WIDTH = 2.0
 POINT_RADIUS = 2.0

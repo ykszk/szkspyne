@@ -3,6 +3,7 @@ import sqlite3
 import sys
 from io import BytesIO
 from pathlib import Path
+import json
 
 import numpy as np
 from PIL import Image
@@ -14,8 +15,8 @@ from szkspyne import labelme_utils
 
 def main():
     parser = argparse.ArgumentParser(description='Convert heatmap to png images in sqlite3 database.')
-    parser.add_argument('heatmap', help='heatmap mhd filename')
-    parser.add_argument('ndjson', help='ndjson with filename keys')
+    parser.add_argument('heatmap', help='heatmap mhd filename or directory with mha files', type=Path)
+    parser.add_argument('ndjson', help='ndjson with filename keys or directory with json files', type=Path)
     parser.add_argument('output', help='output sqlite3 database name')
     parser.add_argument('--abspath', help='use absolute path for filename', action='store_true')
     parser.add_argument(
@@ -24,8 +25,22 @@ def main():
 
     args = parser.parse_args()
 
-    heatmaps, h = mhd.read(args.heatmap)
-    ndjson = labelme_utils.load_ndjson(args.ndjson)
+    if args.heatmap.is_dir():
+        heatmaps = []
+        for fn in sorted(args.heatmap.glob('*.mha')):
+            arr, _h = mhd.read(fn)
+            heatmaps.append(arr)
+    else:
+        heatmaps, _h = mhd.read(args.heatmap)
+    if args.ndjson.is_dir():
+        ndjson = []
+        for fn in sorted(args.ndjson.glob('*.json')):
+            with open(fn) as f:
+                jboj = json.load(f)
+            ndjson.append({'filename': fn.name, 'content': jboj})
+    else:
+        ndjson = labelme_utils.load_ndjson(args.ndjson)
+    assert len(heatmaps) == len(ndjson)
     conn = sqlite3.connect(args.output)
     cursor = conn.cursor()
     cursor.execute(
