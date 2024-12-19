@@ -183,12 +183,19 @@ with JsonsDirIO(input, output) if input.is_dir() else NDJsonIO(input, output) as
             all_points = []
             for label in ['TL', 'TR', 'BL', 'BR']:
                 if label in shapes['point']:
-                    all_points.append(np.array(shapes['point'][label]))
+                    pts = np.array(shapes['point'][label])
+                    # sort by y
+                    ind = np.argsort(pts[:, 0, 1])
+                    sorted_pts = pts[ind]
+                    all_points.append(sorted_pts[[0, -1]])
             all_points = np.concatenate(all_points)[:, 0]
             x_middle = all_points[:, 0].mean()
             for label in ['Shoulder', 'Clavicle', 'Pelvis', 'Iliac', 'FemoralHead']:
                 lefts, rights = [], []
-                for p in shapes['point'].get(label, []):
+                points = shapes['point'].get(label, [])
+                if len(points) <= 2:
+                    continue
+                for p in points:
                     if p[0][0] > x_middle:
                         rights.append(p)
                     else:
@@ -201,11 +208,11 @@ with JsonsDirIO(input, output) if input.is_dir() else NDJsonIO(input, output) as
                             raise NotImplementedError
                         else:  # choose highest (lowest in image) point
                             ys = side[:, 0, 1]
-                            highest = np.argmin(ys)
+                            idx = np.argmin(ys)
+                            highest = side[idx]
                             for shape in data['shapes']:
                                 if shape['shape_type'] == 'point' and shape['label'] == label:
-                                    y = shape['points'][0][1]
-                                    if y > highest:
+                                    if not np.array_equal(shape['points'][0], highest):
                                         del_shapes.append(shape)
                         for ds in del_shapes:
                             data['shapes'].remove(ds)
