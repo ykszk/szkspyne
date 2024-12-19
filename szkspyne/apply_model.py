@@ -228,9 +228,9 @@ def main():
 
             def __getitem__(self, index):
                 filename = self.filenames[index]
-                arr, original_shape = load(filename, args.height, True, args.clahe)
+                arr, original_shape = load(filename, args.height, False, args.clahe)
                 if args.clahe:
-                    original_arr, _ = load(filename, args.height, True, False)
+                    original_arr, _ = load(filename, args.height, False, False)
                     arr = [arr, original_arr]
                 return arr, (filename, original_shape)
 
