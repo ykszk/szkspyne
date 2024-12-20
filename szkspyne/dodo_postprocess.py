@@ -219,7 +219,10 @@ def concat(files, output):
 
 
 # FLAGS = RESULT_DIR / 'flags.ndjson'
-FLAGS = {'ap_whole': RESULT_DIR / 'flags_ap_whole.ndjson', 'lateral_whole': RESULT_DIR / 'flags_lateral_whole.ndjson'}
+FLAGS = {
+    'ap_whole': RESULT_DIR / 'postprocess/flags_ap_whole.ndjson',
+    'lateral_whole': RESULT_DIR / 'postprocess/flags_lateral_whole.ndjson',
+}
 
 
 def task_flags():
@@ -525,11 +528,12 @@ def task_native():
             if HOLD_OUT:
                 db_phony = OUTPUT_MAIN_DIR / f'holdout_{image_type}_{PHONY_DB_TGT}'
                 file_dep = [infile, db_phony]
+            draw_phony = RESULT_DIR / subdir / f'draw_{image_type}.done'
             yield {
                 'name': f'draw-{image_type}-{subdir}',
-                'actions': [action],
+                'actions': [action, (make_phony, [draw_phony])],
                 'file_dep': file_dep,
-                'targets': [],
+                'targets': [draw_phony],
             }
 
         scirpt = SCRIPT_DIR / 'compare_measures.py'
@@ -700,6 +704,10 @@ def task_summary():
         for subdir in ['auto', 'reference']:
             dep = RESULT_DIR / subdir / f'no-bend_measures_{image_type}.csv'
             file_dep.append(dep)
+            dep = RESULT_DIR / 'postprocess' / f'no-bend_measures_{image_type}_diff.csv'
+            file_dep.append(dep)
+            draw_phony = RESULT_DIR / subdir / f'draw_{image_type}.done'
+            file_dep.append(draw_phony)
 
     for image_type in IMAGE_TYPES:
         outfile = OUTPUT_MAIN_DIR / f'summary_{image_type}.html'
