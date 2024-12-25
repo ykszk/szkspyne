@@ -57,6 +57,11 @@ def filepath2groupid(filepath: str) -> str:
             group_id = re.split(r"-|=|\.|,| |_|yr", filepath)[0]
         else:
             group_id = 'DE' + m[1]
+    elif 'MSJAISY' in filepath:
+        m = re.search(r'MSJAISY\d+', filepath.upper())
+        if m is None:
+            raise RuntimeError("No group id in: " + filepath)
+        group_id = m.group()
     else:
         group_id = re.split(r"-|=|\.|,| |_|yr", filepath)[0]
     return group_id

@@ -1,10 +1,14 @@
 # %%
 from pathlib import Path
 import os
+import json
 
 import pandas as pd
 from IPython.core.display import HTML
 from IPython.display import display
+from logzero import logger
+
+logger.setLevel(os.environ.get('LOG_LEVEL', 'INFO').upper())
 
 
 def display_wrapped(tag: str, inner: str):
@@ -40,6 +44,39 @@ for df in [df_ref, df_ai, df_diff]:
 for df in [df_ref, df_ai, df_diff]:
     for col in df.columns:
         df[col] = pd.to_numeric(df[col], errors='coerce')
+
+
+POST_OP = os.environ.get('POST_OP', None)
+if POST_OP is not None:
+    POST_OP = POST_OP.lower() == 'true'
+    with open(result_dir / 'postprocess' / f'flags_{image_type}.ndjson') as f:
+        flags = [json.loads(line) for line in f]
+
+    selected = [
+        Path(flag['filename']).name for flag in flags if flag['content']['flags'].get('PostOP', False) == POST_OP
+    ]
+    df_ref = df_ref.loc[selected].reindex().copy()
+    df_ai = df_ai.loc[selected].reindex().copy()
+    df_diff = df_diff.loc[selected].reindex().copy()
+
+print('Number of samples:', len(df_ref))
+
+group_id_files = [
+    (result_dir / 'manual_annotation.ndjson'),
+    (result_dir / 'holdout_group_id_dicom_manual_annotation.ndjson'),
+]
+group_ids = None
+for group_id_file in group_id_files:
+    if group_id_file.exists():
+        with open(group_id_file) as f:
+            ndjson = [json.loads(line) for line in f]
+        group_ids = {Path(obj['filename']).name: obj['content']['group_id'] for obj in ndjson}
+        break
+
+if group_ids is None:
+    raise FileNotFoundError('Manual annotation file not found')
+
+print('Number of unique patients:', len(set(group_ids.values())))
 
 # print(df_ref.shape, df_ai.shape, df_diff.shape)
 df_ref.head()
@@ -102,7 +139,7 @@ if image_type == 'lateral_whole':
 
 for col in cols:
     display_wrapped('h3', col)
-    sns.scatterplot(data=df_merged, x=('Reference', col), y=('AI', col))
+    sns.scatterplot(data=df_merged, x=('Reference', col), y=('AI', col), alpha=0.25)
     plt.xlabel('Reference')
     plt.ylabel('AI')
     plt.show()
@@ -136,8 +173,8 @@ for col in cols:
     p_5 = (
         "5 percentile",
         slice(
-            5 * (len(df_sorted) // 100) - N // 2,
-            min(len(df_sorted), int(5 * (len(df_sorted) // 100) + np.ceil(N / 2))),
+            int(5 * (len(df_sorted) / 100)) - N // 2,
+            min(len(df_sorted), int(5 * (len(df_sorted) / 100) + np.ceil(N / 2))),
         ),
     )
     # best = (

@@ -233,7 +233,7 @@ def task_flags():
     '''
     # jq =
     jqs = [
-        '{"content": {"flags": .content.flags}, "filename": .filename}',
+        '{"content": {"flags": .content.flags, "group_id": .content.group_id}, "filename": .filename}',
         # '.filename |= split("/")[-1]',
         '.content.flags = (.content.flags - ["L4","L5","L6"])',
         '.content.flags |= reduce .[] as $flag ({}; .[$flag] = true)',
