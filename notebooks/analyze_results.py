@@ -7,6 +7,7 @@ import pandas as pd
 from IPython.core.display import HTML
 from IPython.display import display
 from logzero import logger
+import sklearn.metrics
 
 logger.setLevel(os.environ.get('LOG_LEVEL', 'INFO').upper())
 
@@ -59,6 +60,42 @@ if POST_OP is not None:
     df_ai = df_ai.loc[selected].reindex().copy()
     df_diff = df_diff.loc[selected].reindex().copy()
 
+
+def load_flags(filename: Path) -> dict:
+    with open(filename) as f:
+        ndjson = [json.loads(line) for line in f]
+    return {Path(obj['filename']).name: set([k for k, v in obj['content']['flags'].items() if v]) for obj in ndjson}
+
+
+if True:
+    output_dir = result_dir / 'postprocess'
+    d_flags = load_flags(result_dir / 'reference' / 'keypoints' / image_type / 'final_keypoints.ndjson')
+    df_ref_ext = df_ref.copy()
+    df_ref_ext['L count'] = df_ref_ext.index.map(lambda x: next(iter((d_flags[x] & {'L4', 'L5', 'L6'}))))
+
+    d_flags = load_flags(result_dir / 'auto' / 'keypoints' / image_type / 'final_keypoints.ndjson')
+    df_ai_ext = df_ai.copy()
+    df_ai_ext['L count'] = df_ref_ext.index.map(lambda x: next(iter((d_flags[x] & {'L4', 'L5', 'L6'}))))
+    if POST_OP is None:
+        df_ref_ext.to_csv(output_dir / f'no-bend_measures_{image_type}_ai_ext.csv')
+        df_ai_ext.to_csv(output_dir / f'no-bend_measures_{image_type}_reference_ext.csv')
+
+    d_flags = load_flags(result_dir / 'postprocess' / f'flags_{image_type}.ndjson')
+    for df in [df_ref_ext, df_ai_ext]:
+        df['PostOP'] = df.index.map(lambda x: 'PostOP' in d_flags[x])
+
+    count_labels = ['L4', 'L5', 'L6']
+    df_cm = pd.DataFrame(
+        sklearn.metrics.confusion_matrix(df_ref_ext['L count'], df_ai_ext['L count'], labels=count_labels),
+        index=count_labels,
+        columns=count_labels,
+    )
+    df_cm.index.name = 'Reference'
+    df_cm.columns.name = 'AI'
+    display_wrapped('h3', 'Confusion matrix')
+    display(df_cm)
+
+
 print('Number of samples:', len(df_ref))
 
 group_id_files = [
@@ -75,7 +112,7 @@ for group_id_file in group_id_files:
 
 if group_ids is None:
     raise FileNotFoundError('Manual annotation file not found')
-
+group_ids = {k: v for k, v in group_ids.items() if k in df_ref.index}
 print('Number of unique patients:', len(set(group_ids.values())))
 
 # print(df_ref.shape, df_ai.shape, df_diff.shape)
