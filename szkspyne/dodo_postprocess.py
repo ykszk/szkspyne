@@ -155,7 +155,9 @@ def task_holdout_fit():
         outdir = RESULT_DIR / 'auto/pca' / image_type
         outdir.mkdir(parents=True, exist_ok=True)
 
-        model_dir = Path(os.environ.get('MODEL_DIR'))
+        model_dir = os.environ.get('MODEL_DIR')
+        assert model_dir is not None
+        model_dir = Path(model_dir)
         models = [
             '-m',
             model_dir / f'pca_{image_type}_L4.npz',
@@ -242,7 +244,9 @@ def task_flags():
         infile = RESULT_DIR / 'manual_annotation.ndjson'
     for image_type in IMAGE_TYPES:
         start = f"grep {image_type} {infile}"
-        action = ' | '.join([start] + [f"jq -c '{j}'" for j in jqs])
+        jq_pipe = [f"jq -c '{j}'" for j in jqs]
+        sed = f"sed 's/術後/PostOP/g'"
+        action = ' | '.join([start, *jq_pipe, sed])
         target = FLAGS[image_type]
         action += f' > {target}'
         yield {'name': f'flags-{image_type}', 'actions': [action], 'file_dep': [infile], 'targets': [target]}
@@ -361,7 +365,7 @@ def task_ref_exp2lm():
         outdir = RESULT_DIR / f'reference/keypoints/{image_type}'
         outdir.mkdir(parents=True, exist_ok=True)
         infile = outdir / 'final_keypoints_exp.ndjson'
-        outfile = outdir / 'final_keypoints_.ndjson'
+        outfile = outdir / 'final_keypoints_unsorted.ndjson'
 
         yield {
             'name': f'exp2lm-{image_type}',
@@ -376,6 +380,17 @@ def task_ref_exp2lm():
             'actions': [f'{sort_command} > {infile.with_name("final_keypoints.ndjson")}'],
             'file_dep': [infile],
             'targets': [infile.with_name('final_keypoints.ndjson')],
+        }
+
+        # filename field to relative path
+        infile = outfile
+        outfile = outdir / 'final_keypoints_relpath.ndjson'
+        jq_command = '.filename |= split("/")[-1]'
+        yield {
+            'name': f'relpath-{image_type}',
+            'actions': [f"jq -c '{jq_command}' {infile} > {outfile}"],
+            'file_dep': [infile],
+            'targets': [outfile],
         }
 
 
@@ -521,13 +536,27 @@ def task_native():
                 '--workers',
                 '4',
             ]
+            file_dep = [infile]
+            extra_labels = ['all_points']
+            extra_points_files = [infile.with_name('no-bend_final_keypoints.ndjson')]
+            if subdir == 'auto':
+                extra_labels.append('pca_points')
+                extra_points_files.append(RESULT_DIR / subdir / 'keypoints' / image_type / 'pca_keypoints.ndjson')
+                # reference points
+                extra_labels.append('reference_points')
+                extra_points_files.append(
+                    RESULT_DIR / 'reference' / 'keypoints' / image_type / 'final_keypoints_relpath.ndjson'
+                )
+                file_dep.append(extra_points_files[-1])
+
             logger.debug(f'HM_IMAGE_DB: {HM_IMAGE_DB}')
             action += ['--imagedb', HM_IMAGE_DB]
             action += batch_args
-            file_dep = [infile]
+            action += ['--extra_labels', *extra_labels]
+            action += ['--extra_points', *extra_points_files]
             if HOLD_OUT:
                 db_phony = OUTPUT_MAIN_DIR / f'holdout_{image_type}_{PHONY_DB_TGT}'
-                file_dep = [infile, db_phony]
+                file_dep.append(db_phony)
             draw_phony = RESULT_DIR / subdir / f'draw_{image_type}.done'
             yield {
                 'name': f'draw-{image_type}-{subdir}',
