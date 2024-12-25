@@ -739,15 +739,27 @@ def task_summary():
             file_dep.append(draw_phony)
 
     for image_type in IMAGE_TYPES:
-        outfile = OUTPUT_MAIN_DIR / f'summary_{image_type}.html'
-        title = f'{{"title":"summary {image_type}"}}'
-        c1 = f"jupytext --to ipynb --output - {script} --update-metadata '{title}'"
-        c2 = f'RESULT_DIR={RESULT_DIR} IMAGE_TYPE={image_type} jupyter nbconvert --stdin --to html --execute --no-input --output {outfile}'
-        action = ' | '.join([c1, c2])
-        yield {
-            'name': f'summary-{image_type}-{subdir}',
-            'actions': [action],
-            'file_dep': file_dep,
-            'targets': [outfile],
-            'clean': True,
-        }
+        for post_op in [None, False, True]:
+            c2 = f'RESULT_DIR={RESULT_DIR} IMAGE_TYPE={image_type} jupyter nbconvert --stdin --to html --execute --no-input'
+            if post_op is not None:
+                if post_op:
+                    outfile = OUTPUT_MAIN_DIR / f'summary_{image_type}_PostOp.html'
+                    c2 = 'POST_OP=True ' + c2 + ' --output ' + str(outfile)
+                    title = f'{{"title":"summary {image_type} PostOp"}}'
+                else:
+                    outfile = OUTPUT_MAIN_DIR / f'summary_{image_type}_PreOp.html'
+                    c2 = 'POST_OP=False ' + c2 + ' --output ' + str(outfile)
+                    title = f'{{"title":"summary {image_type} PreOp"}}'
+            else:
+                outfile = OUTPUT_MAIN_DIR / f'summary_{image_type}.html'
+                c2 = c2 + ' --output ' + str(outfile)
+                title = f'{{"title":"summary {image_type}"}}'
+            c1 = f"jupytext --to ipynb --output - {script} --update-metadata '{title}'"
+            action = ' | '.join([c1, c2])
+            yield {
+                'name': f'summary-{image_type}-{subdir}-{post_op}',
+                'actions': [action],
+                'file_dep': file_dep,
+                'targets': [outfile],
+                'clean': True,
+            }
