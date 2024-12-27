@@ -8,6 +8,10 @@ logger.setLevel(log_level)
 
 HOLD_OUT = os.environ.get('HOLD_OUT', False) == 'True'
 logger.debug(f'HOLD_OUT: {HOLD_OUT}')
+if HOLD_OUT:
+    if 'MODEL_DIR' not in os.environ:
+        logger.error('MODEL_DIR not set. Set MODEL_DIR to the directory containing the model files')
+        sys.exit(1)
 APPLY_CLAHE = os.environ.get('APPLY_CLAHE', False) == 'True'
 logger.debug(f'APPLY_CLAHE: {APPLY_CLAHE}')
 
@@ -438,7 +442,34 @@ def remove_bend(infile, outfile):
         subprocess.run(['jq', '-c', JQ_REMOVE_BEND, infile], stdout=wfd)
 
 
-SVG_IMAGE_SIZE = 1280
+SVG_IMAGE_SIZE = 1600
+
+
+def convert_to_native(infile, outfile, image_type, name):
+    '''
+    Yield task to convert labels to native format
+    '''
+    from_format = 'Labelme'
+    to_format = 'ScoliosisCoronal' if image_type == 'ap_whole' else 'ScoliosisSagittal'
+    yield {
+        'name': name,
+        'actions': [
+            [
+                'scolrs',
+                'conv',
+                infile,
+                outfile,
+                '--from',
+                from_format,
+                '--to',
+                to_format,
+                '--ndjson',
+                '--spacing',
+            ]
+        ],
+        'file_dep': [infile],
+        'targets': [outfile],
+    }
 
 
 def task_native():
@@ -468,27 +499,8 @@ def task_native():
             # convert from labelme to native
             infile = outfile
             outfile = infile.with_name('no-bend_final_keypoints_native.ndjson')
-            from_format = 'Labelme'
-            to_format = 'ScoliosisCoronal' if image_type == 'ap_whole' else 'ScoliosisSagittal'
-            yield {
-                'name': f'native-{image_type}-{subdir}',
-                'actions': [
-                    [
-                        'scolrs',
-                        'conv',
-                        infile,
-                        outfile,
-                        '--from',
-                        from_format,
-                        '--to',
-                        to_format,
-                        '--ndjson',
-                        '--spacing',
-                    ]
-                ],
-                'file_dep': [infile],
-                'targets': [outfile],
-            }
+
+            yield from convert_to_native(infile, outfile, image_type, f'native-{image_type}-{subdir}')
 
             # measure
             infile = outfile
@@ -523,6 +535,8 @@ def task_native():
                 SRC_DIR / '../../data/annotation/config.yaml',
                 '--resize',
                 f'{SVG_IMAGE_SIZE}x{SVG_IMAGE_SIZE}',
+                '--svg_size',
+                '1200',
                 '--image_type',
                 image_type.split('_')[0],
                 '--title',
@@ -578,42 +592,6 @@ def task_native():
         }
 
 
-VARIANTS = ['best_indices', 'closest_indices']
-
-
-def task_alt():
-    '''
-    Measure using alternative curves
-    '''
-    script = SCRIPT_DIR / 'find_best_curve_set.py'
-
-    dep1 = RESULT_DIR / 'auto/curve_indices_ap_whole.ndjson'
-    dep2 = RESULT_DIR / 'reference/measures_ap_whole.ndjson'
-    out = RESULT_DIR / 'auto/curve_indices_ap_whole_best_indices.ndjson'
-    action = ['python', script, RESULT_DIR]
-    yield {
-        'name': 'best curve',
-        'actions': [action],
-        'file_dep': [dep1, dep2],
-        'targets': [out],
-        'clean': True,
-    }
-
-    dep1 = RESULT_DIR / 'auto/keypoints/ap_whole/final_keypoints.ndjson'
-    dep2 = RESULT_DIR / 'auto/measures_ap_whole.ndjson'
-    dep3 = RESULT_DIR / 'reference/keypoints/ap_whole/final_keypoints.ndjson'
-    dep4 = RESULT_DIR / 'reference/measures_ap_whole.ndjson'
-    out = RESULT_DIR / 'auto/curve_indices_ap_whole_closest_indices.ndjson'
-    action = ['python', SCRIPT_DIR / 'find_endplate.py', RESULT_DIR]
-    yield {
-        'name': 'closest endplate',
-        'actions': [action],
-        'file_dep': [dep1, dep2, dep3, dep4],
-        'targets': [out],
-        'clean': True,
-    }
-
-
 def task_apply_model():
     if not HOLD_OUT:
         return
@@ -638,7 +616,9 @@ def task_apply_model():
         outdir = RESULT_DIR / 'auto/output' / image_type
         outdir.mkdir(parents=True, exist_ok=True)
         # search for the best model
-        model_dir = Path(os.environ.get('MODEL_DIR')) / 'checkpoint'
+        model_dir = os.environ.get('MODEL_DIR')
+        assert model_dir is not None
+        model_dir = Path(model_dir) / 'checkpoint'
         logger.debug(f'MODEL_DIR: {model_dir}')
         model_files = list(model_dir.glob('*.ckpt'))
         model_files.sort()
@@ -667,59 +647,6 @@ def task_apply_model():
             'actions': [action, (make_phony, [phony])],
             'file_dep': [path_file, model_file],
             'targets': [phony],
-        }
-
-
-def _task_summary():
-    ''' '
-    Create summary
-    '''
-    file_dep = []
-    for image_type in IMAGE_TYPES:
-        for subdir in ['auto', 'reference']:
-            for variant in [None] + VARIANTS:
-                if variant is not None and image_type == 'lateral_whole':
-                    continue
-                if variant is not None and subdir == 'reference':
-                    continue
-                suffix = f'_{variant}' if variant is not None else ''
-                dep = RESULT_DIR / subdir / f'measures_{image_type}{suffix}.ndjson'
-                file_dep.append(dep)
-    targets = [RESULT_DIR / f'ap_whole.csv']
-    for variant in VARIANTS:
-        targets.append(RESULT_DIR / f'ap_whole_{variant}.csv')
-    script = SCRIPT_DIR / 'measured_jsons2csv.py'
-    pre = f'python3 {script} "{RESULT_DIR}"'
-
-    yield {
-        'name': 'pre',
-        'actions': [pre],
-        'file_dep': file_dep,
-        'targets': targets,
-        'clean': True,
-    }
-
-    script = ROOT_DIR / 'notebooks/exp_summary.py'
-    for variant in [''] + VARIANTS:
-        if variant == '':
-            suffix = ''
-            title = '{"title":"exp summary"}'
-            name = 'normal'
-        else:
-            suffix = f'_{variant}'
-            title = f'{{"title":"exp summary w {variant}"}}'
-            name = variant
-        file_dep = [RESULT_DIR / f'ap_whole{suffix}.csv']
-        outfile = RESULT_DIR / f'summary{suffix}.html'
-        c1 = f"jupytext --to ipynb --output - {script} --update-metadata '{title}'"
-        c2 = f'INPUT_DIR={RESULT_DIR} NO_VIS=true DATA_SUFFIX={suffix} jupyter nbconvert --stdin --to html --execute --no-input --output {outfile}'
-        action = ' | '.join([c1, c2])
-        yield {
-            'name': name,
-            'actions': [action],
-            'file_dep': file_dep,
-            'targets': [outfile],
-            'clean': True,
         }
 
 
@@ -763,3 +690,108 @@ def task_summary():
                 'targets': [outfile],
                 'clean': True,
             }
+
+
+def task_train_summary():
+    '''
+    Summary of training data
+    '''
+    output_dir = OUTPUT_MAIN_DIR / 'train'
+    output_dir.mkdir(parents=True, exist_ok=True)
+    script = SCRIPT_DIR / 'exp2lmjson.py'
+    infile = RESULT_DIR / 'manual_annotation.ndjson'
+    outfile = output_dir / f'manual_annotation_lm.ndjson'
+
+    yield {
+        'name': f'exp2lm',
+        'actions': [['python', script, infile, outfile]],
+        'file_dep': [infile],
+        'targets': [outfile],
+    }
+
+    for image_type in IMAGE_TYPES:
+        # split
+        jq_command = f'select(.content.flags | has("{image_type}"))'  # `.content.flags` is dictionary of bool but just check the key existence is enough because the value should be always true
+        infile = output_dir / f'manual_annotation_lm.ndjson'
+        outfile = output_dir / f'manual_annotation_{image_type}_lm.ndjson'
+        c1 = f"jq -c '{jq_command}' {infile}"
+        c2 = f"jq -c '{JQ_REMOVE_BEND}'"
+        action = ' | '.join([c1, c2]) + f' > {outfile}'
+
+        yield {
+            'name': f'jq-{image_type}',
+            'actions': [action],
+            'file_dep': [infile],
+            'targets': [outfile],
+        }
+        # convert to native format
+        infile = outfile
+        outfile = output_dir / f'manual_annotation_{image_type}_native.ndjson'
+        yield from convert_to_native(infile, outfile, image_type, f'to-native-{image_type}')
+
+        # measure
+        infile = outfile
+        outfile = output_dir / f'measures_{image_type}.ndjson'
+        command = "coronal" if image_type == "ap_whole" else "sagittal"
+        yield {
+            'name': f'measure-{image_type}',
+            'actions': [['scolrs', 'measure', infile, outfile, command]],
+            'file_dep': [infile],
+            'targets': [outfile],
+        }
+
+        # convert ndjson to csv
+        script = SRC_DIR / 'utils/scolrs.py'
+        yield {
+            'name': f'ndjson2csv-{image_type}',
+            'actions': [
+                ['python', script, outfile, outfile.with_suffix('.csv')],
+            ],
+            'file_dep': [outfile],
+            'targets': [outfile.with_suffix('.csv')],
+        }
+
+        c2 = (
+            f'RESULT_DIR={RESULT_DIR} IMAGE_TYPE={image_type} jupyter nbconvert --stdin --to html --execute --no-input'
+        )
+        script = ROOT_DIR / 'notebooks/analyze_train.py'
+        c2 = c2 + ' --output ' + str(OUTPUT_MAIN_DIR / f'train/summary_train_{image_type}.html')
+        title = f'{{"title":"training data {image_type}"}}'
+        c1 = f"jupytext --to ipynb --output - {script} --update-metadata '{title}'"
+        action = ' | '.join([c1, c2])
+        yield {
+            'name': f'summary-train-{image_type}',
+            'actions': [action],
+            'file_dep': [outfile.with_suffix('.csv')],
+            'targets': [],
+            'clean': True,
+        }
+
+    # for image_type in IMAGE_TYPES:
+    #     # convert to native format
+    #     infile = RESULT_DIR / 'reference' / 'keypoints' / image_type / f'final_keypoints.ndjson'
+    #     outfile = infile.with_name('final_keypoints_native.ndjson')
+    #     yield from convert_to_native(infile, outfile, image_type, f'to-native-{image_type}')
+
+    #     # measure
+    #     infile = outfile
+    #     outfile = RESULT_DIR / 'reference' / f'measures_{image_type}.ndjson'
+
+    #     command = "coronal" if image_type == "ap_whole" else "sagittal"
+    #     yield {
+    #         'name': f'measure-{image_type}',
+    #         'actions': [['scolrs', 'measure', infile, outfile, command]],
+    #         'file_dep': [infile],
+    #         'targets': [outfile],
+    #     }
+
+    #     # convert ndjson to csv
+    #     script = SRC_DIR / 'utils/scolrs.py'
+    #     yield {
+    #         'name': f'ndjson2csv-{image_type}',
+    #         'actions': [
+    #             ['python', script, outfile, outfile.with_suffix('.csv')],
+    #         ],
+    #         'file_dep': [outfile],
+    #         'targets': [outfile.with_suffix('.csv')],
+    #     }
