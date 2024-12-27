@@ -9,13 +9,15 @@ from IPython.display import display
 from logzero import logger
 import sklearn.metrics
 
-logger.setLevel(os.environ.get('LOG_LEVEL', 'INFO').upper())
-
 
 def display_wrapped(tag: str, inner: str):
     wrapped = f'<{tag}>{inner}</{tag}>'
     display(HTML(wrapped))
 
+
+logger.setLevel(os.environ.get('LOG_LEVEL', 'INFO').upper())
+
+# %%
 
 result_dir = Path(os.environ.get('RESULT_DIR', '/poseidon/users/suzuki/projects/scoliosis/result/exp20241113'))
 
@@ -83,8 +85,8 @@ if True:
         df['PostOP'] = df.index.map(lambda x: 'PostOP' in d_flags[x])
 
     if POST_OP is None:
-        df_ref_ext.to_csv(output_dir / f'no-bend_measures_{image_type}_ai_ext.csv')
-        df_ai_ext.to_csv(output_dir / f'no-bend_measures_{image_type}_reference_ext.csv')
+        df_ref_ext.to_csv(output_dir / f'no-bend_measures_{image_type}_reference_ext.csv')
+        df_ai_ext.to_csv(output_dir / f'no-bend_measures_{image_type}_ai_ext.csv')
 
     count_labels = ['L4', 'L5', 'L6']
     df_cm = pd.DataFrame(
