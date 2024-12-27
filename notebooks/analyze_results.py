@@ -56,6 +56,7 @@ if POST_OP is not None:
     selected = [
         Path(flag['filename']).name for flag in flags if flag['content']['flags'].get('PostOP', False) == POST_OP
     ]
+    selected = [x for x in selected if x in df_ref.index]
     df_ref = df_ref.loc[selected].reindex().copy()
     df_ai = df_ai.loc[selected].reindex().copy()
     df_diff = df_diff.loc[selected].reindex().copy()
@@ -76,13 +77,14 @@ if True:
     d_flags = load_flags(result_dir / 'auto' / 'keypoints' / image_type / 'final_keypoints.ndjson')
     df_ai_ext = df_ai.copy()
     df_ai_ext['L count'] = df_ref_ext.index.map(lambda x: next(iter((d_flags[x] & {'L4', 'L5', 'L6'}))))
-    if POST_OP is None:
-        df_ref_ext.to_csv(output_dir / f'no-bend_measures_{image_type}_ai_ext.csv')
-        df_ai_ext.to_csv(output_dir / f'no-bend_measures_{image_type}_reference_ext.csv')
 
     d_flags = load_flags(result_dir / 'postprocess' / f'flags_{image_type}.ndjson')
     for df in [df_ref_ext, df_ai_ext]:
         df['PostOP'] = df.index.map(lambda x: 'PostOP' in d_flags[x])
+
+    if POST_OP is None:
+        df_ref_ext.to_csv(output_dir / f'no-bend_measures_{image_type}_ai_ext.csv')
+        df_ai_ext.to_csv(output_dir / f'no-bend_measures_{image_type}_reference_ext.csv')
 
     count_labels = ['L4', 'L5', 'L6']
     df_cm = pd.DataFrame(
@@ -228,6 +230,8 @@ for col in cols:
         ref_render_dir = result_dir / f'reference/{image_type}'
         ai_render_dir = result_dir / f'auto/{image_type}'
         side_by_side_dir = result_dir / f'postprocess/side_by_side'
+        if POST_OP is not None:
+            side_by_side_dir = side_by_side_dir.with_name(side_by_side_dir.name + ('_PostOP' if POST_OP else '_PreOP'))
         side_by_side_dir.mkdir(exist_ok=True, parents=True)
         filenames = []
         for i, row in enumerate(df_sub.itertuples()):
@@ -237,7 +241,7 @@ for col in cols:
             ai_file = ai_render_dir / f'{fn}.html'
             filenames.extend([ref_file, ai_file])
         out_file = side_by_side_dir / f'{image_type}_{col}_{name}.html'
-        title = f'{col} | First: reference, Second: AI'
+        title = f'{col} - {name} | First: reference, Second: AI'
         args = ['scolrs', 'catalog', *filenames, out_file, '--title', title]
         args = [str(arg) for arg in args]
         # print(' '.join(args))

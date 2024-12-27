@@ -27,7 +27,11 @@ def main():
         help='Perform hold-out validation instead of k-fold cross-validation.',
         action='store_true',
     )
-
+    parser.add_argument(
+        '--test_as_val',
+        help='Use test set as validation set.',
+        action='store_true',
+    )
     args = parser.parse_args()
 
     outroot = Path(args.output)
@@ -46,7 +50,9 @@ def main():
     with open(outroot / 'args.json', 'w') as f:
         json.dump(args.__dict__, f, indent=2)
 
-    output_ndjson_filename = outroot / 'manual_annotation.ndjson' # filename has to be this because post processing uses this name
+    output_ndjson_filename = (
+        outroot / 'manual_annotation.ndjson'
+    )  # filename has to be this because post processing uses this name
     shutil.copy(args.input, output_ndjson_filename)
     df_all = exp_utils.ndjson2df(output_ndjson_filename)
 
@@ -66,7 +72,8 @@ def main():
         outdir = outroot / 'folds' / '{}'.format(test_id)
         outdir.mkdir(parents=True, exist_ok=True)
         train_ids = [i for i in range(K_FOLD) if i != test_id]
-        if args.holdout:
+        if args.test_as_val:
+            logger.info('Use test set as validation set')
             df_train = df_all[df_all['set_id'].isin(train_ids)]
             df_val = df_all[df_all['set_id'] == test_id]
             test_group_ids = set(df_val['group_id'])
@@ -75,9 +82,16 @@ def main():
             non_test_group_ids = df_train['group_id'].unique()
             test_group_ids = set(group_ids) - set(non_test_group_ids)
             rng = np.random.RandomState(args.seed)
-            val_group_ids = set(rng.choice(non_test_group_ids, size=int(args.val_ratio * len(non_test_group_ids)), replace=False))
+            val_group_ids = set(
+                rng.choice(non_test_group_ids, size=int(args.val_ratio * len(non_test_group_ids)), replace=False)
+            )
             train_group_ids = set(group_ids) - val_group_ids
-            print('sizes group_ids, train_group_id, val_group_id', len(group_ids), len(train_group_ids), len(val_group_ids))
+            print(
+                'sizes group_ids, train_group_id, val_group_id',
+                len(group_ids),
+                len(train_group_ids),
+                len(val_group_ids),
+            )
             df_val = df_train[df_train['group_id'].isin(val_group_ids)]
             df_train = df_train[df_train['group_id'].isin(train_group_ids)]
         if True:  # create ndjson files for post processing
@@ -129,7 +143,7 @@ def main():
     for test_id in range(K_FOLD):
         train_test(test_id)
         if args.holdout:
-            logger.info('Break because of USE_TEST_AS_VAL')
+            logger.info('Break because of holtout')
             break
     return 0
 

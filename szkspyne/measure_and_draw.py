@@ -83,8 +83,16 @@ def measure_json(
     draw_param_json = "{}"
     label_and_point_set = []
     for point_label, data_dict in extra_point_dict.items():
-        # lm_data = json.loads(lm_json_line)
         key = lm_json_line['filename']
+        keys = [key, Path(key).name]
+        for k in keys:
+            if k in data_dict:
+                key = k
+                break
+        else:
+            logger.warning("Extra points not found for %s", key)
+            continue
+
         if key in data_dict:
             extra_data = data_dict[key]
             extra_points = []
