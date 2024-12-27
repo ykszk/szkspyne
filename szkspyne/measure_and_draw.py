@@ -60,6 +60,7 @@ def measure_json(
     lm_json_line: Dict[str, Any],
     json_path: Path,
     resize_param: str,
+    svg_size: int,
     label_colors: Dict[str, str],
     line_colors: Dict[str, str],
     image_type: str,
@@ -80,7 +81,9 @@ def measure_json(
             logger.warning("Image not found: %s", name)
 
     draws = []
-    draw_param_json = "{}"
+    draw_param_json = json.dumps(
+        dict(radius=POINT_RADIUS, line_width=LINE_WIDTH, font_size='36px', unit_font_size='16px', text_stroke_width=2)
+    )
     label_and_point_set = []
     for point_label, data_dict in extra_point_dict.items():
         key = lm_json_line['filename']
@@ -107,6 +110,14 @@ def measure_json(
 
     lm_json = json.dumps(lm_json_line['content'])
 
+    image_aspect_ratio = (
+        lm_json_line['content']['image_metadata']['width'] / lm_json_line['content']['image_metadata']['height']
+    )
+    if image_aspect_ratio > 1:
+        svg_wh = (svg_size, int(svg_size / image_aspect_ratio))
+    else:
+        svg_wh = (int(svg_size * image_aspect_ratio), svg_size)
+
     if image_type == 'ap':
         svg = pyscol.draw_coronal(
             lm_json,
@@ -117,6 +128,7 @@ def measure_json(
             label_colors,
             line_colors,
             resize_param,
+            svg_wh,
             img,
             label_and_point_set,
         )
@@ -130,6 +142,7 @@ def measure_json(
             label_colors,
             line_colors,
             resize_param,
+            svg_wh,
             img,
             label_and_point_set,
         )
@@ -151,6 +164,7 @@ def main():
     parser.add_argument('--imagedb', help='image database filename for heatmap overlay')
     parser.add_argument('--hide', help='Hide specified drawings', nargs='*', default=None)
     parser.add_argument('--resize', help='Resize parameter. default: %(default)s', type=str, default="1024x1024")
+    parser.add_argument('--svg_size', help='SVG size', type=int, default=1024)
     # parser.add_argument('--slopes', help='Add slopes to measuremens json', action='store_true')
 
     subparsers = parser.add_subparsers()
@@ -168,6 +182,7 @@ def main():
             lm_json_line,
             args.input,
             args.resize,
+            args.svg_size,
             label_colors,
             line_colors,
             args.image_type,
@@ -240,6 +255,7 @@ def main():
                 lm_data_line,
                 args.input,
                 args.resize,
+                args.svg_size,
                 label_colors,
                 line_colors,
                 args.image_type,
