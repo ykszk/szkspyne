@@ -98,6 +98,18 @@ def _task_holdout_heat2lm():
             'targets': [phony],  # make phony target
         }
 
+        command = ['lmrs', 'ndjson', str(infile), '--parent', 'remove']
+
+        outfile = f'{RESULT_DIR}/auto/keypoints/{image_type}/heatmap_keypoints.ndjson'
+        yield {
+            'name': f'ndjson-{image_type}',
+            'actions': [
+                ' '.join(command) + f' > {outfile}',
+            ],
+            'file_dep': [phony],
+            'targets': [outfile],
+        }
+
 
 def task_heat2lm():
     '''
@@ -269,6 +281,23 @@ def task_collect():
         outfile = outdir / 'pca_keypoints.ndjson'
         yield {
             'name': f'cat-{image_type}',
+            'actions': [
+                (
+                    concat,
+                    [infiles, outfile],
+                )
+            ],
+            'file_dep': infiles,
+            'targets': [outfile],
+            'clean': True,
+        }
+
+        # heatmap points
+        infiles = [fold / f'auto/{image_type}/all_heatmap_keypoints.ndjson' for fold in FOLD_DIRS]
+        outdir = RESULT_DIR / 'auto/keypoints' / image_type
+        outfile = outdir / 'heatmap_keypoints.ndjson'
+        yield {
+            'name': f'cat-hm-{image_type}',
             'actions': [
                 (
                     concat,
@@ -554,8 +583,8 @@ def task_native():
             extra_labels = ['all_points']
             extra_points_files = [infile.with_name('no-bend_final_keypoints.ndjson')]
             if subdir == 'auto':
-                extra_labels.append('pca_points')
-                extra_points_files.append(RESULT_DIR / subdir / 'keypoints' / image_type / 'pca_keypoints.ndjson')
+                extra_labels.append('heatmap_points')
+                extra_points_files.append(RESULT_DIR / subdir / 'keypoints' / image_type / 'heatmap_keypoints.ndjson')
                 # reference points
                 extra_labels.append('reference_points')
                 extra_points_files.append(
