@@ -172,10 +172,16 @@ df_merged.columns = pd.MultiIndex.from_product([['Reference', 'AI'], df_ref.colu
 cols = ['CobbPT', 'CobbMT', 'CobbTLL']
 if image_type == 'lateral_whole':
     cols = [
+        'T1ThoracicKyphosis',
         'ThoracicKyphosis',
-        'ProximalThoracicKyphosis',
-        'MidLowerThoracicKyphosis',
-        'LumbarLordosis',
+        'T1Slope',
+        'SagittalBalance',
+        'PelvicIncidence',
+        'PelvicTilt',
+        'SacralSlope',
+        'L5IncidenceAngle',
+        'PelvicRadiusAngle',
+        'LumbosacralAngle',
     ]
 
 for col in cols:

@@ -563,8 +563,9 @@ def task_native():
                 )
                 file_dep.append(extra_points_files[-1])
 
-            logger.debug(f'HM_IMAGE_DB: {HM_IMAGE_DB}')
-            action += ['--imagedb', HM_IMAGE_DB]
+            if subdir == 'auto':
+                logger.debug(f'HM_IMAGE_DB: {HM_IMAGE_DB}')
+                action += ['--imagedb', HM_IMAGE_DB]
             action += batch_args
             action += ['--extra_labels', *extra_labels]
             action += ['--extra_points', *extra_points_files]

@@ -81,9 +81,7 @@ def measure_json(
             logger.warning("Image not found: %s", name)
 
     draws = []
-    draw_param_json = json.dumps(
-        dict(radius=POINT_RADIUS, line_width=LINE_WIDTH, font_size='36px', unit_font_size='16px', text_stroke_width=2)
-    )
+    draw_param_json = '{}'
     label_and_point_set = []
     for point_label, data_dict in extra_point_dict.items():
         key = lm_json_line['filename']
