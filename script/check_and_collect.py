@@ -3,7 +3,7 @@ import argparse
 import json
 from collections import defaultdict
 from pathlib import Path
-from typing import List, Union
+from typing import List, Union, Optional
 
 import lmrspy
 import numpy as np
@@ -21,6 +21,8 @@ parser.add_argument(
     help='Directory containing rules files such as "rule-spine.txt". default: %(default)s',
     default='rules',
 )
+parser.add_argument('--add_flag', help='Add new flag to the output', type=str, required=False, nargs="*")
+parser.add_argument('--image_parent', help='Parent directory of images', type=Path)
 args = parser.parse_args()
 
 data_dir = Path(args.input)
@@ -29,10 +31,15 @@ outdir = Path(args.output)
 ruledir = Path(args.ruledir)
 
 
-def save_ndjson(filename: Union[Path, str], json_list: List[Path]):
+def save_ndjson(filename: Union[Path, str], json_list: List[Path], flags: List[str], image_parent: Optional[Path]):
     with open(filename, 'w') as f:
         for j in json_list:
             lm_line = labelme_utils.LabelMe.from_file(j).into_labelme_line(str(j))
+            for flag in flags:
+                lm_line.content.flags[flag] = True
+            if image_parent:
+                original_path = lm_line.content.imagePath.replace('\\', '/')
+                lm_line.content.imagePath = str(image_parent / Path(original_path).name)
             f.write(lm_line.model_dump_json())
             f.write('\n')
 
@@ -98,7 +105,7 @@ for kind in ['ap_whole', 'lateral_whole']:
     print('Invalid:', len(invalid_json))
     outname = outdir / ('valid_' + kind + '.ndjson')
     outname.parent.mkdir(parents=True, exist_ok=True)
-    save_ndjson(outname, valid_json)
+    save_ndjson(outname, valid_json, args.add_flag, args.image_parent)
     if len(invalid_json) > 0:
         outname = outdir / ('invalid_' + kind + '.ndjson')
-        save_ndjson(outname, invalid_json)
+        save_ndjson(outname, invalid_json, [], args.image_parent)
