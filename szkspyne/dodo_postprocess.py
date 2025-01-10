@@ -577,7 +577,7 @@ def task_native():
                 outdir,
                 '--html',
                 '--workers',
-                '4',
+                '8',
             ]
             file_dep = [infile]
             extra_labels = ['all_points']
@@ -585,6 +585,7 @@ def task_native():
             if subdir == 'auto':
                 extra_labels.append('heatmap_points')
                 extra_points_files.append(RESULT_DIR / subdir / 'keypoints' / image_type / 'heatmap_keypoints.ndjson')
+                file_dep.append(extra_points_files[-1])
                 # reference points
                 extra_labels.append('reference_points')
                 extra_points_files.append(
