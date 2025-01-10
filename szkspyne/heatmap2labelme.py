@@ -95,6 +95,7 @@ def main():
             stem = filepath.stem
             if save_heatmap:
                 mhd.write(outdir / f'{stem}.mha', heatmap)
+            min_thresh = 0.1 * PROB_MAX
             if save_ndjson is None:
                 data = save_kps_json(
                     heatmap,
@@ -102,13 +103,11 @@ def main():
                     data.imagePath,
                     str(outdir / f'{stem}.json'),
                     settings.LABEL_NAMES,
-                    min_thresh=0.1 * PROB_MAX,
+                    min_thresh=min_thresh,
                     max_num_points=settings.MAX_NUM_POINTS,
                 )
             else:
-                data = hm2labelme(
-                    heatmap, original_shape, data.imagePath, settings.LABEL_NAMES, min_thresh=0.1 * PROB_MAX
-                )
+                data = hm2labelme(heatmap, original_shape, data.imagePath, settings.LABEL_NAMES, min_thresh=min_thresh)
             return data.into_labelme_line(data_line.filename)
 
         logger.info('start heatmap2labelme')

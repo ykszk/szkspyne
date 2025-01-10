@@ -15,6 +15,7 @@ from szkspyne.heatmap2labelme import save_kps_json
 
 
 PROB_MAX = settings.PROB_MAX
+MIN_THRESH = 0.1 * PROB_MAX
 
 
 def worker(task_args):
@@ -34,7 +35,7 @@ def worker(task_args):
             image_filename,
             json_filename,
             settings.LABEL_NAMES,
-            min_thresh=0.1 * PROB_MAX,
+            min_thresh=MIN_THRESH,
         )
     if hm_filename:
         if ch_as_z:
@@ -190,7 +191,7 @@ def main():
                 Path(args.input).name,
                 args.labelme,
                 settings.LABEL_NAMES,
-                min_thresh=0.1 * PROB_MAX,
+                min_thresh=MIN_THRESH,
             )
         if args.heatmap:
             if args.ch_as_z:
