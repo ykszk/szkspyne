@@ -30,8 +30,8 @@ formatter = logzero.LogFormatter(fmt=log_format)
 logzero.setup_default_logger(formatter=formatter)
 
 
-ANCHOR_LABELS = ['C7-TL', 'S-TL']
-ANCHOR_INDICES = [settings.LABEL_NAMES.index(l) for l in ANCHOR_LABELS]
+SPINE_ANCHOR_LABELS = ['C7-TL', 'S-TL']
+SPINE_ANCHOR_INDICES = [settings.LABEL_NAMES.index(l) for l in SPINE_ANCHOR_LABELS]
 EPSILON = np.finfo(float).eps
 
 
@@ -261,6 +261,7 @@ def main():
     parser.add_argument(
         '--icp_lr', help='Initial learning rate for ICP. default: %(default)s', type=float, default=0.1
     )
+    parser.add_argument('--icp_weight', help='Weight for ICP loss. default: %(default)s', type=float, default=0.01)
     parser.add_argument(
         '--max_iter', help='The maximum number of iteration for fitting. default: %(default)s', type=int, default=200
     )
@@ -341,7 +342,7 @@ def main():
             heatmaps = np.flip(heatmaps, axis=2)
         heatmaps = trim_bottom_right(heatmaps, 4)
 
-        anchor_maps = [heatmaps[i] for i in ANCHOR_INDICES]
+        anchor_maps = [heatmaps[i] for i in SPINE_ANCHOR_INDICES]
         top_anchor, bottom_anchor = calculate_anchors(anchor_maps)
         if top_anchor is None or bottom_anchor is None:
             raise RuntimeError("No anchor found")
@@ -405,7 +406,7 @@ def main():
                         loss_hm = -torch.log(torch.concat(probas)).mean()
                         distances = pt_pca.icp_loss(t_vert_points)
                         loss_icp = torch.concat(distances, dim=0).mean()
-                        loss = loss_hm + loss_icp
+                        loss = loss_hm + args.icp_weight * loss_icp
                         history.append(loss.detach().cpu().item())
                         if len(history) == 1 or history[-1] <= best_loss:
                             best_loss = history[-1]
