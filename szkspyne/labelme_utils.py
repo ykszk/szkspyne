@@ -18,7 +18,7 @@ class LabelMe(BaseModel):
     class Shape(BaseModel):
         label: str
         points: List[List[float]]
-        group_id: Optional[str]
+        group_id: Optional[int]
         shape_type: str
         flags: Dict[str, bool]
 
