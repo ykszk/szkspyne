@@ -11,6 +11,7 @@ from detectron2.data.detection_utils import read_image
 from detectron2.utils.logger import setup_logger
 from detectron2.engine.defaults import DefaultPredictor
 from detectron2.utils.visualizer import ColorMode, Visualizer
+from detectron2.evaluation.coco_evaluation import instances_to_coco_json
 import torch
 
 # from predictor import VisualizationDemo
@@ -57,6 +58,7 @@ def get_parser():
         help="Load metadata json file",
     )
     parser.add_argument("--ndjson", help='Save one ndjson instaed of json files')
+    parser.add_argument("--coco", help='Save results in COCO format (json)')
     parser.add_argument("--verbose", help="Verbose mode", action='store_true')
     parser.add_argument(
         "--confidence-threshold",
@@ -101,6 +103,8 @@ if __name__ == "__main__":
     if len(args.input) == 1 and args.input[0].endswith('.ndjson'):
         args.input = [e['file_name'] for e in load_ndjson(args.input[0])]
     ndjson = []
+    coco_annotation = []
+    coco_images = []
     for path in tqdm.tqdm(args.input, disable=not args.output):
         # use PIL, to be consistent with evaluation
         img = read_image(path, format="BGR")
@@ -110,9 +114,11 @@ if __name__ == "__main__":
             logger.info(
                 "{}: {} in {:.2f}s".format(
                     path,
-                    "detected {} instances".format(len(predictions["instances"]))
-                    if "instances" in predictions
-                    else "finished",
+                    (
+                        "detected {} instances".format(len(predictions["instances"]))
+                        if "instances" in predictions
+                        else "finished"
+                    ),
                     time.time() - start_time,
                 )
             )
@@ -136,8 +142,33 @@ if __name__ == "__main__":
         else:
             with open(os.path.join(args.output, filename), 'w') as f:
                 json.dump(predictions, f, cls=utils.PredictionEncoder, indent=2)
+        if args.coco:
+            image_id = len(coco_images)
+            coco_image = dict(
+                file_name=filename,
+                height=img.shape[0],
+                width=img.shape[1],
+                id=image_id,
+            )
+            coco_images.append(coco_image)
+            result_coco = instances_to_coco_json(instances, image_id)
+            coco_annotation.extend(result_coco)
     if args.ndjson:
         with open(args.ndjson, 'w') as f:
             for line in ndjson:
                 f.write(line)
                 f.write('\n')
+    if args.coco:
+        info = dict(
+            description='detectron2 prediction',
+            data_created=time.strftime('%Y-%m-%d %H:%M:%S'),
+        )
+        categories = [{"id": i, "name": c} for i, c in enumerate(metadata['thing_classes'])]
+        coco = dict(
+            info=info,
+            images=coco_images,
+            annotations=coco_annotation,
+            categories=categories,
+        )
+        with open(args.coco, 'w') as f:
+            json.dump(coco, f)
