@@ -10,6 +10,7 @@ import numpy as np
 import svgwrite
 from PIL import Image
 from skspatial.objects import Line, LineSegment, Point
+import yaml
 
 from szkspyne import settings
 
@@ -167,6 +168,13 @@ def get_vert_and_disc_corners(kps):
         .copy()
     )
     return sacrum_tltr, vert_corners, disc_corners
+
+
+def read_default_label_colors() -> Dict[str, Tuple[int, int, int]]:
+    filename = Path(__file__).parent.parent.parent / 'configs/default_label_colors.yaml'
+    with open(filename) as f:
+        color_data = yaml.safe_load(f)
+    return color_data['label_colors']
 
 
 def read_default_line_colors() -> Dict[str, str]:

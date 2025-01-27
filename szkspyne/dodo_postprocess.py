@@ -561,8 +561,6 @@ def task_native():
             action = [
                 'python',
                 script,
-                '--config',
-                SRC_DIR / '../../data/annotation/config.yaml',
                 '--resize',
                 f'{SVG_IMAGE_SIZE}x{SVG_IMAGE_SIZE}',
                 '--svg_size',

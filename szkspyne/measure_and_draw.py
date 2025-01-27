@@ -34,12 +34,14 @@ def color_to_hex(color: tuple[int, int, int]) -> str:
     return "#{:02x}{:02x}{:02x}".format(*color)
 
 
-def load_label_colors(filename, to_hex=True) -> Dict[str, str]:
-    with open(filename) as f:
-        color_data = yaml.safe_load(f)
-    label_colors = color_data['label_colors']
-    if to_hex:
-        label_colors = {k: color_to_hex(v) for k, v in label_colors.items()}
+def load_label_colors(filename) -> Dict[str, str]:
+    if not filename:
+        label_colors = utils.read_default_label_colors()
+    else:
+        with open(filename) as f:
+            color_data = yaml.safe_load(f)
+        label_colors = color_data['label_colors']
+    label_colors = {k: color_to_hex(v) for k, v in label_colors.items()}
     return label_colors
 
 
@@ -156,7 +158,7 @@ def measure_json(
 
 def main():
     parser = argparse.ArgumentParser(description='Measure and draw.')
-    parser.add_argument('-c', '--config', help='Config yaml filename', required=True)
+    parser.add_argument('-c', '--config', help='Config yaml filename')
     parser.add_argument('--title', help='html title', default='Scoliosis Measuaraments')
     parser.add_argument('--image_type', help='Image type', choices=['ap', 'lateral'], default='ap')
     parser.add_argument('--imagedb', help='image database filename for heatmap overlay')
