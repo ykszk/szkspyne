@@ -180,7 +180,8 @@ def task_holdout_fit():
             model_dir / f'pca_{image_type}_L5.npz',
             model_dir / f'pca_{image_type}_L6.npz',
         ]
-        params = PCA_FIT_PARAMS + ['--skipped', outdir / f'skipped_{image_type}.txt']
+        icp_weight = '0.01'
+        params = PCA_FIT_PARAMS + ['--skipped', outdir / f'skipped_{image_type}.txt', '--icp_weight', icp_weight]
         action = ['python', script, indir, '--output', outdir] + params + models
 
         ndjson_filename = RESULT_DIR / 'auto/keypoints' / image_type / 'pca_keypoints.ndjson'
@@ -747,7 +748,8 @@ def task_train_summary():
         outfile = output_dir / f'manual_annotation_{image_type}_lm.ndjson'
         c1 = f"jq -c '{jq_command}' {infile}"
         c2 = f"jq -c '{JQ_REMOVE_BEND}'"
-        action = ' | '.join([c1, c2]) + f' > {outfile}'
+        sort = f"lmrs sort -"
+        action = ' | '.join([c1, c2, sort]) + f' > {outfile}'
 
         yield {
             'name': f'jq-{image_type}',
