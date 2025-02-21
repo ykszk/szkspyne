@@ -13,6 +13,13 @@ from logzero import logger
 from sklearn.model_selection import KFold
 
 
+def copy_file(src, dst):
+    try:
+        shutil.copy(src, dst)
+    except PermissionError:
+        logger.debug(f'permission error copying {src} to {dst}')
+
+
 def main():
     parser = argparse.ArgumentParser(description='Prepare dataset for experiments.')
     parser.add_argument('input', help='Input ndjson in ShapeDictLine format')
@@ -41,19 +48,19 @@ def main():
     src_outdir = outroot / 'src'
     src_outdir.mkdir(parents=True, exist_ok=True)
     for fn in Path(__file__).parent.glob('*.py'):
-        shutil.copy(fn, src_outdir)
+        copy_file(fn, src_outdir)
     for subdir in ['utils']:
         src_subdir = src_outdir / subdir
         src_subdir.mkdir(parents=True, exist_ok=True)
         for fn in Path(__file__).parent.glob(f'{subdir}/*.py'):
-            shutil.copy(fn, src_subdir)
+            copy_file(fn, src_subdir)
     with open(outroot / 'args.json', 'w') as f:
         json.dump(args.__dict__, f, indent=2)
 
     output_ndjson_filename = (
         outroot / 'manual_annotation.ndjson'
     )  # filename has to be this because post processing uses this name
-    shutil.copy(args.input, output_ndjson_filename)
+    copy_file(args.input, output_ndjson_filename)
     df_all = exp_utils.ndjson2df(output_ndjson_filename)
 
     logger.info('All data %d', len(df_all))

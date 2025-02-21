@@ -25,5 +25,6 @@ fi
 
 for fold_dir in "$result_dir"/folds/*; do
     echo "$fold_dir"
-    python3 "$SCRIPT_DIR"/exp_single.py --encoder_name efficientnet-b4 --height 1024 --batch_size 4 --lr 0.001 --sigma 3 --max-epochs 128 --input "$fold_dir" --crop_labels TL TR BL BR
+    python3 "$SCRIPT_DIR"/exp_single.py --encoder_name efficientnet-b5 --height 1024 --batch_size 4 --lr 0.001 --sigma 3 --max-epochs 128 --input "$fold_dir" --crop_labels TL TR BL BR
+    # python3 "$SCRIPT_DIR"/exp_single.py --encoder_name efficientnet-b4 --height 768 --batch_size 5 --lr 0.001 --sigma 3 --max-epochs 128 --input "$fold_dir"
 done
