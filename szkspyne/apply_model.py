@@ -19,7 +19,7 @@ MIN_THRESH = 0.1 * PROB_MAX
 
 
 def worker(task_args):
-    (pred, original_shape, image_filename, json_filename, hm_filename, ch_as_z, clahe) = task_args
+    (pred, original_shape, image_filename, json_filename, hm_filename, ch_as_z, clahe, max_num_points) = task_args
     if clahe:
         # flatten x and y
         flattened = pred.reshape(pred.shape[0], pred.shape[1], -1)
@@ -36,6 +36,7 @@ def worker(task_args):
             json_filename,
             settings.LABEL_NAMES,
             min_thresh=MIN_THRESH,
+            max_num_points=max_num_points,
         )
     if hm_filename:
         if ch_as_z:
@@ -63,6 +64,9 @@ def main():
     p_single.add_argument('--preproc', help='Save preprocessed input image')
     p_single.add_argument('--labelme', help='Save labelme json file')
     p_single.add_argument('--heatmap', help='Save heatmap file')
+    p_single.add_argument(
+        '--max_nums', help='Max number of points for each label. Json file with label_name:num', type=str
+    )
     p_single.add_argument('--clahe', help='Clahe in preprocessing', action='store_true')
     p_single.add_argument('--height', help='Image height: %(default)s', metavar='<int>', type=int, default=768)
     p_single.add_argument('--ch_as_z', help='Use channel as z axis', action='store_true')
@@ -76,9 +80,12 @@ def main():
     p_batch.add_argument('--ext', help='Input image file extension: %(default)s', default='.png')
     p_batch.add_argument('--labelme', help='Save labelme json file', action='store_true')
     p_batch.add_argument('--heatmap', help='Save heatmap', action='store_true')
+    p_batch.add_argument(
+        '--max_nums', help='Max number of points for each label. Json file with label_name:num', type=str
+    )
     p_batch.add_argument('--keep_image_path', help='Keep image path', action='store_true')
     p_batch.add_argument('--clahe', help='Clahe in preprocessing', action='store_true')
-    p_batch.add_argument('--height', help='Image height: %(default)s', metavar='<int>', type=int, default=768)
+    p_batch.add_argument('--height', help='Image height: %(default)s', metavar='<int>', type=int)
     p_batch.add_argument('--workers', help='The number of workers: %(default)s', metavar='<int>', type=int, default=4)
     p_batch.add_argument('--ch_as_z', help='Use channel as z axis', action='store_true')
     p_batch.add_argument('--batch_size', help='Batch size: %(default)s', metavar='<int>', type=int, default=4)
@@ -158,6 +165,9 @@ def main():
 
     def apply_single(args):
         # device = 'cpu'
+        if args.max_nums:
+            print('Not implemented')
+            sys.exit(1)
         torch.set_num_threads(8)
         device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
         logger.info('Use %s', device)
@@ -210,6 +220,13 @@ def main():
     def apply_batch(args):
         import tqdm
         from joblib import Parallel, delayed
+        import json
+
+        max_nums_per_label = None
+        if args.max_nums:
+            with open(args.max_nums) as f:
+                max_nums_per_label = json.load(f)
+            logger.info(f'Max nums per label: {max_nums_per_label}')
 
         logger.info('Enumerate input files')
         indir = Path(args.input)
@@ -288,7 +305,7 @@ def main():
                     json_filenames = [args.output / fn.with_suffix('.json').name for fn in filenames]
                     hm_filenames = [args.output / fn.with_suffix('.mha').name for fn in filenames]
                 for task_args in zip(pred, original_shapes, image_filenames, json_filenames, hm_filenames):
-                    task_args = list(task_args) + [args.ch_as_z, args.clahe]
+                    task_args = list(task_args) + [args.ch_as_z, args.clahe, max_nums_per_label]
                     pool.apply_async(worker, (task_args,), callback=callback, error_callback=print)
             pool.close()
             pool.join()

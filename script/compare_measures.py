@@ -49,7 +49,7 @@ def main():
 
     if args.dataframe:
         df = MeasureResultLine.to_dataframe(lines)
-        df.to_csv(args.dataframe, index=False)
+        df.to_csv(args.dataframe, index=True)
 
 
 if __name__ == "__main__":

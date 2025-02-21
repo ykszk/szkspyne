@@ -21,11 +21,14 @@ def hm2labelme(
     max_num_points: Optional[Dict[str, int]] = None,
 ):
     kps_per_ch = point_utils.local_center_of_masses(pred, min_thresh)
-    for kps, label in zip(kps_per_ch, label_names):
+    for i_ch, (kps, label) in enumerate(zip(kps_per_ch, label_names)):
         max_num = max_num_points.get(label, len(kps)) if max_num_points else len(kps)
         if len(kps) > max_num:
-            hm_values = [pred[int(kp[0]), int(kp[1])] for kp in kps]
+            hm_values = [pred[i_ch, int(kp[0]), int(kp[1])] for kp in kps]
             kps = [kp for _, kp in sorted(zip(hm_values, kps), reverse=True)[:max_num]]
+            # resort kps by y
+            kps = sorted(kps, key=lambda x: x[0])
+            kps_per_ch[i_ch] = kps
     scale = original_shape[0] / pred.shape[1]
     kps_per_ch = [(np.array(kps, dtype=np.float32) * scale).tolist() for kps in kps_per_ch]
     json_data = labelme_utils.kps2labelme(kps_per_ch, image_filename, original_shape, label_names)
