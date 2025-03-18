@@ -14,16 +14,19 @@ def display_wrapped(tag: str, inner: str):
 
 
 result_dir = Path(os.environ.get('RESULT_DIR', '/poseidon/users/suzuki/projects/scoliosis/result/exp20241226'))
-
 image_type = os.environ.get('IMAGE_TYPE', 'ap_whole')
 
+csv_filename = os.environ.get('CSV_FILENAME', result_dir / f'postprocess/train/measures_{image_type}.csv')
+flags_ndjson_filename = os.environ.get('FLAGS_FILENAME', result_dir / 'manual_annotation.ndjson')
+
+
 # %%
-df = pd.read_csv(result_dir / f'postprocess/train/measures_{image_type}.csv', index_col='filename')
+df = pd.read_csv(csv_filename, index_col='filename')
 df.index = pd.Index(df.index.str.split('/').str[-1], name='filename')
 del df['unit_of_length']
 # %%
 df_ext = df.copy()
-with open(result_dir / 'manual_annotation.ndjson') as f:
+with open(flags_ndjson_filename) as f:
     flags = [json.loads(line) for line in f]
 
 d_flags = {Path(flag['filename']).name: flag['content']['flags'] for flag in flags}
@@ -48,7 +51,7 @@ def extract_l_count(key, d_flags):
 df_ext['L count'] = df.index.map(partial(extract_l_count, d_flags=d_flags))
 
 # %%
-df_ext.to_csv(result_dir / f'postprocess/train/measures_{image_type}_ext.csv')
+df_ext.to_csv(str(csv_filename).replace('.csv', '_ext.csv'))
 for col in df.columns:
     df[col] = pd.to_numeric(df[col], errors='coerce')
 # %%
