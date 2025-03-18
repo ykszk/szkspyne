@@ -722,50 +722,48 @@ def task_summary():
             }
 
 
-def task_train_summary():
-    '''
-    Summary of training data
-    '''
-    output_dir = OUTPUT_MAIN_DIR / 'train'
-    output_dir.mkdir(parents=True, exist_ok=True)
+def _train_summary(source_file: Path, output_dir: Path):
     script = SCRIPT_DIR / 'exp2lmjson.py'
-    infile = RESULT_DIR / 'manual_annotation.ndjson'
-    outfile = output_dir / f'manual_annotation_lm.ndjson'
+    infile = source_file
+    first_lm_file = output_dir / (infile.stem + '_lm.ndjson')
+
+    subname = str(source_file)
 
     yield {
-        'name': f'exp2lm',
-        'actions': [['python', script, infile, outfile]],
+        'name': f'exp2lm_{subname}',
+        'actions': [['python', script, infile, first_lm_file]],
         'file_dep': [infile],
-        'targets': [outfile],
+        'targets': [first_lm_file],
     }
 
     for image_type in IMAGE_TYPES:
         # split
         jq_command = f'select(.content.flags | has("{image_type}"))'  # `.content.flags` is dictionary of bool but just check the key existence is enough because the value should be always true
-        infile = output_dir / f'manual_annotation_lm.ndjson'
-        outfile = output_dir / f'manual_annotation_{image_type}_lm.ndjson'
+        infile = first_lm_file
+        outfile = output_dir / (infile.stem + f'_{image_type}.ndjson')
         c1 = f"jq -c '{jq_command}' {infile}"
         c2 = f"jq -c '{JQ_REMOVE_BEND}'"
         sort = f"lmrs sort -"
         action = ' | '.join([c1, c2, sort]) + f' > {outfile}'
 
         yield {
-            'name': f'jq-{image_type}',
+            'name': f'jq-{image_type}_{subname}',
             'actions': [action],
             'file_dep': [infile],
             'targets': [outfile],
         }
         # convert to native format
         infile = outfile
-        outfile = output_dir / f'manual_annotation_{image_type}_native.ndjson'
-        yield from convert_to_native(infile, outfile, image_type, f'to-native-{image_type}')
+        # outfile = output_dir / f'manual_annotation_{image_type}_native.ndjson'
+        outfile = output_dir / (source_file.stem + f'_{image_type}_native.ndjson')
+        yield from convert_to_native(infile, outfile, image_type, f'to-native-{image_type}_{subname}')
 
         # measure
         infile = outfile
-        outfile = output_dir / f'measures_{image_type}.ndjson'
+        outfile = output_dir / (source_file.stem + f'_{image_type}_measures.ndjson')
         command = "coronal" if image_type == "ap_whole" else "sagittal"
         yield {
-            'name': f'measure-{image_type}',
+            'name': f'measure-{image_type}_{subname}',
             'actions': [['scolrs', 'measure', infile, outfile, command]],
             'file_dep': [infile],
             'targets': [outfile],
@@ -774,7 +772,7 @@ def task_train_summary():
         # convert ndjson to csv
         script = SRC_DIR / 'utils/scolrs.py'
         yield {
-            'name': f'ndjson2csv-{image_type}',
+            'name': f'ndjson2csv-{image_type}_{subname}',
             'actions': [
                 ['python', script, outfile, outfile.with_suffix('.csv')],
             ],
@@ -782,47 +780,38 @@ def task_train_summary():
             'targets': [outfile.with_suffix('.csv')],
         }
 
-        c2 = (
-            f'RESULT_DIR={RESULT_DIR} IMAGE_TYPE={image_type} jupyter nbconvert --stdin --to html --execute --no-input'
-        )
+        csv_filename = outfile.with_suffix('.csv')
+        c2 = f'RESULT_DIR={RESULT_DIR} IMAGE_TYPE={image_type} CSV_FILENAME={csv_filename} FLAGS_FILENAME={source_file} jupyter nbconvert --stdin --to html --execute --no-input'
         script = ROOT_DIR / 'notebooks/analyze_train.py'
-        c2 = c2 + ' --output ' + str(OUTPUT_MAIN_DIR / f'train/summary_train_{image_type}.html')
-        title = f'{{"title":"training data {image_type}"}}'
+        c2 = c2 + ' --output ' + str(output_dir / f'{source_file.stem}_{image_type}.html')
+        title = f'{{"title":"{source_file.stem} data {image_type}"}}'
         c1 = f"jupytext --to ipynb --output - {script} --update-metadata '{title}'"
         action = ' | '.join([c1, c2])
         yield {
-            'name': f'summary-train-{image_type}',
+            'name': f'summary-train-{image_type}_{subname}',
             'actions': [action],
             'file_dep': [outfile.with_suffix('.csv')],
             'targets': [],
             'clean': True,
         }
 
-    # for image_type in IMAGE_TYPES:
-    #     # convert to native format
-    #     infile = RESULT_DIR / 'reference' / 'keypoints' / image_type / f'final_keypoints.ndjson'
-    #     outfile = infile.with_name('final_keypoints_native.ndjson')
-    #     yield from convert_to_native(infile, outfile, image_type, f'to-native-{image_type}')
 
-    #     # measure
-    #     infile = outfile
-    #     outfile = RESULT_DIR / 'reference' / f'measures_{image_type}.ndjson'
+def task_train_summary():
+    '''
+    Summary of training data
+    '''
+    output_dir = OUTPUT_MAIN_DIR / 'train'
+    output_dir.mkdir(parents=True, exist_ok=True)
+    source_file = RESULT_DIR / 'manual_annotation.ndjson'
+    yield from _train_summary(
+        source_file,
+        output_dir,
+    )
 
-    #     command = "coronal" if image_type == "ap_whole" else "sagittal"
-    #     yield {
-    #         'name': f'measure-{image_type}',
-    #         'actions': [['scolrs', 'measure', infile, outfile, command]],
-    #         'file_dep': [infile],
-    #         'targets': [outfile],
-    #     }
-
-    #     # convert ndjson to csv
-    #     script = SRC_DIR / 'utils/scolrs.py'
-    #     yield {
-    #         'name': f'ndjson2csv-{image_type}',
-    #         'actions': [
-    #             ['python', script, outfile, outfile.with_suffix('.csv')],
-    #         ],
-    #         'file_dep': [outfile],
-    #         'targets': [outfile.with_suffix('.csv')],
-    #     }
+    for fold_dir in FOLD_DIRS:
+        output_dir = OUTPUT_MAIN_DIR / f'train/fold{fold_dir.name}'
+        output_dir.mkdir(parents=True, exist_ok=True)
+        source_file = fold_dir / 'train_val.ndjson'
+        yield from _train_summary(source_file, output_dir)
+        source_file = fold_dir / 'test.ndjson'
+        yield from _train_summary(source_file, output_dir)
