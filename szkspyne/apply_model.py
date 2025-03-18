@@ -68,7 +68,7 @@ def main():
         '--max_nums', help='Max number of points for each label. Json file with label_name:num', type=str
     )
     p_single.add_argument('--clahe', help='Clahe in preprocessing', action='store_true')
-    p_single.add_argument('--height', help='Image height: %(default)s', metavar='<int>', type=int, default=768)
+    p_single.add_argument('--height', help='Image height: %(default)s', metavar='<int>', type=int, required=True)
     p_single.add_argument('--ch_as_z', help='Use channel as z axis', action='store_true')
     p_single.set_defaults(mode='single')  # not using func to enable lazy loading of the modules
 
@@ -85,7 +85,7 @@ def main():
     )
     p_batch.add_argument('--keep_image_path', help='Keep image path', action='store_true')
     p_batch.add_argument('--clahe', help='Clahe in preprocessing', action='store_true')
-    p_batch.add_argument('--height', help='Image height: %(default)s', metavar='<int>', type=int)
+    p_batch.add_argument('--height', help='Image height: %(default)s', metavar='<int>', type=int, required=True)
     p_batch.add_argument('--workers', help='The number of workers: %(default)s', metavar='<int>', type=int, default=4)
     p_batch.add_argument('--ch_as_z', help='Use channel as z axis', action='store_true')
     p_batch.add_argument('--batch_size', help='Batch size: %(default)s', metavar='<int>', type=int, default=4)
