@@ -22,11 +22,16 @@ logger.setLevel(os.environ.get('LOG_LEVEL', 'INFO').upper())
 result_dir = Path(os.environ.get('RESULT_DIR', '/poseidon/users/suzuki/projects/scoliosis/result/exp20241113'))
 
 image_type = os.environ.get('IMAGE_TYPE', 'ap_whole')
+against_closest = os.environ.get('AGAINST_CLOSEST', 'false').lower() == 'true'
 
 display_wrapped('h1', f'Analyze results for {image_type}')
 df_ref = pd.read_csv(result_dir / f'reference/no-bend_measures_{image_type}.csv', index_col='filename')
-df_ai = pd.read_csv(result_dir / f'auto/no-bend_measures_{image_type}.csv', index_col='filename')
-df_diff = pd.read_csv(result_dir / f'postprocess/no-bend_measures_{image_type}_diff.csv', index_col='filename')
+if against_closest:
+    df_ai = pd.read_csv(result_dir / f'closest/no-bend_measures_{image_type}.csv', index_col='filename')
+    df_diff = pd.read_csv(result_dir / f'closest/no-bend_measures_{image_type}_diff.csv', index_col='filename')
+else:
+    df_ai = pd.read_csv(result_dir / f'auto/no-bend_measures_{image_type}.csv', index_col='filename')
+    df_diff = pd.read_csv(result_dir / f'postprocess/no-bend_measures_{image_type}_diff.csv', index_col='filename')
 
 # extract stem from index
 for df in [df_ref, df_ai, df_diff]:
@@ -71,7 +76,10 @@ def load_flags(filename: Path) -> dict:
 
 
 if True:
-    output_dir = result_dir / 'postprocess'
+    if against_closest:
+        output_dir = result_dir / 'closest'
+    else:
+        output_dir = result_dir / 'postprocess'
     d_flags = load_flags(result_dir / 'reference' / 'keypoints' / image_type / 'final_keypoints.ndjson')
     df_ref_ext = df_ref.copy()
     df_ref_ext['L count'] = df_ref_ext.index.map(lambda x: next(iter((d_flags[x] & {'L4', 'L5', 'L6'}))))
@@ -236,8 +244,12 @@ for col in cols:
 
         # create side by side comparison
         ref_render_dir = result_dir / f'reference/{image_type}'
-        ai_render_dir = result_dir / f'auto/{image_type}'
-        side_by_side_dir = result_dir / f'postprocess/side_by_side'
+        if against_closest:
+            ai_render_dir = result_dir / f'closest/{image_type}'
+            side_by_side_dir = result_dir / f'closest/side_by_side'
+        else:
+            ai_render_dir = result_dir / f'auto/{image_type}'
+            side_by_side_dir = result_dir / f'postprocess/side_by_side'
         if POST_OP is not None:
             side_by_side_dir = side_by_side_dir.with_name(side_by_side_dir.name + ('_PostOP' if POST_OP else '_PreOP'))
         side_by_side_dir.mkdir(exist_ok=True, parents=True)

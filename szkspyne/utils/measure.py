@@ -170,20 +170,28 @@ def get_vert_and_disc_corners(kps):
     return sacrum_tltr, vert_corners, disc_corners
 
 
+def default_label_colors() -> Path:
+    return Path(__file__).parent.parent.parent / 'configs/default_label_colors.yaml'
+
+
 def read_default_label_colors() -> Dict[str, Tuple[int, int, int]]:
-    filename = Path(__file__).parent.parent.parent / 'configs/default_label_colors.yaml'
+    filename = default_label_colors()
     with open(filename) as f:
         color_data = yaml.safe_load(f)
     return color_data['label_colors']
 
 
+def default_line_colors() -> Path:
+    return Path(__file__).parent.parent.parent / 'configs/default_line_colors_label.csv'
+
+
 def read_default_line_colors() -> Dict[str, str]:
-    color_filename = Path(__file__).parent.parent.parent / 'configs/default_line_colors.csv'
+    color_filename = default_line_colors()
     color_dict = {}
     with open(color_filename) as f:
         reader = csv.DictReader(f)
         for r in reader:
-            color_dict[r['name']] = r['color']
+            color_dict[r['label']] = r['color']
     return color_dict
 
 

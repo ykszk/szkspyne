@@ -1,7 +1,9 @@
 import os
 import sys
 from pathlib import Path
+import json
 from logzero import logger
+import szkspyne.utils.measure as measure_utils
 
 log_level = os.environ.get('LOG_LEVEL', 'INFO').upper()
 logger.setLevel(log_level)
@@ -446,23 +448,119 @@ def task_curve():
     '''
     for image_type in ['ap_whole']:
         for subdir in ['auto', 'reference']:
+            file_deps = []
             infile = RESULT_DIR / subdir / 'keypoints' / image_type / 'final_keypoints.ndjson'
+            file_deps.append(infile)
             curve_file = RESULT_DIR / subdir / f'curve_indices_{image_type}.ndjson'
             c1 = f"jq -c '{JQ_REMOVE_BEND}' {infile}"
             script = SCRIPT_DIR / 'sort_points.py'
             c2 = f'python {script} -'
-            c3 = f'scolrs curve --all -'
+            c3 = f'scolrs curve -'
             script = SRC_DIR / 'curve.py'
-            c4 = f'python {script}'
-            action1 = ' | '.join([c1, c2, c3, c4]) + f' > {curve_file}'
+            # c4 = f'python {script}'
+            action1 = ' | '.join([c1, c2, c3]) + f' > {curve_file}'
+
+            # join curves with points
+            infile = RESULT_DIR / subdir / 'keypoints' / image_type / 'no-bend_final_keypoints_native.ndjson'
+            file_deps.append(infile)
+            curve_and_points_file = RESULT_DIR / subdir / f'curve_and_points.ndjson'
+            action2 = f'lmrs join {infile} {curve_file} > {curve_and_points_file}'
 
             yield {
                 'name': f'{image_type}-{subdir}',
-                'actions': [action1],
+                'actions': [action1, action2],
                 'file_dep': [infile],
-                'targets': [curve_file],
+                'targets': [curve_file, curve_and_points_file],
                 'clean': True,
             }
+
+
+def task_closest_endplate():
+    '''
+    Find closest endplate
+    '''
+    script = SCRIPT_DIR / 'find_endplate.py'
+    file_dep = [RESULT_DIR / 'reference/curve_and_points.ndjson']
+    file_dep.append(RESULT_DIR / 'reference/keypoints/ap_whole/final_keypoints_relpath.ndjson')
+    outdir = RESULT_DIR / 'closest'
+    outfile = outdir / 'no-bend_final_keypoints_native.ndjson'
+    action1 = ['python', script, RESULT_DIR]
+    # draw
+    draw_dir = outdir / 'ap_whole'
+    draw_dir.mkdir(parents=True, exist_ok=True)
+    action2 = [
+        'scolrs',
+        'svg-ndjson',
+        outfile,
+        draw_dir,
+        '--resize',
+        f'{SVG_IMAGE_SIZE}x{SVG_IMAGE_SIZE}',
+        '--size',
+        '1200x1200',
+        '--html',
+        '--label-colors',
+        measure_utils.default_label_colors(),
+        '--line-colors',
+        measure_utils.default_line_colors(),
+        'coronal',
+        '--hide-group',
+        'non-cobb',
+    ]
+    # measure
+    output_measure = outdir / 'no-bend_measures_ap_whole.ndjson'
+    action3 = ['scolrs', 'measure', outfile, output_measure, 'coronal']
+    # convert ndjson to csv
+    script = SRC_DIR / 'utils/scolrs.py'
+    action3_1 = ['python', script, output_measure, output_measure.with_suffix('.csv')]
+
+    # compare measures
+    script = SCRIPT_DIR / 'compare_measures.py'
+    infile1 = RESULT_DIR / 'reference/no-bend_measures_ap_whole.ndjson'
+    infile2 = output_measure
+    outfile_ndjson = outdir / 'no-bend_measures_ap_whole_diff.ndjson'
+    outfile_csv = outdir / 'no-bend_measures_ap_whole_diff.csv'
+    action4 = ['python', script, infile1, infile2, outfile_ndjson, '--dataframe', outfile_csv, '--basename']
+    yield {
+        'name': f'find-endplate',
+        'actions': [action1, action2, action3, action3_1, action4],
+        # 'actions': [action1, action3, action4],
+        'file_dep': file_dep,
+        'targets': [outfile, outfile_ndjson, outfile_csv, output_measure, output_measure.with_suffix('.csv')],
+    }
+
+
+def task_summary_closest():
+    '''
+    Summarize closest endplate
+    '''
+    script = ROOT_DIR / 'notebooks/analyze_results.py'
+    outdir = RESULT_DIR / 'closest'
+    file_dep = [outdir / 'no-bend_measures_ap_whole_diff.csv']
+    image_type = 'ap_whole'
+    for post_op in [None, False, True]:
+        c2 = f'AGAINST_CLOSEST=true RESULT_DIR={RESULT_DIR} IMAGE_TYPE={image_type} jupyter nbconvert --stdin --to html --execute --no-input'
+        if post_op is not None:
+            if post_op:
+                outfile = outdir / f'summary_{image_type}_PostOp.html'
+                c2 = 'POST_OP=True ' + c2 + ' --output ' + str(outfile)
+                title = f'{{"title":"summary {image_type} PostOp"}}'
+            else:
+                outfile = outdir / f'summary_{image_type}_PreOp.html'
+                c2 = 'POST_OP=False ' + c2 + ' --output ' + str(outfile)
+                title = f'{{"title":"summary {image_type} PreOp"}}'
+        else:
+            outfile = outdir / f'summary_{image_type}.html'
+            c2 = c2 + ' --output ' + str(outfile)
+            title = f'{{"title":"summary {image_type}"}}'
+        c1 = f"jupytext --to ipynb --output - {script} --update-metadata '{title}'"
+        action = ' | '.join([c1, c2])
+        yield {
+            'name': f'summary-{image_type}-closest-{post_op}',
+            'actions': [action],
+            'file_dep': file_dep,
+            'targets': [outfile],
+            'clean': True,
+        }
 
 
 def remove_bend(infile, outfile):
@@ -653,6 +751,10 @@ def task_apply_model():
         model_files = list(model_dir.glob('*.ckpt'))
         model_files.sort()
         model_file = model_files[-1]
+        # read height
+        with open(model_dir / '../args.json') as f:
+            args = json.load(f)
+            height = str(args['height'])
         action = [
             'python',
             script,
@@ -661,7 +763,7 @@ def task_apply_model():
             '--ckpt',
             model_file,
             '--height',
-            '1024',
+            height,
             '--labelme',
             '--output',
             outdir,

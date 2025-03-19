@@ -37,9 +37,10 @@ class ApexSet(BaseModel):
         return ApexSet(PT=None, MT=None, TLL=None)
 
 
-class MajorCurve(Enum):
+class MajorCurve(str, Enum):
     MT = 'MT'
     TLL = 'TLL'
+
 
 class PyCurve(BaseModel):
     name: str
@@ -47,12 +48,15 @@ class PyCurve(BaseModel):
     apices: Dict[str, Optional[int]]
     angles: Dict[str, Optional[float]]
 
+
 class PyCurveInfo(BaseModel):
     curve_indices: List[PyCurve]
+
 
 class PyCurveLine(BaseModel):
     filename: str
     content: PyCurveInfo
+
 
 class CurveInfo(BaseModel):
     curves: CurveSet
@@ -71,7 +75,7 @@ class CurveInfo(BaseModel):
     #         return VertebraDiscIndex.T6
     #     else:
     #         return VertebraDiscIndex.T6
-    
+
     def to_py_curve(self, name) -> PyCurve:
         indices: Dict[str, Optional[List[int]]] = {k: None for k in self.curves.model_dump().keys()}
         angles: Dict[str, Optional[float]] = {k: None for k in self.apices.model_dump().keys()}
@@ -86,6 +90,7 @@ class CurveInfo(BaseModel):
 
         return PyCurve(name=name, indices=indices, apices=apices, angles=angles)
 
+
 AllCurves = List[CurveAngleApex]
 
 
@@ -95,6 +100,7 @@ def get_curve(all_curves: AllCurves, i: int) -> Tuple[Optional[CurveAngle], Opti
         return ((c[0], c[1]), c[2])
     else:
         return (None, None)
+
 
 class CurveInfoAll(BaseModel):
     curves: CurveSet
@@ -146,26 +152,31 @@ class CurveInfoAll(BaseModel):
     def to_curve_info(self) -> CurveInfo:
         return CurveInfo(curves=self.curves, apices=self.apices, major_curve=self.major_curve)
 
+
 class CurveInfoAllLine(BaseModel):
     filename: str
     content: CurveInfoAll
 
+
 def main():
     import sys
-    parser = argparse.ArgumentParser(description='Insert secondary curve info if possible.')
-    parser.add_argument('input', nargs='?', type=argparse.FileType('r'), default=sys.stdin, help='Input ndjson filename')
 
+    parser = argparse.ArgumentParser(description='Insert secondary curve info if possible.')
+    parser.add_argument(
+        'input', nargs='?', type=argparse.FileType('r'), default=sys.stdin, help='Input ndjson filename'
+    )
 
     args = parser.parse_args()
 
     all_data = [CurveInfoAllLine.model_validate_json(line) for line in args.input]
     for data in all_data:
-        content  = data.content
+        content = data.content
         curve_indices = [content.to_curve_info().to_py_curve('Primary')]
         second_info = content.second_info()
         if second_info:
             curve_indices.append(second_info.to_py_curve('Secondary'))
-        print(PyCurveLine(filename=data.filename, content=PyCurveInfo(curve_indices=curve_indices)).model_dump_json())            
+        print(PyCurveLine(filename=data.filename, content=PyCurveInfo(curve_indices=curve_indices)).model_dump_json())
+
 
 if __name__ == '__main__':
     main()
