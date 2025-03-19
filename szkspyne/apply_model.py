@@ -107,6 +107,7 @@ def main():
     import transforms
     from PIL import Image
     from functools import lru_cache
+    import exp_utils
 
     DOWN_FACTOR = 256
 
@@ -114,10 +115,7 @@ def main():
     @lru_cache(maxsize=4)
     def _load(filename: Union[str, Path]):
         if str(filename).endswith('.dcm') or str(filename).endswith('.dicom'):
-            dcm = pydicom.dcmread(filename)
-            x = dcm.pixel_array
-            if dcm.PhotometricInterpretation == 'MONOCHROME1':
-                x = x.max() - x
+            x = exp_utils.load_dicom(filename)
         else:
             img = Image.open(filename)
             x = np.array(img)
@@ -138,8 +136,8 @@ def main():
         # logger.info('Padded to %s', x.shape)
         if clahe:
             x = apply_clahe(x)
-        x = transforms.percentile_normalize(x, 1)  # , clip=True)
-        x = x.astype(np.float32)
+        x = transforms.test_transform(x)
+        x = x[0]  # remove channel dim
         return x, original_shape
 
     def apply_clahe(img, clipLimit=100, tileGridSize=(16, 16)):
