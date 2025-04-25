@@ -1,11 +1,15 @@
-import math
-from ast import ListComp
-
+from typing import List
 import pytorch_lightning as pl
 import segmentation_models_pytorch as smp
 import torch
 import torch.optim as optim
-from torch import nn
+from szkmipy import boundingbox as bb
+import img_utils
+import numpy as np
+import torch.nn.functional as F
+
+DOWN_FACTOR = 256
+bb.enable_torch()
 
 
 class LitSMP(pl.LightningModule):
@@ -23,6 +27,10 @@ class LitSMP(pl.LightningModule):
         # self.loss = torch.nn.MSELoss()
         self.loss = torch.nn.BCEWithLogitsLoss()
         self.lr = hparams.lr
+        self.auto_crop_enabled = False
+        self.auto_crop_height = 1024
+        self.auto_crop_thresh = 0.1
+        self.auto_crop_margin = 0.1
         self.save_hyperparameters()
 
     @staticmethod
@@ -38,7 +46,10 @@ class LitSMP(pl.LightningModule):
         return parent_parser
 
     def forward(self, x):
-        return self.model(x)
+        if self.auto_crop_enabled:
+            return self.auto_crop_apply(x, self.auto_crop_height, self.auto_crop_thresh, self.auto_crop_margin)
+        else:
+            return self.model(x)
 
     def shared_step(self, batch, batch_idx):
         x, y = batch
@@ -75,6 +86,66 @@ class LitSMP(pl.LightningModule):
         from torchinfo import summary
 
         return summary(self.model, shape, device='cpu')
+
+    def enable_auto_crop(self, height, crop_thresh=0.1, margin=0.1):
+        self.auto_crop_enabled = True
+        self.auto_crop_height = height
+        self.auto_crop_thresh = crop_thresh
+        self.auto_crop_margin = margin
+
+    def auto_crop_apply(self, xs, height, crop_thresh=0.1, margin=0.1) -> torch.Tensor:
+        heatmaps = self.model(xs)
+        # remove channel dim
+        heatmaps = torch.sigmoid(torch.max(heatmaps, dim=1)[0])
+        resized_xs = []
+        cropped_shapes = []
+        bboxes = []
+        for heatmap, x in zip(heatmaps, xs):
+            x = x.detach().cpu().numpy()
+            heatmap = heatmap.detach().cpu().numpy()
+            bbox = bb.bbox(heatmap > crop_thresh)
+            bbox_shape = bbox[1] - bbox[0]
+            margin_ratio = 0.1
+            margin = (bbox_shape * margin_ratio).astype(int)
+            bbox = bb.add_margin_to_bbox(heatmap, bbox, margin)
+            # add channel dim to bbox
+            bmin, bmax = bbox
+            bmin = np.concatenate([np.array([0]), bmin])
+            bmax = np.concatenate([np.array([x.shape[0]]), bmax])
+            bbox = (bmin, bmax)
+            bboxes.append(bbox)
+            cropped_x = bb.crop(x, bbox)
+            cropped_shapes.append(cropped_x.shape)
+            # resized_x = img_utils.resize_image_height(height, cropped_x)
+            _scale, width = img_utils.calc_resize_height(height, cropped_x.shape[1], cropped_x.shape[2])
+            input_tensor = torch.Tensor(cropped_x[np.newaxis])
+            resized_x = F.interpolate(input_tensor, size=(height, width), mode='bilinear')
+            resized_xs.append(resized_x[0, 0])  # TODO: handle channel dimension (second dim) properly
+        constant_value = int(torch.min(heatmaps))
+        del heatmaps
+        cropped_batch = img_utils.pad_batch(resized_xs, DOWN_FACTOR, 0)
+        cropped_batch = torch.Tensor(np.stack(cropped_batch)).to(self.device)
+
+        heatmaps = self.model(cropped_batch)
+
+        # restore original shape
+        restored_xs = []
+        for heatmap, bbox, cropped_shape in zip(heatmaps, bboxes, cropped_shapes):
+            # heatmap = heatmap.detach().cpu().numpy()
+            # heatmap = img_utils.resize_image_height(cropped_shape[1], heatmap)
+            _scale, width = img_utils.calc_resize_height(cropped_shape[1], heatmap.shape[1], heatmap.shape[2])
+            heatmap = F.interpolate(heatmap[torch.newaxis], size=(cropped_shape[1], width), mode='bilinear')
+            heatmap = heatmap[0, :, 0 : cropped_shape[1], 0 : cropped_shape[2]]
+            # heatmap = bb.uncrop(heatmap, xs[0].shape, bbox)
+            # print(heatmap.shape)
+            # remove channel dim from bbox
+            bbox = (bbox[0][1:], bbox[1][1:])
+            restored = []
+            for i in range(len(heatmap)):
+                restored.append(bb.uncrop(heatmap[i], xs[0, 0].shape, bbox, constant_values=constant_value))
+            restored = torch.stack(restored)
+            restored_xs.append(restored)
+        return torch.stack(restored_xs)
 
 
 def show_summary(args):
