@@ -238,10 +238,6 @@ for col in cols:
     # )
 
     for name, sl in [worst, first_q, second_q, third_q, p_5]:
-        df_sub = pd.DataFrame(df_sorted[sl])
-        display_wrapped('h4', name)
-        display(df_sub)
-
         # create side by side comparison
         ref_render_dir = result_dir / f'reference/{image_type}'
         if against_closest:
@@ -253,14 +249,23 @@ for col in cols:
         if POST_OP is not None:
             side_by_side_dir = side_by_side_dir.with_name(side_by_side_dir.name + ('_PostOP' if POST_OP else '_PreOP'))
         side_by_side_dir.mkdir(exist_ok=True, parents=True)
+        out_file = side_by_side_dir / f'{image_type}_{col}_{name}.html'
         filenames = []
+
+        df_sub = pd.DataFrame(df_sorted[sl])
+        if df_sub.empty:
+            with open(out_file.with_suffix('.txt'), 'w') as f:
+                f.write('None found')
+            continue
+        display_wrapped('h4', name)
+        display(df_sub)
+
         for i, row in enumerate(df_sub.itertuples()):
             fn = str(row.Index)
             fn = fn[:-5]  # strip ".json"
             ref_file = ref_render_dir / f'{fn}.html'
             ai_file = ai_render_dir / f'{fn}.html'
             filenames.extend([ref_file, ai_file])
-        out_file = side_by_side_dir / f'{image_type}_{col}_{name}.html'
         title = f'{col} - {name} | First: reference, Second: AI'
         args = ['scolrs', 'catalog', *filenames, out_file, '--title', title]
         args = [str(arg) for arg in args]
