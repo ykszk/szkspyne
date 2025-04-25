@@ -28,7 +28,7 @@ def base_image_transform(x: np.ndarray) -> np.ndarray:
     if x.dtype == np.uint8:
         x = x / 255
     else:
-        x = percentile_normalize(x, 0.1)
+        x = percentile_normalize(x, 1)
     if x.ndim == 2:
         x = x[np.newaxis]
     x = x.astype(np.float32)
@@ -68,8 +68,8 @@ def apply_clahe(img, clipLimit=100, tileGridSize=(32, 32)):
 
 
 class RandomClahe(ImageOnlyTransform):
-    def __init__(self, clipLimitChoices=[10, 100, 1000], gridSizeChoices=[8, 16, 32], always_apply=False, p=0.5):
-        super(RandomClahe, self).__init__(always_apply=always_apply, p=p)
+    def __init__(self, clipLimitChoices=[10, 100, 1000], gridSizeChoices=[8, 16, 32], p=0.5):
+        super(RandomClahe, self).__init__(p=p)
         self.clipLimitChoices = clipLimitChoices
         self.gridSizeChoices = gridSizeChoices
 
@@ -88,11 +88,11 @@ class RandomClahe(ImageOnlyTransform):
 
 
 img_tfs = [
-    RandomClahe(p=0.5),
+    RandomClahe(p=0.25),
     A.HorizontalFlip(p=0.25),
     A.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.1, p=0.25),
     A.Affine(scale={'x': (0.9, 1.1), 'y': (0.9, 1.1)}, rotate=[-15, 15], shear=[-10, 10], p=0.25),
-    A.GaussNoise(var_limit=0.02, p=0.25),
+    A.GaussNoise(p=0.1),
     A.Blur(blur_limit=(1, 3), p=0.25),
     # A.Normalize(mean=0.485, std=0.229),
     ToTensorV2(),
@@ -101,16 +101,16 @@ img_tfs = [
 # Use `A.ReplayCompose` to retrospectively access to the `applied` boolean parameter
 album_transform = A.ReplayCompose(img_tfs, keypoint_params=A.KeypointParams(format='yx', remove_invisible=False))
 
-CROP_HEIGHT, CROP_WIDTH = 512, 512
-CROPPER = A.RandomResizedCrop(height=CROP_HEIGHT, width=CROP_WIDTH, scale=[0.05, 0.20], ratio=[0.8, 1.2], p=1)
-album_crop_transform = A.ReplayCompose(
-    [CROPPER] + img_tfs, keypoint_params=A.KeypointParams(format='yx', remove_invisible=False)
-)
+# CROP_HEIGHT, CROP_WIDTH = 512, 512
+# CROPPER = A.RandomResizedCrop(height=CROP_HEIGHT, width=CROP_WIDTH, scale=[0.05, 0.20], ratio=[0.8, 1.2], p=1)
+# album_crop_transform = A.ReplayCompose(
+#     [CROPPER] + img_tfs, keypoint_params=A.KeypointParams(format='yx', remove_invisible=False)
+# )
 
-album_base_crop_transform = A.ReplayCompose(
-    [A.CenterCrop(CROP_HEIGHT, CROP_WIDTH, always_apply=True), A.Normalize(mean=0.485, std=0.229)],
-    keypoint_params=A.KeypointParams(format='yx', remove_invisible=False),
-)
+# album_base_crop_transform = A.ReplayCompose(
+#     [A.CenterCrop(CROP_HEIGHT, CROP_WIDTH, always_apply=True), A.Normalize(mean=0.485, std=0.229)],
+#     keypoint_params=A.KeypointParams(format='yx', remove_invisible=False),
+# )
 
 
 import warnings
@@ -144,9 +144,9 @@ def random_transform(x: np.ndarray, keypoints, flip_pairs: List[Tuple[int, int]]
     return _random_transform(x, keypoints, flip_pairs, album_transform)
 
 
-def random_crop_transform(x: np.ndarray, keypoints, flip_pairs: List[Tuple[int, int]]):
-    return _random_transform(x, keypoints, flip_pairs, album_crop_transform)
+# def random_crop_transform(x: np.ndarray, keypoints, flip_pairs: List[Tuple[int, int]]):
+#     return _random_transform(x, keypoints, flip_pairs, album_crop_transform)
 
 
-def base_crop_transform(x: np.ndarray, keypoints, flip_pairs: List[Tuple[int, int]]):
-    return _random_transform(x, keypoints, flip_pairs, album_base_crop_transform)
+# def base_crop_transform(x: np.ndarray, keypoints, flip_pairs: List[Tuple[int, int]]):
+#     return _random_transform(x, keypoints, flip_pairs, album_base_crop_transform)

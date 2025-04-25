@@ -1,6 +1,7 @@
 '''
 Utility functions for image manipulation
 '''
+
 from typing import List, Sequence, Tuple, Union
 
 import numpy as np
@@ -64,6 +65,29 @@ def pad_to_next_multiple(m: int, x: np.ndarray, axis: Sequence[int], constant_va
     return pad_to_shape(x, new_shape, constant_value)
 
 
+def pad_batch(xs: List[np.ndarray], factor: int, value):
+    shapes = [x.shape for x in xs]
+    max_shape = np.max(shapes, axis=0)
+    new_shape = (factor * np.ceil(np.array(max_shape) / factor)).astype(np.int64).tolist()
+    xs = [pad_to_shape(x, new_shape, value)[np.newaxis] for x in xs]
+    return xs
+
+
+def calc_resize_height(target_height, height, width):
+    '''
+    Calculate scale and width to resize image to the height. Width is dynamically determined (i.e. aspect ratio is kept.)
+    '''
+    scale = target_height / height
+    width = np.round(scale * width).astype(int)
+    return scale, width
+
+
+def resize_image_height(height: int, img: np.ndarray) -> np.ndarray:
+    _scale, width = calc_resize_height(height, img.shape[0], img.shape[1])
+    img = skimage.transform.resize(img, (height, width), preserve_range=True)
+    return img
+
+
 def resize_height(
     height: int, img: np.ndarray, kps: Union[np.ndarray, List[np.ndarray], None] = None
 ) -> Union[Tuple[np.ndarray, List[np.ndarray]], np.ndarray]:
@@ -87,9 +111,7 @@ def resize_height(
     '''
     dtype = img.dtype
     assert dtype == np.uint8 or dtype == np.uint16, 'Invalid image dtype'
-    scale = height / img.shape[0]
-    width = img.shape[1]
-    width = np.round(scale * width).astype(int)
+    scale, width = calc_resize_height(height, img.shape[0], img.shape[1])
     img = skimage.transform.resize(img, (height, width), preserve_range=True)
     img = np.round(img).astype(dtype)
     if kps is not None:

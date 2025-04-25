@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
-from joblib import Parallel, delayed
+from joblib import Parallel, delayed, parallel_backend
 from logzero import logger
 from PIL import Image
 from tqdm import tqdm
@@ -53,9 +53,15 @@ def load_data(row, data_root: Optional[Path], label_names: Sequence[str]) -> Tup
 
 
 def crop_by_kps(x, kps, crop_indices, margin):
-    cropping_kps = [kps[i] for i in crop_indices]
-    tl = np.min(np.concatenate(cropping_kps, axis=0), axis=0) - margin
-    br = np.max(np.concatenate(cropping_kps, axis=0), axis=0) + margin
+    '''
+    margin: 0 to 1
+    '''
+    cropping_kps = [kps[i] for i in crop_indices if len(kps[i]) > 0]
+    tl = np.min(np.concatenate(cropping_kps, axis=0), axis=0)
+    br = np.max(np.concatenate(cropping_kps, axis=0), axis=0)
+    margin = (br - tl) * margin
+    tl = tl - margin
+    br = br + margin
     tl = np.clip(tl, 0, x.shape[:2]).astype(int)
     br = np.clip(br, 0, x.shape[:2]).astype(int)
     # logger.warning('Crop: %s %s %s %s', tl, br, x.shape, row.imagePath)
@@ -77,15 +83,15 @@ def load_dataset(
     '''
     load images and keypoints
     '''
-
-    crop_indices = [label_names.index(c) for c in crop_label_names]
+    crop_indices = [label_names.index(c) for c in crop_label_names if c in label_names]
+    logger.info(f'Crop labels and indices: {crop_label_names} {crop_indices}')
 
     def load(row):
         x, kp = load_data(row, data_root, label_names)
         assert kp[0].size != 0
         ret_x, ret_kp = [], []
         if crop_indices:
-            margin = height // 10  # TODO: magic number!
+            margin = 0.1  # TODO: magic number
             cropped_x, cropped_kp = crop_by_kps(x, kp, crop_indices, margin)
             cropped_x, cropped_kp = img_utils.resize_height(height, cropped_x, cropped_kp)
             ret_x.append(cropped_x)
@@ -97,7 +103,9 @@ def load_dataset(
             ret_x = [transforms.apply_clahe(x) for x in ret_x]
         return ret_x, ret_kp
 
-    data = Parallel(n_jobs=num_workers)(delayed(load)(row) for _, row in tqdm(df.iterrows(), total=len(df)))
+    # default backend gets frozen due to pytorch lightning?
+    with parallel_backend('threading', n_jobs=num_workers):
+        data = Parallel()(delayed(load)(row) for _, row in tqdm(df.iterrows(), total=len(df), desc=f'Load data'))
 
     xs, kps = zip(*data)
     # flatten nested lists

@@ -79,7 +79,7 @@ def main():
         json.dump(args.__dict__, f, indent=2)
 
     NUM_WORKERS = len(os.sched_getaffinity(0)) - 1  # 2 if os.name == 'nt' else 0
-    NUM_WORKERS = min(NUM_WORKERS, 8)
+    NUM_WORKERS = min(NUM_WORKERS, 16)
     logger.info('workers %d', NUM_WORKERS)
     EPOCHS = 1 if DEBUG else args.max_epochs
     if DEBUG:
@@ -98,12 +98,14 @@ def main():
     n_chs = 1
     N_CLASSES = len(LABEL_NAMES)
     lit_model = pretrained_models.LitSMP(n_chs, N_CLASSES, args)
-    down_factor = 256
+    down_factor = pretrained_models.DOWN_FACTOR
 
-    if os.getenv("LOCAL_RANK", '0') == '0':
+    LOCAL_RANK = os.getenv("LOCAL_RANK", '0')
+    if LOCAL_RANK == '0':
         lit_model.summary([BATCH_SIZE, n_chs, HEIGHT, HEIGHT])
         import pickle
 
+        logger.info(f'Save model {LOCAL_RANK}')
         with open(outdir / 'model_hparams.pickle', 'wb') as f:
             pickle.dump(lit_model.hparams, f)
 
@@ -184,7 +186,7 @@ def main():
     trainer.fit(lit_model, train_loader, val_loader)
     logger.info('Finish training')
 
-    if os.getenv("LOCAL_RANK", '0') != '0':
+    if LOCAL_RANK != '0':
         print('Exit because LOCAL_RANK != 0')
         return 0
 
@@ -200,8 +202,11 @@ def main():
     except Exception as e:
         logger.error('Failed to plot history: %s', e)
 
+    height_multiplier = 1.5
+    height_test = int(height_multiplier * HEIGHT)
+    logger.info('load test set with height %d', height_test)
     test_xs, test_kps = exp_utils.load_dataset(
-        df_test, HEIGHT, data_root, LABEL_NAMES, NUM_WORKERS, down_factor, args.clahe
+        df_test, height_test, data_root, LABEL_NAMES, NUM_WORKERS, down_factor, args.clahe
     )
     logger.info('test size %d', len(test_xs))
 
@@ -212,6 +217,7 @@ def main():
     logger.info('Load weight:%s', mc.best_model_path)
     # lit_model.load_from_checkpoint(mc.best_model_path)
     lit_model = pretrained_models.LitSMP.load_from_checkpoint(mc.best_model_path)
+    # lit_model.enable_auto_crop(HEIGHT, crop_thresh=0.05, margin=0.1)
     print(type(lit_model))
     logger.info('Start test')
 

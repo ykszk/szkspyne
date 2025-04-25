@@ -86,6 +86,9 @@ def main():
     p_batch.add_argument('--keep_image_path', help='Keep image path', action='store_true')
     p_batch.add_argument('--clahe', help='Clahe in preprocessing', action='store_true')
     p_batch.add_argument('--height', help='Image height: %(default)s', metavar='<int>', type=int, required=True)
+    p_batch.add_argument(
+        '--auto_crop_multiplier', help='Auto crop multiplier: %(default)s', metavar='<float>', type=float, default=1
+    )
     p_batch.add_argument('--workers', help='The number of workers: %(default)s', metavar='<int>', type=int, default=4)
     p_batch.add_argument('--ch_as_z', help='Use channel as z axis', action='store_true')
     p_batch.add_argument('--batch_size', help='Batch size: %(default)s', metavar='<int>', type=int, default=4)
@@ -102,14 +105,11 @@ def main():
     import cv2
     import img_utils
     import pretrained_models
-    import pydicom
     import torch
     import transforms
     from PIL import Image
     from functools import lru_cache
     import exp_utils
-
-    DOWN_FACTOR = 256
 
     # load with cache
     @lru_cache(maxsize=4)
@@ -132,7 +132,7 @@ def main():
         x = img_utils.resize_height(height, x)
         assert isinstance(x, np.ndarray)
         if pad:
-            x = img_utils.pad_to_next_multiple(DOWN_FACTOR, x, [1], 0)
+            x = img_utils.pad_to_next_multiple(pretrained_models.DOWN_FACTOR, x, [1], 0)
         # logger.info('Padded to %s', x.shape)
         if clahe:
             x = apply_clahe(x)
@@ -150,7 +150,9 @@ def main():
             print('--weights is required for --hparams')
             sys.exit(1)
         if args.ckpt:
-            lit_model = pretrained_models.LitSMP.load_from_checkpoint(args.ckpt, map_location=map_location)
+            lit_model = pretrained_models.LitSMP.load_from_checkpoint(
+                args.ckpt, map_location=map_location, weights_only=False
+            )
             assert isinstance(lit_model, pretrained_models.LitSMP)
         else:
             import pickle
@@ -208,13 +210,6 @@ def main():
                 pred = np.transpose(pred, [1, 2, 0])
                 mhd.write(args.heatmap, pred, {'ElementNumberOfChannels': pred.shape[-1]})
 
-    def pad_batch(xs, factor, value):
-        shapes = [x.shape for x in xs]
-        max_shape = np.max(shapes, axis=0)
-        new_shape = (factor * np.ceil(np.array(max_shape) / factor)).astype(np.int64).tolist()
-        xs = [img_utils.pad_to_shape(x, new_shape, value)[np.newaxis] for x in xs]
-        return xs
-
     def apply_batch(args):
         import tqdm
         from joblib import Parallel, delayed
@@ -244,9 +239,10 @@ def main():
 
             def __getitem__(self, index):
                 filename = self.filenames[index]
-                arr, original_shape = load(filename, args.height, False, args.clahe)
+                target_height = int(args.height * args.auto_crop_multiplier)
+                arr, original_shape = load(filename, target_height, False, args.clahe)
                 if args.clahe:
-                    original_arr, _ = load(filename, args.height, False, False)
+                    original_arr, _ = load(filename, target_height, False, False)
                     arr = [arr, original_arr]
                 return arr, (filename, original_shape)
 
@@ -258,7 +254,7 @@ def main():
             if args.clahe:
                 # flatten
                 xs = list(itertools.chain.from_iterable(xs))
-            xs = pad_batch(xs, DOWN_FACTOR, 0)
+            xs = img_utils.pad_batch(xs, pretrained_models.DOWN_FACTOR, 0)
             return torch.from_numpy(np.stack(xs, axis=0)), zip(*aux)
 
         loader = DataLoader(
@@ -286,7 +282,11 @@ def main():
             for batch, (filenames, original_shapes) in tqdm.tqdm(loader):
                 batch = batch.to(device)
                 with torch.no_grad():
-                    pred = torch.sigmoid(lit_model(batch))
+                    if args.auto_crop_multiplier == 1.0:
+                        pred = torch.sigmoid(lit_model(batch))
+                    else:
+                        pred = lit_model.auto_crop_apply(batch, args.height, 0.05, 0.1)
+                        pred = torch.sigmoid(pred)
                     if args.clahe:
                         # from (batch and raw_or_clahe, channel, height, width) to (batch, raw_or_clahe, channel, height, width)
                         pred = pred.reshape(pred.shape[0] // 2, 2, *pred.shape[1:])
