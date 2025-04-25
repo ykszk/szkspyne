@@ -17,7 +17,8 @@ def copy_file(src, dst):
     try:
         shutil.copy(src, dst)
     except PermissionError:
-        logger.debug(f'permission error copying {src} to {dst}')
+        # logger.debug(f'permission error copying {src} to {dst}')
+        pass
 
 
 def main():
