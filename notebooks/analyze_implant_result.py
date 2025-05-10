@@ -17,7 +17,11 @@ def header(text, level=3):
     display_wrapped(f'h{level}', text)
 
 
-result_dir = os.environ.get('RESULT_DIR', '/poseidon/users/suzuki/projects/scoliosis/result/implant20250116/external_test_screw')
+show_worst_cases = os.environ.get('SHOW_WORST_CASES', 'false').lower() == 'true'
+
+result_dir = os.environ.get(
+    'RESULT_DIR', '/poseidon/users/suzuki/projects/scoliosis/result/implant20250116/external_test_screw'
+)
 result_dir = Path(result_dir)
 eval_dir = result_dir / 'eval'
 eval_dir.mkdir(exist_ok=True, parents=True)
@@ -37,8 +41,9 @@ assert set(ref_counts.keys()) == set(ai_counts.keys())
 #     break
 # %%
 
-#%%
+# %%
 import pandas as pd
+
 pd.options.display.max_columns = None
 
 df_ref = pd.DataFrame.from_dict(ref_counts, orient='index')
@@ -54,7 +59,7 @@ for df in [df_ref, df_ai]:
     # index of first non zero element in each row
     df['start'] = (arr != 0).argmax(axis=1)
     # index of last non zero element in each row
-    df['end'] = 17 - (arr != 0)[:,::-1].argmax(axis=1)
+    df['end'] = 17 - (arr != 0)[:, ::-1].argmax(axis=1)
     # index of first non zero element in each row
     df['length'] = df['end'] - df['start'] + 1
     # index of first non zero element in each row
@@ -90,7 +95,7 @@ plt.xlabel('Sum of screw counts per image')
 header('Reference - AI', level=2)
 abs_diff_col = 'sum of  abs diffs'
 df_diff = df_ref - df_ai
-vertebral_columns = [f'T{i}' for i in range(1,13)] + [f'L{i}' for i in range(1, 7)]
+vertebral_columns = [f'T{i}' for i in range(1, 13)] + [f'L{i}' for i in range(1, 7)]
 columns = vertebral_columns + ['total', 'start', 'end', 'length', 'density']
 df_diff = df_diff[columns]
 df_diff['sum of  abs diffs'] = df_diff.abs()[vertebral_columns].sum(axis=1)
@@ -100,12 +105,12 @@ display(df_diff.head())
 df_diff_desc = df_diff.describe()
 # display(df_diff_desc.T)
 
-#%%
+# %%
 stats_cols = ['total', 'length', 'density']
-stats = {'root mean square error':[], 'mean abs error':[], 'pearons r':[]}
+stats = {'root mean square error': [], 'mean abs error': [], 'pearons r': []}
 for col in stats_cols:
     diff = df_diff[col]
-    rms = (diff**2).mean()**0.5
+    rms = (diff**2).mean() ** 0.5
     stats['root mean square error'].append(rms)
     mean_abs_error = diff.abs().mean()
     stats['mean abs error'].append(mean_abs_error)
@@ -132,25 +137,32 @@ import seaborn as sns
 
 header('Error (Reference - AI) histogram per vertebra', level=2)
 
-df_tidy = df_diff.reset_index().melt(id_vars='index', var_name='vertebra', value_name='error', value_vars=vertebral_columns)
+df_tidy = df_diff.reset_index().melt(
+    id_vars='index', var_name='vertebra', value_name='error', value_vars=vertebral_columns
+)
 sns.histplot(data=df_tidy, hue='error', x='vertebra', bins=5, multiple="dodge", shrink=0.8)
 
 # %%
 
-for name, sls in [('worst cases', slice(None, 40)), ('median cases', slice(len(df_diff)//2-10, len(df_diff)//2+10)), ('best cases', slice(-20, None))]:
-    header(name + ' in ' + abs_diff_col, level=2)
-    display(df_diff.iloc[sls])
-    filenames = []
-    for idx in df_diff.index[sls]:
-        case_name = f'{idx[:-5]}.svg'
-        fn = result_dir / 'reference/svg' / case_name
-        filenames.append(fn)
-        fn = result_dir / 'ai/svg' / case_name
-        filenames.append(fn)
-    title = f'{name} | First: reference, Second: AI'
-    out_file = eval_dir / f'{name}.html'
-    args = ['scolrs', 'catalog', *filenames, out_file, '--title', title]
-    args = [str(arg) for arg in args]
-    subprocess.check_output(args)
+if show_worst_cases:
+    for name, sls in [
+        ('worst cases', slice(None, 40)),
+        ('median cases', slice(len(df_diff) // 2 - 10, len(df_diff) // 2 + 10)),
+        ('best cases', slice(-20, None)),
+    ]:
+        header(name + ' in ' + abs_diff_col, level=2)
+        display(df_diff.iloc[sls])
+        filenames = []
+        for idx in df_diff.index[sls]:
+            case_name = f'{idx[:-5]}.svg'
+            fn = result_dir / 'reference/svg' / case_name
+            filenames.append(fn)
+            fn = result_dir / 'ai/svg' / case_name
+            filenames.append(fn)
+        title = f'{name} | First: reference, Second: AI'
+        out_file = eval_dir / f'{name}.html'
+        args = ['scolrs', 'catalog', *filenames, out_file, '--title', title]
+        args = [str(arg) for arg in args]
+        subprocess.check_output(args)
 
 # %%
