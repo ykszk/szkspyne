@@ -46,24 +46,37 @@ def task_combine_dtron2_lm():
 
 def task_catalog():
     # scolrs svg-ndjson dtron2_lm_combined - --resize 1600x1600 coronal-implant | scolrs catalog - catalog.html
-    dtron2_lm_combined = RESULT_DIR / 'ai/dtron2_lm_combined.ndjson'
+    input_ndjson = RESULT_DIR / 'ai/dtron2_lm_combined.ndjson'
     catalog_html = RESULT_DIR / 'ai/catalog.html'
 
-    action = ['scolrs', 'svg-ndjson', dtron2_lm_combined, '-', '--resize', '1600x1600', 'coronal-implant']
+    action = ['scolrs', 'svg-ndjson', input_ndjson, '-', '--resize', '1600x1600', 'coronal-implant']
     action2 = ['scolrs', 'catalog', '-', catalog_html]
 
     catalog_action = Pipeline().pipe(action).pipe(action2).runner(text=True)
 
-    return {
+    yield {
+        'name': 'ai',
         'actions': [catalog_action],
-        'file_dep': [dtron2_lm_combined],
+        'file_dep': [input_ndjson],
+    }
+
+    input_ndjson = RESULT_DIR / 'reference/lm_implant_keypoints.ndjson'
+    catalog_html = RESULT_DIR / 'reference/catalog.html'
+    action = ['scolrs', 'svg-ndjson', input_ndjson, '-', '--resize', '1600x1600', 'coronal-implant']
+    action2 = ['scolrs', 'catalog', '-', catalog_html]
+    catalog_action = Pipeline().pipe(action).pipe(action2).runner(text=True)
+    yield {
+        'name': 'reference',
+        'actions': [catalog_action],
+        'file_dep': [input_ndjson],
+        'targets': [catalog_html],
     }
 
 
 def task_merge_refs():
-    in1 = RESULT_DIR / 'reference/lm_implant.ndjson'
-    in2 = RESULT_DIR / 'reference/lm_keypoints.ndjson'
-    action = ['lmrs', 'merge', in1, in2, '--missing', 'continue']
+    in1 = RESULT_DIR / 'reference/lm_keypoints.ndjson'
+    in2 = RESULT_DIR / 'reference/lm_implant.ndjson'
+    action = ['lmrs', 'merge', in1, in2, '--missing', 'exit']
 
     output = RESULT_DIR / 'reference/lm_implant_keypoints.ndjson'
     runner = Pipeline().pipe(action).runner(text=True, output_file=output)

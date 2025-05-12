@@ -30,7 +30,7 @@ class Pipeline:
         """Alias for add_command for a more fluid API."""
         return self.add_command(command)
 
-    def run(self, input_data: Optional[str] = None, text: bool = True) -> str:
+    def run(self, input_data: Optional[str] = None, text: bool = True, check: bool = True) -> str:
         """
         Execute the pipeline.
 
@@ -56,33 +56,73 @@ class Pipeline:
 
         # For the first command
         if len(self.commands) == 1:
-            result = subprocess.run(self.commands[0], input=stdin_data, stdout=subprocess.PIPE, text=text)
+            result = subprocess.run(
+                self.commands[0],
+                input=stdin_data,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=text,
+                check=check
+            )
             return result.stdout
-
+            
         # For multiple commands
+        processes = []
         previous_process = None
-
+        
         for i, cmd in enumerate(self.commands):
-            is_first = i == 0
-            is_last = i == len(self.commands) - 1
-
+            is_first = (i == 0)
+            is_last = (i == len(self.commands) - 1)
+            
             # Set up the process
             if is_first:
-                process = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=text)
+                process = subprocess.Popen(
+                    cmd,
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    text=text
+                )
+                processes.append(process)
                 if stdin_data:
-                    process.stdin.write(stdin_data)  # type: ignore
-                process.stdin.close()  # type: ignore
+                    process.stdin.write(stdin_data)
+                process.stdin.close()
             elif is_last:
-                process = subprocess.Popen(cmd, stdin=previous_process.stdout, stdout=subprocess.PIPE, text=text)  # type: ignore
-                previous_process.stdout.close()  # type: ignore
+                process = subprocess.Popen(
+                    cmd,
+                    stdin=previous_process.stdout,
+                    stdout=subprocess.PIPE,
+                    text=text
+                )
+                processes.append(process)
+                previous_process.stdout.close()
             else:
-                process = subprocess.Popen(cmd, stdin=previous_process.stdout, stdout=subprocess.PIPE, text=text)  # type: ignore
-                previous_process.stdout.close()  # type: ignore
-
+                process = subprocess.Popen(
+                    cmd,
+                    stdin=previous_process.stdout,
+                    stdout=subprocess.PIPE,
+                    text=text
+                )
+                processes.append(process)
+                previous_process.stdout.close()
+                
             previous_process = process
-
+            
         # Get output from the last command
-        output, _ = previous_process.communicate()  # type: ignore
+        output, _error = previous_process.communicate()
+        
+        # Check for errors in any command of the pipeline
+        if check:
+            for i, proc in enumerate(processes):
+                returncode = proc.poll()
+                if returncode != 0:
+                    cmd_str = ' '.join([str(a) for a in self.commands[i]]) if isinstance(self.commands[i], list) else str(self.commands[i])
+
+                    raise subprocess.CalledProcessError(
+                        returncode, 
+                        cmd_str, 
+                        output=None, 
+                    )
+        
         return output
 
     def run_to_file(self, filename: str, input_data: Optional[str] = None, text: bool = True) -> None:

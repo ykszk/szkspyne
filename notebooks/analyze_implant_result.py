@@ -17,8 +17,6 @@ def header(text, level=3):
     display_wrapped(f'h{level}', text)
 
 
-show_worst_cases = os.environ.get('SHOW_WORST_CASES', 'false').lower() == 'true'
-
 result_dir = os.environ.get(
     'RESULT_DIR', '/poseidon/users/suzuki/projects/scoliosis/result/implant20250116/external_test_screw'
 )
@@ -32,6 +30,9 @@ def load_ndjson_as_dict(filename):
         ndjson = [json.loads(line) for line in f]
     return {d['filename']: d['content'] for d in ndjson}
 
+
+ref_data = load_ndjson_as_dict(result_dir / 'reference' / 'lm_implant_keypoints.ndjson')
+ai_data = load_ndjson_as_dict(result_dir / 'ai' / 'dtron2_lm_combined.ndjson')
 
 ref_counts = load_ndjson_as_dict(result_dir / 'reference' / 'counts.ndjson')
 ai_counts = load_ndjson_as_dict(result_dir / 'ai' / 'counts.ndjson')
@@ -49,6 +50,7 @@ pd.options.display.max_columns = None
 df_ref = pd.DataFrame.from_dict(ref_counts, orient='index')
 df_ai = pd.DataFrame.from_dict(ai_counts, orient='index')
 for df in [df_ref, df_ai]:
+    df['L4'] = df['L4'].fillna(0).astype(int)
     df['L5'] = df['L5'].fillna(0).astype(int)
     if 'L6' in df.columns:
         df['L6'] = df['L6'].fillna(0).astype(int)
@@ -143,26 +145,31 @@ df_tidy = df_diff.reset_index().melt(
 sns.histplot(data=df_tidy, hue='error', x='vertebra', bins=5, multiple="dodge", shrink=0.8)
 
 # %%
+from szkspyne.utils import doit
 
-if show_worst_cases:
-    for name, sls in [
-        ('worst cases', slice(None, 40)),
-        ('median cases', slice(len(df_diff) // 2 - 10, len(df_diff) // 2 + 10)),
-        ('best cases', slice(-20, None)),
-    ]:
-        header(name + ' in ' + abs_diff_col, level=2)
-        display(df_diff.iloc[sls])
-        filenames = []
-        for idx in df_diff.index[sls]:
-            case_name = f'{idx[:-5]}.svg'
-            fn = result_dir / 'reference/svg' / case_name
-            filenames.append(fn)
-            fn = result_dir / 'ai/svg' / case_name
-            filenames.append(fn)
-        title = f'{name} | First: reference, Second: AI'
-        out_file = eval_dir / f'{name}.html'
-        args = ['scolrs', 'catalog', *filenames, out_file, '--title', title]
-        args = [str(arg) for arg in args]
-        subprocess.check_output(args)
+for name, sls in [
+    ('worst cases', slice(None, 20)),
+    ('median cases', slice(len(df_diff) // 2 - 10, len(df_diff) // 2 + 10)),
+    ('best cases', slice(-10, None)),
+]:
+    header(name + ' in ' + abs_diff_col, level=2)
+    display(df_diff.iloc[sls])
+    cases = []
+    for idx in df_diff.index[sls]:
+        cases.append({'filename': idx, 'content': ref_data[idx]})
+        cases.append({'filename': idx, 'content': ai_data[idx]})
+    cases_ndjson = eval_dir / f'{name}.ndjson'
+    with open(cases_ndjson, 'w') as f:
+        for case in cases:
+            json.dump(case, f, ensure_ascii=False, separators=(',', ':'))
+            f.write('\n')
+    title = f'{name} | First: reference, Second: AI'
+    out_file = eval_dir / f'{name}.html'
+    # --jobs 1 to keep the order of the images
+    c1 = ['scolrs', 'svg-ndjson', cases_ndjson, '-', '--resize', '1600x1600', '--jobs', '1', 'coronal-implant']
+    args = ['scolrs', 'catalog', '-', out_file, '--title', title]
+    c2 = [str(arg) for arg in args]
+    pipeline = doit.Pipeline().pipe(c1).pipe(c2)
+    pipeline.run(text=True)
 
 # %%
