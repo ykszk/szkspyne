@@ -93,7 +93,7 @@ img_tfs = [
     A.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.1, p=0.25),
     A.Affine(scale={'x': (0.9, 1.1), 'y': (0.9, 1.1)}, rotate=[-15, 15], shear=[-10, 10], p=0.25),
     A.GaussNoise(p=0.1),
-    A.Blur(blur_limit=(1, 3), p=0.25),
+    A.Blur(blur_limit=(3, 7), p=0.20),
     # A.Normalize(mean=0.485, std=0.229),
     ToTensorV2(),
 ]

@@ -27,7 +27,7 @@ DATASET_PREFIX = 'mydata'
 with open(DATA_DIR / 'metadata.json') as f:
     dataset_metadata = json.load(f)
 dataset_names = {}
-for set_name in ['train', 'val', 'test']:
+for set_name in ['train', 'val', 'int-test', 'test']:
     ndjson_filename = DATA_DIR / f'{set_name}.ndjson'
     if not ndjson_filename.exists():
         print(f'{ndjson_filename} does not exist. Skipping.')
@@ -81,7 +81,12 @@ BIG_NUMBER = int(5000)
 cfg = get_cfg()
 cfg.merge_from_file(model_zoo.get_config_file("COCO-Keypoints/keypoint_rcnn_R_50_FPN_3x.yaml"))
 cfg.DATASETS.TRAIN = (dataset_names['train'],)
-cfg.DATASETS.TEST = (dataset_names['val'],)
+if 'val' in dataset_names:
+    cfg.DATASETS.TEST = (dataset_names['val'],)
+elif 'int-test' in dataset_names:
+    cfg.DATASETS.TEST = (dataset_names['int-test'],)
+else:
+    print('DATASETS.TEST not set. Skipping validation.')
 cfg.DATALOADER.NUM_WORKERS = 4
 cfg.MODEL.WEIGHTS = "detectron2://COCO-Keypoints/keypoint_rcnn_R_50_FPN_3x/137849621/model_final_a6e10b.pkl"  # Let training initialize from model zoo
 # cfg.MODEL.RETINANET.BBOX_REG_LOSS_TYPE = 'smooth_l1'
