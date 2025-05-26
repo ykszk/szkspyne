@@ -114,28 +114,57 @@ class Spine():
         tf.estimate(src_points, dst_points)
         return tf
     
+    class ReferenceSpine:
+        """
+        Reference spine for alignment.
+        """
+        def __init__(self, spine: 'Spine', image):
+            self.spine = spine
+            self.image = image
+            # self.corner_points = np.array([[0, 0], 
+            #                       [0, image.shape[0]],
+            #                       [image.shape[1], image.shape[0]],
+            #                       [image.shape[1], 0]])
+            self.crop_params = spine.crop_params()
+            # self.croppped_image, self.offsetted_spine = Spine.crop(spine.vertebrae, image, spine.crop_params())
+
+        def align(self, src_spine: 'Spine', src_image) -> tuple:
+            """
+            Align the src_spine to the reference spine using the transform parameters.
+            The transform parameters are defined as (scale, rotation, translation).
+            """
+            tf = Spine.estimate_transform(src_spine, self.spine)
+            tfed_vertebrae = tf(src_spine.vertebrae.reshape(-1, 2)).reshape(src_spine.vertebrae.shape)
+
+            # calculate output_shape
+            corner_points = np.array([[0, 0], 
+                                  [0, src_image.shape[0]],
+                                  [src_image.shape[1], src_image.shape[0]],
+                                  [src_image.shape[1], 0]])
+            tfed_corner_points = tf(corner_points)
+            tl_br = np.array([tfed_corner_points.min(axis=0), tfed_corner_points.max(axis=0)])
+            output_shape = (int(tl_br[1, 1] - tl_br[0, 1]), int(tl_br[1, 0] - tl_br[0, 0]))
+            warped_image = warp(src_image, tf.inverse, output_shape=output_shape, order=1)
+            # offset the transformed spine
+            cropped_warped_image, offsetted_spine_transformed = Spine.crop(tfed_vertebrae, warped_image, self.crop_params)
+            return offsetted_spine_transformed, cropped_warped_image
+        
+        def crop_self(self) -> tuple:
+            """
+            Crop the reference spine from the image using the crop parameters.
+            The crop parameters are defined as (crop_x_left, crop_x_right, crop_y_top, crop_y_bottom).
+            """
+            cropped_image, offsetted_spine = Spine.crop(self.spine.vertebrae, self.image, self.crop_params)
+            return offsetted_spine, cropped_image
+    
     @staticmethod
     def align_spines(src_spine: 'Spine', src_image, dst_spine: 'Spine', dst_image) -> tuple:
         """
         Align the src_spine to the dst_spine using the transform parameters.
         The transform parameters are defined as (scale, rotation, translation).
         """
-        tf = Spine.estimate_transform(src_spine, dst_spine)
-        transformed_vertebrae = tf(src_spine.vertebrae.reshape(-1, 2)).reshape(src_spine.vertebrae.shape)
+        ref_spine = Spine.ReferenceSpine(dst_spine, dst_image)
 
-
-        crop_params = dst_spine.crop_params()
-        cropped_image, offsetted_spine = Spine.crop(dst_spine.vertebrae, dst_image, crop_params)
-        # calculate output_shape
-        corner_points = np.array([[0, 0], 
-                                  [0, dst_image.shape[0]],
-                                  [dst_image.shape[1], dst_image.shape[0]],
-                                  [dst_image.shape[1], 0]])
-        corner_points = tf(corner_points)
-        tl_br = np.array([corner_points.min(axis=0), corner_points.max(axis=0)])
-        output_shape = (int(tl_br[1, 1] - tl_br[0, 1]), int(tl_br[1, 0] - tl_br[0, 0]))
-        warped_image = warp(src_image, tf.inverse, output_shape=output_shape, order=1)
-        # offset the transformed spine
-        cropped_warped_image, offsetted_spine_transformed_spine = Spine.crop(transformed_vertebrae, warped_image, crop_params)
-        return offsetted_spine_transformed_spine, cropped_warped_image, offsetted_spine, cropped_image
-
+        aligned_src_spine, aliend_src_image = ref_spine.align(src_spine, src_image)
+        aligned_dst_spine, aligned_dst_image = ref_spine.crop_self()
+        return aligned_src_spine, aliend_src_image, aligned_dst_spine, aligned_dst_image
