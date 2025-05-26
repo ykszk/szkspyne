@@ -32,6 +32,7 @@ from logzero import logger
 from settings import FLIP_PAIRS, LABEL_NAMES
 from szkmipy import mhd
 from torch.utils.data import DataLoader
+from pytorch_lightning.callbacks import Callback
 
 
 torch.backends.cudnn.benchmark = True
@@ -110,29 +111,29 @@ def main():
             pickle.dump(lit_model.hparams, f)
 
     logger.info('load train set')
-    train_xs, train_kps = exp_utils.load_dataset(
+    train_xs_kps = exp_utils.create_image_kps_loader(
         df_train, HEIGHT, data_root, LABEL_NAMES, NUM_WORKERS, down_factor, args.clahe, args.crop_labels
     )
-    logger.info('Pad to %s', train_xs[0].shape)
+    logger.info('Pad to %s', train_xs_kps.shape)
 
-    assert train_kps[0][0].size != 0, 'no points in the dataset'
-    if not DEBUG:
-        train_xs, train_kps = train_xs + train_xs, train_kps + train_kps  # TODO: remove
-    logger.info('train size %d', len(train_xs))
+    train_kps = train_xs_kps[0][1]
+    assert train_kps[0].size != 0, 'no points in the dataset'
+    # if not DEBUG:
+    #     train_xs, train_kps = train_xs + train_xs, train_kps + train_kps  # TODO: remove
+    logger.info('train size %d', len(train_xs_kps))
     logger.info('load val set')
-    val_xs, val_kps = exp_utils.load_dataset(
+    val_xs_kps = exp_utils.create_image_kps_loader(
         df_val, HEIGHT, data_root, LABEL_NAMES, NUM_WORKERS, down_factor, args.clahe, args.crop_labels
     )
-    logger.info('Pad to %s', val_xs[0].shape)
-    logger.info('val size %d', len(val_xs))
+    logger.info('Pad to %s', val_xs_kps.shape)
+    logger.info('val size %d', len(val_xs_kps))
     flip_pairs = FLIP_PAIRS
 
     loader_kwargs = dict(
-        batch_size=BATCH_SIZE, pin_memory=True, num_workers=NUM_WORKERS, persistent_workers=True, prefetch_factor=2
+        batch_size=BATCH_SIZE, pin_memory=False, num_workers=NUM_WORKERS, persistent_workers=True, prefetch_factor=2
     )
     dataset = point_utils.KeypointDataset(
-        train_xs,
-        train_kps,
+        train_xs_kps,
         None,
         flip_pairs,
         transforms.random_transform,
@@ -149,8 +150,7 @@ def main():
     )
 
     dataset = point_utils.KeypointDataset(
-        val_xs,
-        val_kps,
+        val_xs_kps,
         None,
         flip_pairs,
         transforms.base_kps_transform,
@@ -190,7 +190,10 @@ def main():
         print('Exit because LOCAL_RANK != 0')
         return 0
 
-    del dataset, train_loader, val_loader, train_xs, val_xs  # release memory
+    del dataset, train_loader, val_loader  # release memory
+    import gc
+    gc.collect()
+    torch.cuda.empty_cache()
 
     df_logs = pd.read_csv(csv_logger.experiment.metrics_file_path)
     try:
@@ -202,13 +205,16 @@ def main():
     except Exception as e:
         logger.error('Failed to plot history: %s', e)
 
-    height_multiplier = 1.5
+    height_multiplier = 1.0
     height_test = int(height_multiplier * HEIGHT)
     logger.info('load test set with height %d', height_test)
     test_xs, test_kps = exp_utils.load_dataset(
         df_test, height_test, data_root, LABEL_NAMES, NUM_WORKERS, down_factor, args.clahe
     )
-    logger.info('test size %d', len(test_xs))
+    y_shape = test_xs[0].shape
+    n_test = len(test_xs)
+    logger.info('test size %d', n_test)
+    test_xs = exp_utils.CompressedNumpyArray.build(test_xs)
 
     dataset = point_utils.ImageDataset(test_xs, transforms.test_transform)
     test_loader = DataLoader(dataset, shuffle=False, drop_last=False, **loader_kwargs)
@@ -221,29 +227,45 @@ def main():
     print(type(lit_model))
     logger.info('Start test')
 
+    class SaveCallback(Callback):
+        def __init__(self, writer: mhd.Writer, func=None):
+            self.writer = writer
+            if func:
+                self.func = func
+            else:
+                self.func = lambda x: x
+
+        def on_predict_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx=0):
+            for o in self.func(outputs):
+                self.writer.write(o)
+
+        def on_predict_end(self, trainer, pl_module):
+            self.writer.close()
+
+    from settings import PROB_MAX
+    y_preds_shape = [n_test] + list(y_shape) + [N_CLASSES]
+    header =  mhd.create_header(y_preds_shape, compress=True, last_dim_is_channel=True, compression_type='zstandard')
+    writer = mhd.Writer(outdir / 'y_pred.mha', header, dtype=np.dtype('i2'))
+    callback = SaveCallback(writer, lambda x: (PROB_MAX * x).permute((0, 2, 3, 1)).type(torch.ShortTensor).cpu().numpy())
+
     # create new trainer with `devices=1`
-    trainer = pl.Trainer(accelerator=args.accelerator, devices=1, precision=precision)  # args.devices,
+    trainer = pl.Trainer(accelerator=args.accelerator, devices=1, precision=precision, callbacks=[callback])  # args.devices,
     #  logger=csv_logger,
     #  log_every_n_steps=len(train_loader)//8,
     #  callbacks=[early_stop_callback, mc])
-    y_preds = trainer.predict(model=lit_model, dataloaders=test_loader, ckpt_path=None)
+    trainer.predict(model=lit_model, dataloaders=test_loader, ckpt_path=None, return_predictions=False)
     # y_preds = []
     # with torch.no_grad():
     #     y_preds.append(trainer.predict(dataloaders=test_loader, ckpt_path=None))
-    assert y_preds is not None
-    logger.info('minmax: %s, %s', y_preds[0].min(), y_preds[1].max())
-    from szkspyne.settings import PROB_MAX
 
     # to channel last
-    y_preds = [(PROB_MAX * y_pred).permute((0, 2, 3, 1)).type(torch.ShortTensor) for y_pred in y_preds]  # type: ignore
-    logger.info('minmax after prob_max: %s, %s', y_preds[0].min(), y_preds[1].max())
-    y_preds = torch.cat(y_preds, 0).cpu().numpy().astype(np.int16)
+    # y_preds = torch.cat(y_preds, 0).detach().cpu().numpy().astype(np.int16)
     # y_preds = np.concatenate(y_preds, axis=0)
     logger.info('End test')
+    # mhd.write(outdir / f'y_pred.mha', y_preds, {'ElementNumberOfChannels': y_preds.shape[-1]})
+
     if args.save_best:
         torch.save(lit_model.model.to('cpu').state_dict(), outdir / 'best_weights.pth')
-    # y_preds = np.moveaxis(y_preds, 1, -1).copy()  # to channel last
-    mhd.write(outdir / f'y_pred.mha', y_preds, {'ElementNumberOfChannels': y_preds.shape[-1]})
     # test_data = labelme_utils.load_ndjson(outdir / 'test.ndjson')
     # for image_type in ['ap_whole', 'lateral_whole']:
     #     logger.info('Save preds %s', image_type)

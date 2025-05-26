@@ -15,7 +15,6 @@ from scipy.ndimage.measurements import center_of_mass
 from skimage import measure
 from szkmipy import boundingbox
 
-
 PointType = np.ndarray  # Tuple[float, float]
 PointsType = Sequence[PointType]
 PointsList = Sequence[PointsType]
@@ -52,7 +51,6 @@ def partition(lst: List[GenericType], sizes: List[int]) -> List[List[GenericType
     assert len(lst) == cs[-1]
     return [lst[cs[i] : cs[i + 1]] for i in range(len(cs) - 1)]
 
-
 class ImageDataset(torch.utils.data.Dataset):
     '''
     Dataset for image without points
@@ -84,8 +82,9 @@ class KeypointDataset(torch.utils.data.Dataset):
 
     def __init__(
         self,
-        xs: Sequence[np.ndarray],
-        points: Sequence[PointsList],
+        x_points: Sequence[Tuple[np.ndarray, PointsList]],
+        # xs: Sequence[np.ndarray],
+        # points: Sequence[PointsList],
         point_pairs,
         flip_pairs: List[Tuple[int, int]],
         transform: Optional[Callable[[np.ndarray, PointsList, List[Tuple[int, int]]], Tuple[np.ndarray, PointsList]]],
@@ -93,16 +92,16 @@ class KeypointDataset(torch.utils.data.Dataset):
     ):
         '''
         Args:
-            xs: list of x.
-            points: list of 2D point sets.
+            x_points: list of (x, points).
             point_pairs: pair of 2D points.
             transform: transformation.
             sigma: sigma for heatmap generation
         '''
-        self.xs = xs
-        self.points = points
+        # self.xs = xs
+        # self.points = points
+        self.x_points = x_points
         if point_pairs is None:
-            self.point_pairs = [[]] * len(xs)
+            self.point_pairs = [[]] * len(x_points)
         else:
             self.point_pairs = point_pairs
         self.flip_pairs = flip_pairs
@@ -110,10 +109,11 @@ class KeypointDataset(torch.utils.data.Dataset):
         self.sigma = sigma
 
     def __len__(self):
-        return len(self.xs)
+        return len(self.x_points)
 
     def __getitem__(self, idx):
-        x, points, point_pairs = self.xs[idx], self.points[idx], self.point_pairs[idx]
+        x, points = self.x_points[idx]
+        point_pairs = self.point_pairs[idx]
         if self.transform is not None:
             x, points = self.transform(x, points, self.flip_pairs)
         n_chs = len(points) + len(point_pairs)
@@ -168,8 +168,10 @@ def create_prob_image(
         out[...] = multivariate_normal(shape, points[0], sigma)
     for p in points[1:]:
         np.maximum(out, multivariate_normal(shape, p, sigma), out=out)
-    if normalize and out.max() != 0:
-        out *= 1 / out.max()
+    # calculate theoretical max value from sigma
+    peak_value = 1 / np.sqrt(2 * np.pi * sigma**2)
+    if normalize:
+        out *= 1 / peak_value
     assert out is not None  # type narrowing
     return out
 

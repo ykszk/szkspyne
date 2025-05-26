@@ -8,6 +8,7 @@ from szkmipy import mhd
 
 from szkspyne import labelme_utils, point_utils, settings
 from szkspyne.labelme_utils import LabelMeLine, ShapeDictLine
+from szkspyne.utils import CompDecompGenerator
 
 PROB_MAX = settings.PROB_MAX
 
@@ -58,7 +59,7 @@ def main():
     parser.add_argument('output', help='Output directory')
     parser.add_argument('--save_heatmap', help='Save heatmap next to json', action='store_true')
     parser.add_argument('--save_ndjson', help='Save labelme data as an ndjson file')
-    parser.add_argument('--jobs', help='The number of workers: %(default)s', metavar='<int>', type=int, default=4)
+    parser.add_argument('--jobs', help='The number of workers. Use all cores by default', metavar='<int>', type=int, default=-1)
 
     args = parser.parse_args()
 
@@ -114,18 +115,11 @@ def main():
             return data.into_labelme_line(data_line.filename)
 
         logger.info('start heatmap2labelme')
-        heatmaps, _ = mhd.read(heatmap_filename)
-        # slice 4d array into list of 3d arrays so that each heatmap (3d array) can be released immediately after they get processed
-        heatmaps = [h.copy() for h in heatmaps]
+        # heatmaps, _ = mhd.read(heatmap_filename)
+        # logger.info(f'heatmap shape: {heatmaps.shape}')
+        # heatmaps = CompDecompGenerator.builder(method='zstandard', level=1)(heatmaps)
+        heatmaps, _ = mhd.read_iterator(heatmap_filename)
 
-        def create_generator(heatmaps: list):
-            while True:
-                try:
-                    yield heatmaps.pop(0)
-                except:
-                    return
-
-        heatmaps = create_generator(heatmaps)
         data = Parallel(n_jobs=n_jobs)(delayed(save_json)(arg) for arg in zip(heatmaps, json_data))
         logger.info('done heatmap2labelme')
         assert data is not None

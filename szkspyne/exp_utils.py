@@ -1,20 +1,62 @@
 import json
 import sys
 from pathlib import Path
-from typing import List, Sequence, Optional, Tuple, Union
+from typing import Any, List, Sequence, Optional, Tuple, Union, Callable, Iterator
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
-from joblib import Parallel, delayed, parallel_backend
+from joblib import Parallel, delayed, parallel_config
 from logzero import logger
 from PIL import Image
 from tqdm import tqdm
 import pydicom
+import collections.abc as abc
+import zstandard
 
 from szkspyne import img_utils, transforms
 from szkspyne.settings import LABEL_NAMES
+
+class CompressedNumpyArray(abc.Sequence):
+    '''
+    Compressed numpy array
+    '''
+
+    def __init__(self, arr: Iterator[np.ndarray], compressor: Callable, decompressor: Callable):
+        self.decompressor = decompressor
+        self.arr = [(compressor(s.tobytes()), s.shape, s.dtype) for s in arr]
+        self.index = 0
+
+    def __iter__(self):
+        self.index = 0
+        return self
+    
+    def __next__(self):
+        if self.index >= len(self.arr):
+            raise StopIteration
+        arr = self[self.index]
+        self.index += 1
+        return arr
+    
+    def __getitem__(self, idx):
+        arr, shape, dtype = self.arr[idx]
+        raw = self.decompressor(arr)
+        return np.frombuffer(raw, dtype=dtype).reshape(shape)
+
+    def __len__(self):
+        return len(self.arr)
+    
+    @staticmethod
+    def build(arr: np.ndarray):
+        """
+        Build a CompressedNumpyArray with zstandard compression.
+        """
+        def compressor(s):
+            return zstandard.ZstdCompressor(level=1).compress(s)
+        def decompressor(s):
+            return zstandard.ZstdDecompressor().decompress(s)
+        return CompressedNumpyArray(arr, compressor=compressor, decompressor=decompressor)
 
 
 def load_dicom(filename: Union[str, Path]) -> np.ndarray:
@@ -35,6 +77,26 @@ def plot_history(df):
     melted = pd.melt(df, value_vars=['train_loss', 'val_loss'], id_vars=['step'], value_name='loss', var_name='subset')
     sns.lineplot(data=melted, x='step', y='loss', hue='subset')
 
+def load_image(filename: Union[str, Path]) -> np.ndarray:
+    if str(filename).endswith('.dcm'):
+        x = load_dicom(filename)
+    else:
+        x = np.array(Image.open(filename))
+    return x
+
+def load_shape(filename: Union[str, Path]) -> np.ndarray:
+    if str(filename).endswith('.dcm'):
+        dcm = pydicom.dcmread(filename, stop_before_pixels=True)
+        return dcm.Rows, dcm.Columns
+    else:
+        img = Image.open(filename)
+        return img.height, img.width
+
+def get_kps_from_row(row, label_names):
+    kps = [row.get(l) for l in label_names]
+    # flip kps to change format from (x, y) to (y, x)
+    kps = [np.flip(kp, axis=-1) if isinstance(kp, np.ndarray) else np.array(()) for kp in kps]
+    return kps
 
 def load_data(row, data_root: Optional[Path], label_names: Sequence[str]) -> Tuple[np.ndarray, List[np.ndarray]]:
     '''Load data from a row. Keypoints should be np.ndarray'''
@@ -42,33 +104,57 @@ def load_data(row, data_root: Optional[Path], label_names: Sequence[str]) -> Tup
         img_path = row.imagePath
     else:
         img_path = data_root / row.imagePath
-    if Path(img_path).suffix == '.dcm':
-        x = load_dicom(img_path)
-    else:
-        x = np.array(Image.open(img_path))
-    kps = [row.get(l) for l in label_names]
-    # flip kps to change format from (x, y) to (y, x)
-    kps = [np.flip(kp, axis=-1) if isinstance(kp, np.ndarray) else np.array(()) for kp in kps]
+    x = load_image(img_path)
+    kps = get_kps_from_row(row, label_names)
     return x, kps
 
-
-def crop_by_kps(x, kps, crop_indices, margin):
-    '''
-    margin: 0 to 1
-    '''
+def calc_crop_indices(x_shape, kps, crop_indices, margin):
     cropping_kps = [kps[i] for i in crop_indices if len(kps[i]) > 0]
     tl = np.min(np.concatenate(cropping_kps, axis=0), axis=0)
     br = np.max(np.concatenate(cropping_kps, axis=0), axis=0)
     margin = (br - tl) * margin
     tl = tl - margin
     br = br + margin
-    tl = np.clip(tl, 0, x.shape[:2]).astype(int)
-    br = np.clip(br, 0, x.shape[:2]).astype(int)
-    # logger.warning('Crop: %s %s %s %s', tl, br, x.shape, row.imagePath)
+    tl = np.clip(tl, 0, x_shape[:2]).astype(int)
+    br = np.clip(br, 0, x_shape[:2]).astype(int)
+    return tl, br
+
+def crop_kps(kps, tl):
+    return [(kp - tl) if len(kp) > 0 else kp for kp in kps]
+
+
+def crop_by_kps(x, kps, crop_indices, margin):
+    '''
+    margin: 0 to 1
+    '''
+    tl, br = calc_crop_indices(x.shape, kps, crop_indices, margin)
     cropped_x = x[tl[0] : br[0], tl[1] : br[1]]
-    cropped_kp = [(kp - tl) if len(kp) > 0 else kp for kp in kps]
+    cropped_kp = crop_kps(kps, tl)
     return cropped_x, cropped_kp
 
+
+class DiskImageReaderAndKps(abc.Sequence):
+    def __init__(self, height: int, filenames: List[str], crop: List[Optional[bool]], shape, kps, crop_indices):
+        self.height = height
+        self.filenames = filenames
+        self.shape = shape
+        self.kps = kps
+        self.crop = crop
+        self.crop_indices = crop_indices
+
+    def __len__(self):
+        return len(self.filenames)
+
+    def __getitem__(self, idx):
+        filename = self.filenames[idx]
+        x = load_image(filename)
+        if self.crop[idx]:
+            x, kps = crop_by_kps(x, self.kps[idx], self.crop_indices, 0.1)
+            x, kps = img_utils.resize_height(self.height, x, kps)
+        else:
+            x, kps = img_utils.resize_height(self.height, x, self.kps[idx])
+        x = img_utils.pad_to_shape(x, self.shape, 0)
+        return x, kps
 
 def load_dataset(
     df: pd.DataFrame,
@@ -104,7 +190,7 @@ def load_dataset(
         return ret_x, ret_kp
 
     # default backend gets frozen due to pytorch lightning?
-    with parallel_backend('threading', n_jobs=num_workers):
+    with parallel_config(n_jobs=num_workers):
         data = Parallel()(delayed(load)(row) for _, row in tqdm(df.iterrows(), total=len(df), desc=f'Load data'))
 
     xs, kps = zip(*data)
@@ -118,6 +204,76 @@ def load_dataset(
     new_shape = (down_factor * np.ceil(np.array(max_shape) / down_factor)).astype(np.int64).tolist()
     xs = [img_utils.pad_to_shape(x, new_shape, 0) for x in xs]
     return xs, kps
+
+
+def create_image_kps_loader(
+    df: pd.DataFrame,
+    height: int,
+    data_root: Optional[Path],
+    label_names: Sequence[str],
+    num_workers: int,
+    down_factor: int,
+    clahe: bool,
+    crop_label_names: Sequence[str] = [],
+):
+    '''
+    load images and keypoints
+    '''
+    crop_indices = [label_names.index(c) for c in crop_label_names if c in label_names]
+    logger.info(f'Crop labels and indices: {crop_label_names} {crop_indices}')
+
+    def load(row):
+        # x, kp = load_data(row, data_root, label_names)
+        shape = load_shape(data_root / row.imagePath)
+        kp = get_kps_from_row(row, label_names)
+        assert kp[0].size != 0
+        ret_shape, ret_kps = [], []
+        if crop_indices:
+            margin = 0.1  # TODO: magic number
+            # cropped_x, cropped_kp = crop_by_kps(x, kp, crop_indices, margin)
+            tl, br = calc_crop_indices(shape, kp, crop_indices, margin)
+            # cropped_x, cropped_kp = img_utils.resize_height(height, cropped_x, cropped_kp)
+            cropped_kp = crop_kps(kp, tl)
+            cropped_shape = (br[0] - tl[0], br[1] - tl[1])
+            _, width = img_utils.calc_resize_height(height, cropped_shape[0], cropped_shape[1])
+            ret_shape.append((height, width))
+            # ret_x.append(cropped_x)
+            ret_kps.append(cropped_kp)
+        _, width = img_utils.calc_resize_height(height, shape[0], shape[1])
+        ret_shape.append((height, width))
+        ret_kps.append(kp)
+        return ret_shape, ret_kps
+
+    # default backend gets frozen due to pytorch lightning?
+    with parallel_config(n_jobs=num_workers):
+        data = Parallel()(delayed(load)(row) for _, row in tqdm(df.iterrows(), total=len(df), desc=f'Load shapes and kps'))
+
+    shapes, kps = zip(*data)
+    # flatten nested lists
+    shapes = [x for sublist in shapes for x in sublist]
+    kps = [kp for sublist in kps for kp in sublist]
+
+    max_shape = np.max(shapes, axis=0)
+
+    new_shape = (down_factor * np.ceil(np.array(max_shape) / down_factor)).astype(np.int64).tolist()
+    kps = [get_kps_from_row(row, label_names) for _, row in df.iterrows()]
+    filenames = [data_root / row.imagePath for _, row in df.iterrows()]
+    if crop_indices:
+        filenames = filenames + filenames
+        crop = [True] * len(df) + [False] * len(df)
+        kps = kps + kps
+        return DiskImageReaderAndKps(height, filenames, crop, new_shape, kps, crop_indices)
+    else:
+        crop = [False] * len(df)
+        return DiskImageReaderAndKps(height, filenames, crop, new_shape, kps, crop_indices)
+    # gen_xs = (img_utils.pad_to_shape(x, new_shape, 0) for x in shapes)
+    # if compress:
+    #     logger.info('Compressing data')
+    #     shapes = CompressedNumpyArray.build(gen_xs)
+    #     logger.info('Done compressing data')
+    # else:
+    #     shapes = list(gen_xs)
+    # return shapes, kps
 
 
 def ndjson2df(filename: Union[str, Path]) -> pd.DataFrame:
