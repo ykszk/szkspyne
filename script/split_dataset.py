@@ -50,6 +50,19 @@ def main():
         help="Random seed",
         default=42,
     )
+    parser.add_argument(
+        "--id_field",
+        type=str,
+        help="Field name to use for ids. default: %(default)s",
+        default='file_name',
+    )
+    parser.add_argument(
+        '--n_mismatch',
+        choices=['error', 'warn'],
+        default='error',
+        help='Action to take when the number of output files and split ratio/ids do not match. '
+             'error: raise an error, warn: print a warning and continue',
+    )
     args = parser.parse_args()
 
     # read the input ndjson files
@@ -96,7 +109,7 @@ def main():
             write_ndjson(split_data, args.output[i])
             total += len(split_data)
 
-        assert total == n
+        n_data = n
 
     elif args.ids:
         if len(args.output) != len(args.ids):
@@ -111,7 +124,7 @@ def main():
             ids = set(ids)
             logger.info(f"Total ids: {len(ids)}")
             # filter the data based on the ids
-            filtered_data = [obj for obj in data if Path(obj["file_name"]).stem in ids]
+            filtered_data = [obj for obj in data if Path(obj[args.id_field]).stem in ids]
             logger.info(f"Filtered data: {len(filtered_data)}")
 
             # write the filtered data to the output file
@@ -119,7 +132,15 @@ def main():
             write_ndjson(filtered_data, output_filename)
             total += len(filtered_data)
         
-        assert total == len(data)
+        n_data = len(data)
+
+    # assert total == n
+    if n_data != total:
+        if args.n_mismatch == 'error':
+            raise ValueError(f"Total number of data {total} does not match the original {n_data}.")
+        else:
+            logger.warning(f"Total number of data {total} does not match the original {n_data}.")
+            print(f"Total number of data {total} does not match the original {n_data}.")
 
     return 0
 

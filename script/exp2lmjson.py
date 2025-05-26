@@ -8,9 +8,8 @@ from tqdm import tqdm
 
 parser = argparse.ArgumentParser(description='From ndjson for exp to ndjson of labelme.')
 parser.add_argument('input', help='Input ndjson filename. "-" to use stdin', metavar='<input>')
-parser.add_argument('output', help='Output directory or ndjson', metavar='<output>')
+parser.add_argument('output', help='Output ndjson', metavar='<output>', nargs='?', default=None)
 args = parser.parse_args()
-outdir = Path(args.output)
 
 if args.input == '-':
     exp_data = [labelme_utils.ShapeDictLine.model_validate_json(l) for l in sys.stdin]
@@ -18,9 +17,9 @@ else:
     with open(args.input) as f:
         exp_data = [labelme_utils.ShapeDictLine.model_validate_json(l) for l in f]
 
-if outdir.suffix == '.ndjson':
+if args.output:
     # empty the file
-    with open(outdir, 'w'):
+    with open(args.output, 'w'):
         pass
 
 for data_line in tqdm(exp_data):
@@ -47,11 +46,10 @@ for data_line in tqdm(exp_data):
     }
     new = labelme_utils.LabelMe.model_validate(new_dict)
 
-    if outdir.suffix == '.ndjson':
-        new_line = new.into_labelme_line(data_line.filename)
-        with open(outdir, 'a') as f:
+    new_line = new.into_labelme_line(data_line.filename)
+    if args.output:
+        with open(args.output, 'a') as f:
             f.write(new_line.model_dump_json())
             f.write('\n')
     else:
-        with open(data_line.filename, 'w') as f:
-            json.dump(new, f, indent=2, ensure_ascii=False)
+        print(new_line.model_dump_json())

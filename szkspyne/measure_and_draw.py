@@ -207,12 +207,14 @@ def main():
         help='Extra points (in labelme format) ndjson filename',
         metavar='<extra_points>',
         nargs='*',
+        default=[],
     )
     sub_batch.add_argument(
         '--extra_labels',
         help='Labels for extra points',
         metavar='<extra_labels>',
         nargs='*',
+        default=[],
     )
 
     def command_batch(args):
