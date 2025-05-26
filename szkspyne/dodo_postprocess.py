@@ -4,6 +4,9 @@ from pathlib import Path
 import json
 from logzero import logger
 import szkspyne.utils.measure as measure_utils
+from szkspyne.utils.doit import concat, make_phony
+from szkspyne.utils.doit import Pipeline
+import szkspyne.utils.task as task_utils
 
 log_level = os.environ.get('LOG_LEVEL', 'INFO').upper()
 logger.setLevel(log_level)
@@ -37,6 +40,7 @@ OUTPUT_MAIN_DIR = RESULT_DIR / 'postprocess'
 if RESULT_DIR.exists():
     OUTPUT_MAIN_DIR.mkdir(exist_ok=True, parents=True)
 
+RENDER_TRAIN = os.environ.get('RENDER_TRAIN', False) == 'True'
 
 def task_split():
     '''
@@ -78,10 +82,6 @@ TGT_HM_KPS = 'all_heatmap_keypoints.ndjson'
 HM_IMAGE_DB = OUTPUT_MAIN_DIR / f'heatmap_images.sqlite3'
 PHONY_DB_TGT = 'hm2db.done'
 
-
-def make_phony(filename):
-    with open(filename, 'w'):
-        pass
 
 
 def _task_holdout_heat2lm():
@@ -226,18 +226,6 @@ def task_fit():
                 'file_dep': [infile, infile2, pca_model],
                 'targets': [outfile],
             }
-
-
-def concat(files, output):
-    import shutil
-
-    if Path(output).exists():
-        os.remove(output)
-    with open(output, 'wb') as wfd:
-        for f in files:
-            with open(f, 'rb') as fd:
-                shutil.copyfileobj(fd, wfd)
-
 
 # FLAGS = RESULT_DIR / 'flags.ndjson'
 FLAGS = {
@@ -410,12 +398,17 @@ def task_ref_exp2lm():
             'targets': [outfile],
         }
         infile = outfile
-        sort_command = f'lmrs sort {infile} --labels TL,TR,BL,BR | lmrs sort - --labels TL,TR,BL,BR --inv-label --by-x'
+        # sort_command = f'lmrs sort {infile} --labels TL,TR,BL,BR | lmrs sort - --labels TL,TR,BL,BR --inv-label --by-x'
+        cat = ['cat', str(infile)]
+        sort_corners = task_utils.CMD_SORT_VERTEBRAL_CORNERS
+        sort_non_corners = sort_corners.copy() + ['--inv-label', '--by-x']
+        outfile = outdir / 'final_keypoints.ndjson'
+        action = Pipeline().pipe(cat).pipe(sort_corners).pipe(sort_non_corners).runner(text=True, output_file=outfile)
         yield {
             'name': f'sort-{image_type}',
-            'actions': [f'{sort_command} > {infile.with_name("final_keypoints.ndjson")}'],
+            'actions': [action],
             'file_dep': [infile],
-            'targets': [infile.with_name('final_keypoints.ndjson')],
+            'targets': [outfile],
         }
 
         # filename field to relative path
@@ -439,7 +432,6 @@ hide_dict = {'ap_whole': AP_HIDE, 'lateral_whole': LATERAL_HIDE}
 
 MES_HIDE = 'CurveApex SpinalLine APT CoronalBalance T1Tilt ClavicleAngle ShoulderHeight Pelvis FemoralHead PelvicObliquity LegLength SacralObliquity Mid/LowerThoracicKyphosis ProximalThoracicKyphosis SacralSlope PelvicIncidence PelvicRadiusAngle L5IncidenceAngle LumbosacralAngle'
 JQ_REMOVE_BEND = '. | select(.content.flags."除外" or .content.flags."左屈" or .content.flags."右屈" or .content.flags."先天性側彎"|not)'
-ALGO = 'no-cross2'
 
 
 def task_curve():
@@ -455,7 +447,8 @@ def task_curve():
             c1 = f"jq -c '{JQ_REMOVE_BEND}' {infile}"
             script = SCRIPT_DIR / 'sort_points.py'
             c2 = f'python {script} -'
-            c3 = f'scolrs curve -'
+            c3 = f'scolrs curve --algorithm apex -'
+            # c3 = f'scolrs curve -'
             script = SRC_DIR / 'curve.py'
             # c4 = f'python {script}'
             action1 = ' | '.join([c1, c2, c3]) + f' > {curve_file}'
@@ -755,6 +748,7 @@ def task_apply_model():
         with open(model_dir / '../args.json') as f:
             args = json.load(f)
             height = str(args['height'])
+            # height = str(256 * 6)  # TODO: Implement two step model?
         action = [
             'python',
             script,
@@ -764,6 +758,8 @@ def task_apply_model():
             model_file,
             '--height',
             height,
+            '--auto_crop_multiplier',
+            '1.5',
             '--labelme',
             '--output',
             outdir,
@@ -882,6 +878,7 @@ def _train_summary(source_file: Path, output_dir: Path):
             'targets': [outfile.with_suffix('.csv')],
         }
 
+        # convert to html
         csv_filename = outfile.with_suffix('.csv')
         c2 = f'RESULT_DIR={RESULT_DIR} IMAGE_TYPE={image_type} CSV_FILENAME={csv_filename} FLAGS_FILENAME={source_file} jupyter nbconvert --stdin --to html --execute --no-input'
         script = ROOT_DIR / 'notebooks/analyze_train.py'
@@ -895,6 +892,39 @@ def _train_summary(source_file: Path, output_dir: Path):
             'file_dep': [outfile.with_suffix('.csv')],
             'targets': [],
             'clean': True,
+        }
+
+        # draw
+        script = SRC_DIR / 'measure_and_draw.py'
+        draw_dir = output_dir / image_type
+        draw_dir.mkdir(parents=True, exist_ok=True)
+        action = [
+            'python',
+            script,
+            '--resize',
+            f'{SVG_IMAGE_SIZE}x{SVG_IMAGE_SIZE}',
+            '--svg_size',
+            '1200',
+            '--image_type',
+            image_type.split('_')[0],
+            '--title',
+            f'{image_type}',
+        ]
+        batch_args = [
+            'batch',
+            infile,
+            draw_dir,
+            '--html',
+            '--workers',
+            '8',
+        ]
+        file_dep = [infile]
+        action += batch_args
+        yield {
+            'name': f'draw-train-{image_type}-{subname}',
+            'actions': [action],
+            'file_dep': file_dep,
+            'targets': [],
         }
 
 

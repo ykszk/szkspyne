@@ -1,7 +1,23 @@
 import subprocess
 import shlex
+import shutil
+from pathlib import Path
+import os
 from typing import List, Optional, Union, Callable
 
+def make_phony(filename):
+    with open(filename, 'w'):
+        pass
+
+
+def concat(files, output):
+
+    if Path(output).exists():
+        os.remove(output)
+    with open(output, 'wb') as wfd:
+        for f in files:
+            with open(f, 'rb') as fd:
+                shutil.copyfileobj(fd, wfd)
 
 class Pipeline:
     """Class to represent a pipeline of shell commands."""
@@ -152,3 +168,8 @@ class Pipeline:
             return lambda: self.run_to_file(output_file, input_data, text)
         else:
             return lambda: self.run(input_data, text)
+
+    def print_commands(self):
+        """Print the commands in the pipeline."""
+        for cmd in self.commands:
+            print(' '.join([str(c) for c in cmd]))

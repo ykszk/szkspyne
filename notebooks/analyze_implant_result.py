@@ -1,8 +1,8 @@
 # %%
 from pathlib import Path
 import json
-import subprocess
 import os
+import copy
 
 from IPython.display import display
 from IPython.core.display import HTML
@@ -20,6 +20,8 @@ def header(text, level=3):
 result_dir = os.environ.get(
     'RESULT_DIR', '/poseidon/users/suzuki/projects/scoliosis/result/implant20250116/external_test_screw'
 )
+training_only = os.environ.get('TRAINING_ONLY', 'false').lower() == 'true'
+
 result_dir = Path(result_dir)
 eval_dir = result_dir / 'eval'
 eval_dir.mkdir(exist_ok=True, parents=True)
@@ -32,11 +34,15 @@ def load_ndjson_as_dict(filename):
 
 
 ref_data = load_ndjson_as_dict(result_dir / 'reference' / 'lm_implant_keypoints.ndjson')
-ai_data = load_ndjson_as_dict(result_dir / 'ai' / 'dtron2_lm_combined.ndjson')
-
 ref_counts = load_ndjson_as_dict(result_dir / 'reference' / 'counts.ndjson')
-ai_counts = load_ndjson_as_dict(result_dir / 'ai' / 'counts.ndjson')
-assert set(ref_counts.keys()) == set(ai_counts.keys())
+
+if training_only:
+    ai_data = copy.deepcopy(ref_data)
+    ai_counts = copy.deepcopy(ref_counts)
+else:
+    ai_data = load_ndjson_as_dict(result_dir / 'ai' / 'dtron2_lm_combined.ndjson')
+    ai_counts = load_ndjson_as_dict(result_dir / 'ai' / 'counts.ndjson')
+    assert set(ref_counts.keys()) == set(ai_counts.keys())
 # for content in ref_counts.values():
 #     print(content)
 #     break
@@ -75,12 +81,17 @@ display(df_ref.describe().T)
 # %%
 import matplotlib.pyplot as plt
 
-sum_ref = df_ref.abs().sum(axis=1)
-sum_ref.hist(bins=30)
+sum_ref = df_ref.iloc[:, :18].abs().sum(axis=1)
+sum_ref.hist()
 plt.xlabel('Sum of screw counts per image')
 
 
 # %%
+
+if training_only:
+    header("⚠️Ignore everything below this line", level=1)
+
+
 df_ai.to_csv(result_dir / 'eval' / 'ai_counts.csv')
 header('AI')
 display(df_ai.head())
@@ -88,8 +99,8 @@ display(df_ai.describe().T)
 
 
 # %%
-sum_ai = df_ai.abs().sum(axis=1)
-sum_ai.hist(bins=30)
+sum_ai = df_ai.iloc[:, :18].abs().sum(axis=1)
+sum_ai.hist()
 plt.xlabel('Sum of screw counts per image')
 
 

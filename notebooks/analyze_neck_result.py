@@ -12,7 +12,7 @@ from scipy import stats
 from math import sqrt
 from IPython.display import display, HTML
 import pandas as pd
-
+import os
 
 # display(HTML("<style>.main-container { max-width:600 !important; }</style>"))
 # display(HTML('<style>table.dataframe{overflow-x: scroll}</style>'))
@@ -21,7 +21,7 @@ import pandas as pd
 sns.set_theme(context='notebook', style='whitegrid', font='serif')
 # %%
 
-data_dir = Path('/poseidon/users/suzuki/projects/scoliosis/result/neck_manual_20250217/folds/0')
+data_dir = Path(os.getenv('DATA_DIR', '/poseidon/users/suzuki/projects/scoliosis/result/neck_manual_20250217/folds/0'))
 ref_filename = str(data_dir / 'measure_test_reference.ndjson')
 ai_filename = str(data_dir / 'measure_test_ai.ndjson')
 
