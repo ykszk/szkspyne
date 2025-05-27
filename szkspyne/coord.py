@@ -121,12 +121,7 @@ class Spine():
         def __init__(self, spine: 'Spine', image):
             self.spine = spine
             self.image = image
-            # self.corner_points = np.array([[0, 0], 
-            #                       [0, image.shape[0]],
-            #                       [image.shape[1], image.shape[0]],
-            #                       [image.shape[1], 0]])
             self.crop_params = spine.crop_params()
-            # self.croppped_image, self.offsetted_spine = Spine.crop(spine.vertebrae, image, spine.crop_params())
 
         def align(self, src_spine: 'Spine', src_image) -> tuple:
             """
@@ -143,7 +138,7 @@ class Spine():
                                   [src_image.shape[1], 0]])
             tfed_corner_points = tf(corner_points)
             tl_br = np.array([tfed_corner_points.min(axis=0), tfed_corner_points.max(axis=0)])
-            output_shape = (int(tl_br[1, 1] - tl_br[0, 1]), int(tl_br[1, 0] - tl_br[0, 0]))
+            output_shape = (int(tl_br[1, 1] - min(0, tl_br[0, 1])), int(tl_br[1, 0] - min(0, tl_br[0, 0])))
             warped_image = warp(src_image, tf.inverse, output_shape=output_shape, order=1)
             # offset the transformed spine
             cropped_warped_image, offsetted_spine_transformed = Spine.crop(tfed_vertebrae, warped_image, self.crop_params)
