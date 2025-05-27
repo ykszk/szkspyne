@@ -1,13 +1,21 @@
 #%%
 from szkspyne import labelme_utils
 import json
+import argparse
+from pathlib import Path
 
-ndjson_filename = '../../script/group_id_dicom_manual_annotation.ndjson'
+parser = argparse.ArgumentParser(description='Create CycleGAN dataset from DICOM annotations')
+parser.add_argument('--ndjson_filename', type=str, default='../../script/group_id_dicom_manual_annotation.ndjson',
+                    help='Path to the NDJSON file containing DICOM annotations')
+parser.add_argument('--image_outdir', type=str, default='../../../data/generative_dataset/cyclegan_prepost',
+                    help='Output directory for the images')
+# args = parser.parse_args()
+args, _ = parser.parse_known_args()
 
-with open(ndjson_filename, 'r') as f:
-    lines = f.readlines()
-objects = [json.loads(line) for line in lines]
-shape_lines = [labelme_utils.ShapeDictLine.model_validate(obj) for obj in objects]
+ndjson_filename = args.ndjson_filename
+image_outdir = Path(args.image_outdir)
+
+shape_lines = labelme_utils.ShapeDictLine.from_ndjson(ndjson_filename)
 # %%
 import pandas as pd
 
@@ -67,10 +75,16 @@ df_params.sort_values('mahalanobis_distance', ascending=True, inplace=True)
 df_params.head(20)
 
 # %%
+from pathlib import Path
 reference_index = df_params.index[0]
 reference_spine = Spine.from_shape_dict(shape_lines[reference_index].content)
+
+image_outdir.mkdir(exist_ok=True, parents=True)
+
+with open(image_outdir/'reference_spine.txt', 'w') as f:
+    f.write(shape_lines[reference_index].filename + '\n')
+
 # %%
-from pathlib import Path
 from PIL import Image
 from skimage.transform import rescale
 from tqdm import tqdm
@@ -78,7 +92,7 @@ import joblib
 import pydicom
 import matplotlib.pyplot as plt
 
-image_outdir = Path('../../../data/generative_dataset') / 'cyclegan_postpre'
+# image_outdir = Path('../../../data/generative_dataset') / 'cyclegan_prepost'
 image_outdir.mkdir(exist_ok=True, parents=True)
 
 def load_image(image_path, percentile=None, clahe=False):
@@ -137,18 +151,16 @@ if plot_result:
 # ref_cropped_image,  = ref_spine.crop_image(reference_image, scale_factor=scale_factor)
 
 
-from collections import defaultdict
-counters = defaultdict(int)
-
 list_filename_shape_line = []
 
 for spine_line in filtered_shape_lines:
     shape_dict = spine_line.content
     post_op = '術後' in shape_dict.flags 
-    subdir = 'trainB' if post_op else 'trainA'
-    count = counters[subdir]
-    counters[subdir] += 1
-    filename = image_outdir / subdir / f'{count:05d}.jpg'
+    category = 'B' if post_op else 'A'
+    train_or_test = 'test' if 'MSJ' in shape_dict.imagePath else 'train'
+    subdir = f'{train_or_test}{category}'
+    file_stem = Path(shape_dict.imagePath).stem
+    filename = image_outdir / subdir / f'{file_stem}.jpg'
     filename.parent.mkdir(exist_ok=True, parents=True)
     list_filename_shape_line.append((filename, spine_line))
 

@@ -110,8 +110,17 @@ class ShapeDict(BaseModel):
             flags={k: True for k in self.flags},
         )
 
+class LineMixin():
+    @classmethod
+    def from_ndjson(cls, filename: Union[str, Path]) -> List:
+        '''Load ndjson file and return a list of cls instances
+        '''
+        with open(filename) as f:
+            lines = f.readlines()
+        return [cls.model_validate_json(line) for line in lines]
 
-class ShapeDictLine(BaseModel):
+
+class ShapeDictLine(BaseModel, LineMixin):
     content: ShapeDict
     filename: str
 
@@ -124,7 +133,7 @@ class ShapeDictLine(BaseModel):
         return LabelMeLine(content=self.content.into_labelme(), filename=self.filename)
 
 
-class LabelMeLine(BaseModel):
+class LabelMeLine(BaseModel, LineMixin):
     content: LabelMe
     filename: str
 
