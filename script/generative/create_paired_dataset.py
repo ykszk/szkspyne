@@ -9,9 +9,10 @@ import pandas as pd
 ndjson_filename = '../script/group_id_dicom_manual_annotation.ndjson'
 pairing_filename = '../script/pre_post_pairs.csv'
 
-with open(ndjson_filename, 'r') as f:
-    lines = f.readlines()
-    shape_lines = [labelme_utils.ShapeDictLine.model_validate_json(line) for line in lines]
+# with open(ndjson_filename, 'r') as f:
+#     lines = f.readlines()
+#     shape_lines = [labelme_utils.ShapeDictLine.model_validate_json(line) for line in lines]
+shape_lines = labelme_utils.ShapeDictLine.from_ndjson(ndjson_filename)
 
 print(len(shape_lines))
 #%%
@@ -33,6 +34,7 @@ from PIL import Image
 from skimage.transform import rescale
 from tqdm import tqdm
 import joblib
+from utils import load_image, save_as_img
 
 do_plot = False
 
@@ -49,38 +51,9 @@ def make_pair(shape_pair):
     spine1 = Spine.from_shape_dict(shape_dict1)
     spine2 = Spine.from_shape_dict(shape_dict2)
 
-    def load_image(shape_dict, percentile=None):
-        dcm = pydicom.dcmread(shape_dict.imagePath)
-        # invert pixel array if necessary
-        if dcm.PhotometricInterpretation == 'MONOCHROME1':
-            pixel_array = np.invert(dcm.pixel_array)
-        else:
-            pixel_array = dcm.pixel_array
-        # convert to uint8
-        # dcm.pixel_array = dcm.pixel_array.astype(np.uint8)
-        if percentile is not None:
-            return normalize(pixel_array, percentile=percentile)
-        return pixel_array
-    # img1 = pydicom.dcmread(shape_dict1.imagePath).pixel_array
-    # img2 = pydicom.dcmread(shape_dict2.imagePath).pixel_array
-
-    def normalize(x, wlww=None, minmax=None, percentile=None):
-        if wlww is None and minmax is None and percentile is None:
-            raise RuntimeError('Either wlww or minmax is required')
-
-        if wlww is not None:
-            wl, ww = wlww
-            minmax = (wl-ww/2, wl+ww/2)
-
-        if percentile is not None:
-            minmax = np.percentile(x,[percentile,100-percentile])
-
-        x = np.clip(x, minmax[0], minmax[1]).astype(np.float32)
-        return np.round(255*(x - minmax[0])/(minmax[1]-minmax[0])).astype(np.uint8)
-
     percpercentile=4
-    img1 = load_image(shape_dict1, percentile=percpercentile)
-    img2 = load_image(shape_dict2, percentile=percpercentile)
+    img1 = load_image(shape_dict1.imagePath, percentile=percpercentile)
+    img2 = load_image(shape_dict2.imagePath, percentile=percpercentile)
 
     if do_plot:
         _, [ax1, ax2] = plt.subplots(1, 2)
@@ -119,11 +92,6 @@ def make_pair(shape_pair):
         ax2.set_title('Post OP')
         plt.show()
 
-    # save aligned images
-    def save_as_img(filename, image):
-        # convert to uint8
-        image = np.clip(image * 255, 0, 255).astype(np.uint8)
-        Image.fromarray(image).save(filename)
     pre_filename = f'{Path(shape_dict1.imagePath).stem}.jpg'
     save_as_img(image_outdir / pre_filename, aligned_img1)
     post_filename = f'{Path(shape_dict2.imagePath).stem}.jpg'
