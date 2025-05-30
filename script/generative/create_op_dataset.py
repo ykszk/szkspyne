@@ -14,7 +14,7 @@ parser.add_argument('--op_params_filename', type=str, default='../../script/op_p
 parser.add_argument('--src_img_dir', type=str, default='../../../data/generative_dataset/cyclegan_prepost/all_images',
                     help='Source directory containing images for the dataset')
 
-parser.add_argument('--outdir', type=str, default='../../../data/generative_dataset/op_dataset',
+parser.add_argument('--outdir', type=str, default='../../../data/generative_dataset/op_dataset/data',
                     help='Output directory the dataset')
 # args = parser.parse_args()
 args, _ = parser.parse_known_args()
@@ -28,27 +28,7 @@ df_pairs.head()
 df_pairs = pd.read_csv(args.pairing_filename)
 
 # %%
-from pydantic import BaseModel
-
-
-class ScrewCountLr(BaseModel):
-    left: dict[str, int]
-    right: dict[str, int]
-
-class OpParams(BaseModel):
-    screw_counts: ScrewCountLr
-    tilt_angles: list[float]
-    version: str
-
-class OpParamsLine(BaseModel):
-    content: OpParams
-    filename: str
-
-    @staticmethod
-    def from_ndjson(filename: str):
-        with open(filename, 'r') as f:
-            lines = f.readlines()
-            return [OpParamsLine.model_validate_json(line) for line in lines]
+from szkspyne.type.op import OpParamsLine
         
 op_params_lines = OpParamsLine.from_ndjson(args.op_params_filename)
 op_params_lines[0]
