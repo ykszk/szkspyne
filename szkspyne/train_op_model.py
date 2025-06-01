@@ -33,19 +33,59 @@ random.seed(42)  # For reproducibility
 random.shuffle(train_val_data_list)
 split_idx = int(len(train_val_data_list) * 0.9)
 from torchvision.transforms import ToTensor
+from torchvision.transforms import v2
+
 from PIL import Image
 IMAGE_SIZE = (256, 512)  # width, height
 
-# image_transform = ToTensor()
 def image_transform(image: Image):
     """Convert PIL image to tensor and normalize."""
     image = image.resize(IMAGE_SIZE)
     image = ToTensor()(image)
     return image
 
+def random_image_transform(image: Image):
+    """Convert PIL image to tensor and normalize."""
+    image = image.resize(IMAGE_SIZE)
+    tfs = torch.nn.Sequential(
+        v2.ToImage(),
+        v2.ToDtype(torch.float32, scale=True),
+        v2.RandomRotation(degrees=3, expand=False),
+        # v2.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0),
+    )
+    image = tfs(image)
+    return image
+
+
 vector_transform = lambda x: torch.tensor(x, dtype=torch.float32)
-dataset_kwargs = {'image_transform': image_transform, 'vector_transform': vector_transform}
-train_dataset = OpDataset(train_val_data_list[:split_idx], **dataset_kwargs)
+
+
+def base_transform(image, vector=None):
+    image = image_transform(image)
+    if vector is not None:
+        vector = vector_transform(vector)
+        return image, vector
+    return image
+
+def random_transform(image, vector = None):
+    image = random_image_transform(image)
+    vector = vector_transform(vector)
+    # horizontal flip with 50% probability
+    if random.random() > 0.5:
+        image = image.flip(-1)
+        # swap left and right
+        n_labels = len(OpParams.LABELS)
+        tmp = vector[:n_labels].clone()
+        vector[:n_labels] = vector[n_labels:2*n_labels]
+        vector[n_labels:2*n_labels] = tmp
+        # flip the sign of the tilt angles
+        vector[n_labels*2:] = -vector[n_labels*2:]
+        
+    return image, vector
+
+random_dataset_kwargs = {'transform': random_transform}
+dataset_kwargs = {'transform': base_transform,}
+train_dataset = OpDataset(train_val_data_list[:split_idx], **random_dataset_kwargs)
 val_dataset = OpDataset(train_val_data_list[split_idx:], **dataset_kwargs)
 vector_length = len(train_val_data_list[0].to_vector())
 
@@ -130,4 +170,4 @@ filenames = [Path(data.image_path).with_suffix('.json').name for data in test_da
 op_data_lines = [OpDataLine(filename=fn, content=OpData(op_params=op_params, image_path=data.image_path)) 
                 for fn, op_params, data in zip(filenames, pred_params, test_data_list)]
 # Save the predictions to JSON files
-OpDataLine.save_to_json(op_data_lines, output_root / 'predictions.ndjson')
+OpDataLine.save_to_ndjson(op_data_lines, output_root / 'predictions.ndjson')

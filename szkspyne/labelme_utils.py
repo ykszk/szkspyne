@@ -5,14 +5,14 @@ import shutil
 import sys
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, DefaultDict, Dict, List, Optional, Set, Union
+from typing import Any, DefaultDict, Dict, List, Optional, Set, Union, Callable
 
 import numpy as np
 from joblib import Parallel, delayed
 from logzero import logger
 from pydantic import BaseModel
 from tqdm import tqdm
-
+from szkspyne.type import LineMixin
 
 class LabelMe(BaseModel):
     class Shape(BaseModel):
@@ -109,15 +109,19 @@ class ShapeDict(BaseModel):
             imageWidth=self.imageWidth,
             flags={k: True for k in self.flags},
         )
-
-class LineMixin():
-    @classmethod
-    def from_ndjson(cls, filename: Union[str, Path]) -> List:
-        '''Load ndjson file and return a list of cls instances
+    
+    def transform(self, tf: Callable):
         '''
-        with open(filename) as f:
-            lines = f.readlines()
-        return [cls.model_validate_json(line) for line in lines]
+        Apply a transformation to the points in the shape dict.
+        
+        Args:
+            tf (Callable): A function that takes a list of points and returns a transformed list of points.
+        '''
+        for shape_type, labels in self.shapes.items():
+            for label, points in labels.items():
+                for i, p in enumerate(points):
+                    points[i] = tf(p)
+        return self
 
 
 class ShapeDictLine(BaseModel, LineMixin):

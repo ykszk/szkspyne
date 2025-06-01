@@ -1,7 +1,8 @@
 from torch.utils.data import Dataset
 from pathlib import Path
 from pydantic import BaseModel
-from szkspyne.type.op import OpParams, NdjsonMixin
+from szkspyne.type.op import OpParams
+from szkspyne.type import LineMixin
 from PIL import Image
 
 
@@ -34,15 +35,14 @@ class OpData(BaseModel):
         
         return op_data_list
 
-class OpDataLine(BaseModel, NdjsonMixin):
+class OpDataLine(BaseModel, LineMixin):
     content: OpData
     filename: str
 
 class OpDataset(Dataset):
-    def __init__(self, op_data_list: list[OpData], image_transform=None, vector_transform=None, image_only=False):
+    def __init__(self, op_data_list: list[OpData], transform=None, image_only=False):
         self.data = op_data_list
-        self.image_transform = image_transform
-        self.vector_transform = vector_transform
+        self.transform = transform
         self.image_only = image_only
 
     def __len__(self):
@@ -53,13 +53,13 @@ class OpDataset(Dataset):
             raise IndexError("Index out of range")
         op_data = self.data[idx]
         image = op_data.load_image()
-        if self.image_transform:
-            image = self.image_transform(image)
         if self.image_only:
+            if self.transform:
+                image = self.transform(image)
             return image
         vector = op_data.to_vector()
-        if self.vector_transform:
-            vector = self.vector_transform(vector)
+        if self.transform:
+            image, vector = self.transform(image, vector)
         return image, vector
     
     @staticmethod

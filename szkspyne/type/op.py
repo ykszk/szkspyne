@@ -2,6 +2,8 @@ from pydantic import BaseModel
 from typing import ClassVar
 import json
 
+from szkspyne.type import LineMixin
+
 class ScrewCountLr(BaseModel):
     left: dict[str, float]
     right: dict[str, float]
@@ -37,19 +39,6 @@ class OpParams(BaseModel):
                                     right=dict(zip(OpParams.LABELS, right_counts)))
         return OpParams(screw_counts=screw_counts, tilt_angles=tilt_angles, version='from_vector')
 
-class NdjsonMixin:
-    @classmethod
-    def from_ndjson(cls, filename: str):
-        with open(filename, 'r') as f:
-            lines = f.readlines()
-            return [cls.model_validate_json(line) for line in lines]
-        
-    @classmethod
-    def save_to_json(cls, data: list['NdjsonMixin'], filename: str):
-        with open(filename, 'w') as f:
-            for item in data:
-                f.write(json.dumps(item.model_dump(), ensure_ascii=False, separators=(',', ':')) + '\n')
-
-class OpParamsLine(BaseModel, NdjsonMixin):
+class OpParamsLine(BaseModel, LineMixin):
     content: OpParams
     filename: str

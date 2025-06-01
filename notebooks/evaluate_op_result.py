@@ -4,6 +4,7 @@ from szkspyne.type.op import OpParams, OpParamsLine
 from szkspyne.utils.op import OpData, OpDataLine, OpDataset
 import pandas as pd
 import os
+pd.options.display.max_columns = 2000 # show all columns in DataFrame
 
 result_filename = os.environ.get('RESULT_FILENAME', '../../result/generative/op/predictions.ndjson')
 pair_filename = os.environ.get('PAIR_FILENAME', '../../data/generative_dataset/op_dataset/pre_post_pairs.csv')
@@ -38,7 +39,8 @@ for pred in pred_op_data:
              ['Right ' + label for label in pred.op_params.LABELS] + \
              ['Tilt Angle ' + str(i + 1) for i in range(len(pred.op_params.tilt_angles))]
     df.columns = columns
-    display(df)
+    display(df.iloc[:, :2 * len(pred.op_params.LABELS)])
+    display(df.iloc[:, 2 * len(pred.op_params.LABELS):])
     image = pred.load_image()
     pre_post_id = pair_dict[Path(pred.image_path).stem]
     pre_post_ref = ref_dict[pre_post_id]

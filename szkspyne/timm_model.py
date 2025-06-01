@@ -8,9 +8,17 @@ class LitTimm(pl.LightningModule):
         self.encoder = timm.create_model(model_name, pretrained=True, in_chans=in_chs,num_classes=0, global_pool='')
         feature_shape = self.calculate_feature_shape(model_name, input_shape_hw[0], input_shape_hw[1])
         int_feature_size = 128   
-        self.reduce_feature = torch.nn.Conv2d(feature_shape[0], int_feature_size, kernel_size=3, bias=True)
+        # conv block
+        self.reduce_feature = torch.nn.Sequential(
+            torch.nn.Conv2d(feature_shape[0], 2*int_feature_size, kernel_size=3, padding=0, bias=True),
+            torch.nn.ReLU(),
+            torch.nn.BatchNorm2d(2*int_feature_size),
+            torch.nn.Conv2d(2*int_feature_size, int_feature_size, kernel_size=3, padding=0, bias=True),
+            torch.nn.ReLU(),
+            torch.nn.BatchNorm2d(int_feature_size),
+        )
         self.flatten = torch.nn.Flatten()
-        feature_dim = int_feature_size * (feature_shape[1]-2) * (feature_shape[2]-2)
+        feature_dim = int_feature_size * (feature_shape[1]-4) * (feature_shape[2]-4)  # Adjusted for pooling and convolution
         self.regresasor = torch.nn.Linear(feature_dim, out_chs)
         self.model = torch.nn.Sequential(self.encoder, self.reduce_feature, self.flatten, self.regresasor)
         self.loss = torch.nn.MSELoss()

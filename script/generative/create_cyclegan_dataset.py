@@ -1,4 +1,5 @@
 #%%
+from typing import List
 from szkspyne import labelme_utils
 import json
 import argparse
@@ -91,14 +92,14 @@ from tqdm import tqdm
 import joblib
 import pydicom
 import matplotlib.pyplot as plt
-from utils import load_image, save_as_img
+from utils import load_image, save_as_img, to_u8_range
 
 # image_outdir = Path('../../../data/generative_dataset') / 'cyclegan_prepost'
 image_outdir.mkdir(exist_ok=True, parents=True)
 
 
 ref_shape = shape_lines[reference_index].content
-reference_original_image = load_image(ref_shape.imagePath, percentile=4)
+reference_original_image = load_image(ref_shape.imagePath)
 ref_spine = Spine.from_shape_dict(shape_lines[reference_index].content)
 ref_spine_align = Spine.ReferenceSpine(ref_spine, reference_original_image)
 ref_cropped_spine, reference_image  = ref_spine_align.crop_self()
@@ -147,14 +148,14 @@ def align_spine(filename, shape_line):
     apply_clahe = False
     if 'Dairo' in shape_dict.imagePath:
         apply_clahe = True
-    image = load_image(shape_dict.imagePath, percentile=4, clahe=apply_clahe)
+    image = load_image(shape_dict.imagePath)
     if plot_result:
         f, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6))
         ax1.imshow(image, cmap='gray')
         ax1.plot(spine.vertebrae[:, :, 0].ravel(), spine.vertebrae[:, :, 1].ravel(), 'o', markersize=3, color='blue')
 
     # Crop the image and spine
-    cropped_spine, cropped_image = ref_spine_align.align(spine, image)
+    cropped_spine, cropped_image, cropped_shape_dict = ref_spine_align.align(spine, image)
     if plot_result:
         print(cropped_image.shape)
         ax2.imshow(cropped_image, cmap='gray')
@@ -165,16 +166,28 @@ def align_spine(filename, shape_line):
     # rescale the cropped image and spine
     scale_factor = 0.5
     rescaled_cropped_image = rescale(cropped_image, scale_factor, anti_aliasing=True)
+    cropped_shape_dict = cropped_shape_dict.transform(lambda points: points * scale_factor)
+    img_u8 = to_u8_range(rescaled_cropped_image, percentile=1, clahe=apply_clahe)
 
-    save_as_img(filename, rescaled_cropped_image)
-    return (filename.relative_to(image_outdir),shape_dict.imagePath)
+    save_as_img(filename, img_u8)
+    cropped_shape_line = labelme_utils.ShapeDictLine(
+        filename=shape_line.filename,
+        content=cropped_shape_dict
+    )
+    return ((filename.relative_to(image_outdir),shape_dict.imagePath), cropped_shape_line)
 
-path_pairs = joblib.Parallel(n_jobs=-1)(
+result = joblib.Parallel(n_jobs=-1)(
     joblib.delayed(align_spine)(filename, shape_line) for filename, shape_line in tqdm(list_filename_shape_line)
 )
+
+path_pairs, shape_dicts= zip(*[r for r in result if r is not None])
+shape_dicts: List[labelme_utils.ShapeDictLine]  = shape_dicts
 
 with open(image_outdir / 'path_pairs.txt', 'w') as f:
     for pre_path, post_path in path_pairs:
         f.write(f'{pre_path},{post_path}\n')
+
+lm_lines = [sd.into_labelme_line() for sd in shape_dicts]
+labelme_utils.LabelMeLine.save_to_ndjson(lm_lines, image_outdir / 'keypoints.ndjson')
     
 # %%

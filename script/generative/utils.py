@@ -2,21 +2,23 @@ import numpy as np
 import pydicom
 from  PIL import Image
 
-def load_image(image_path, percentile=None, clahe=False):
+def load_image(image_path):
     dcm = pydicom.dcmread(image_path)
     # invert pixel array if necessary
     if dcm.PhotometricInterpretation == 'MONOCHROME1':
         pixel_array = np.invert(dcm.pixel_array)
     else:
         pixel_array = dcm.pixel_array
-    # convert to uint8
-    # dcm.pixel_array = dcm.pixel_array.astype(np.uint8)
+    return pixel_array
+
+
+def to_u8_range(pixel_array, wlww=None, minmax=None, percentile=None, clahe=False):
     if clahe:
         from skimage import exposure
         pixel_array = exposure.equalize_adapthist(pixel_array, clip_limit=0.01)
         pixel_array = (pixel_array * 255)
     if percentile is not None:
-        return normalize(pixel_array, percentile=percentile)
+        return normalize(pixel_array, wlww=wlww, minmax=minmax, percentile=percentile)
     return pixel_array
 
 def normalize(x, wlww=None, minmax=None, percentile=None):

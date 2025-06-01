@@ -130,6 +130,7 @@ class Spine():
             """
             tf = Spine.estimate_transform(src_spine, self.spine)
             tfed_vertebrae = tf(src_spine.vertebrae.reshape(-1, 2)).reshape(src_spine.vertebrae.shape)
+            tfed_shape_dict = src_spine.shape_dict.model_copy().transform(tf)
 
             # calculate output_shape
             corner_points = np.array([[0, 0], 
@@ -142,7 +143,10 @@ class Spine():
             warped_image = warp(src_image, tf.inverse, output_shape=output_shape, order=1)
             # offset the transformed spine
             cropped_warped_image, offsetted_spine_transformed = Spine.crop(tfed_vertebrae, warped_image, self.crop_params)
-            return offsetted_spine_transformed, cropped_warped_image
+            tl = np.array([self.crop_params[0], self.crop_params[2]])
+            crop_tf = lambda points: points - tl
+            tfed_shape_dict = tfed_shape_dict.transform(crop_tf)
+            return offsetted_spine_transformed, cropped_warped_image, tfed_shape_dict
         
         def crop_self(self) -> tuple:
             """
