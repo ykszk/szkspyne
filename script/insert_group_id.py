@@ -14,13 +14,11 @@ class DictMapper(ABC):
     def __init__(self, args):
         self.args = args
 
-    @property
     @classmethod
     @abstractmethod
     def name(cls) -> str:
         pass
 
-    @property
     @classmethod
     @abstractmethod
     def help(cls) -> str:
@@ -73,12 +71,10 @@ class InsertGroupId(DictMapper):
         self.path2id = []
 
     @classmethod
-    @property
     def name(cls) -> str:
         return 'insert_group_id'
 
     @classmethod
-    @property
     def help(cls) -> str:
         return 'Extract and insert group id'
 
@@ -108,12 +104,10 @@ class InsertGroupId(DictMapper):
 
 class AddAnchor(DictMapper):
     @classmethod
-    @property
     def name(cls) -> str:
         return 'anchor'
 
     @classmethod
-    @property
     def help(cls) -> str:
         return 'Add anchor'
 
@@ -135,11 +129,38 @@ class AddAnchor(DictMapper):
         pass
 
 
+class AddNeckAnchor(DictMapper):
+    @classmethod
+    def name(cls) -> str:
+        return 'neck_anchor'
+
+    @classmethod
+    def help(cls) -> str:
+        return 'Add neck anchor'
+
+    @classmethod
+    def add_arguments(cls, parser: ArgumentParser):
+        pass
+
+    def map(self, data: dict) -> dict:
+        d_points = data['shapes']['point']
+        # "Lamina1", "C3_BL", "C3_BR"
+        bl = np.array(sorted(d_points['BL'], key=lambda e: e[0][1]))[:, 0]
+        br = np.array(sorted(d_points['BR'], key=lambda e: e[0][1]))[:, 0]
+        lamina = np.array(sorted(d_points['Lamina'], key=lambda e: e[0][1]))[:, 0]
+        d_points['Lamina1'] = [[lamina[0].tolist()]]
+        d_points['C3_BL'] = [[bl[2].tolist()]]
+        d_points['C3_BR'] = [[br[2].tolist()]]
+        return data
+
+    def finalize(self):
+        pass
+
 def main():
     parser = argparse.ArgumentParser(description="Read ndjson of exp data from stdin and apply mapping functions.")
     sub_parsers = parser.add_subparsers(dest='command_name')
-    for c in [InsertGroupId, AddAnchor]:
-        p = sub_parsers.add_parser(c.name, help=c.help)
+    for c in [InsertGroupId, AddAnchor, AddNeckAnchor]:
+        p = sub_parsers.add_parser(c.name(), help=c.help())
         c.add_arguments(p)
         p.set_defaults(new=c)
 

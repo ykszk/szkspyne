@@ -1,13 +1,94 @@
 #%%
+from typing import List, Optional
 from szkspyne import labelme_utils
 import numpy as np
 from skimage.transform import SimilarityTransform, warp
+from abc import ABC, abstractmethod
 
+
+class MovablePoints(ABC):
+
+    @abstractmethod
+    def points(self) -> np.ndarray:
+        """
+        Returns the points of the movable object.
+        The points are in the image coordinate system.
+        The points are in the format (x, y).
+        """
+        pass
+
+    @abstractmethod
+    def reference_points(self) -> np.ndarray:
+        """
+        Returns the reference points of the movable object.
+        The reference points are in the image coordinate system.
+        The points are in the format (x, y).
+        """
+        pass
+
+    @abstractmethod
+    def incomplete_reference_points(self) -> List[Optional[float]]:
+        """
+        Returns the incomplete reference points of the movable object.
+        The reference points are in the image coordinate system.
+        The points are in the format (x, y).
+        If a point is not available, it should return None.
+        """
+        pass
+
+
+class TemplatePoints(MovablePoints):
+    def calculate_transform(self, src_points: MovablePoints) -> SimilarityTransform:
+        """
+        Calculate the transform parameters to transform the src_points to the template points.
+        The transform parameters are defined as (scale, rotation, translation).
+        """
+        src = src_points.reference_points()
+        dst = self.reference_points()
+        # calculate similarity transform parameters
+        tf = SimilarityTransform()
+        tf.estimate(src, dst)
+        return tf
+    
+    def align(self, src_points: MovablePoints) -> tuple:
+        """
+        Align the src_points to the template points using the transform parameters.
+        The transform parameters are defined as (scale, rotation, translation).
+        """
+        tf = self.calculate_transform(src_points)
+        transformed_points = tf(src_points.points())
+        return transformed_points, tf
+    
+    @staticmethod
+    def select_template(mps: List['MovablePoints']) -> 'TemplatePoints':
+        """
+        Create a TemplatePoints from a list of MovablePoints.
+        MovablePoints that is the closest to the mean of the transformation parameters is selected as the template.
+        """
+        if not mps:
+            raise ValueError("List of MovablePoints is empty")
+        tentative_template = mps[0]
+        if len(mps) == 1:
+            return tentative_template
+        tfs = [tentative_template.calculate_transform(mp) for mp in mps[1:]]
+        param_arrs = np.array([[tf.scale, tf.translation[0], tf.translation[1], tf.rotation] for tf in tfs])
+        mean_params = np.mean(param_arrs, axis=0)
+        # calculate the mahalanobis distance from the mean
+        cov = np.cov(param_arrs.T)
+        inv_cov = np.linalg.inv(cov)
+        distances = []
+        for tf in tfs:
+            diff = np.array([tf.scale, tf.translation[0], tf.translation[1], tf.rotation]) - mean_params
+            mahalanobis_distance = np.sqrt(diff @ inv_cov @ diff.T)
+            distances.append(mahalanobis_distance)
+        # find the index of the minimum distance
+        min_index = np.argmin(distances)
+        return mps[min_index]
 
 class Spine():
     """
     Class to represent the spine in a DICOM image.
-    The spine is represented by four points: TL, TR, BL, BR.
+    The spine is represented by series of four corner points: TL, TR, BL, BR.
     The points are stored in a numpy array of shape (N, 4, 2).
     The points are in the order: TL, TR, BL, BR.
     The points are in the image coordinate system.

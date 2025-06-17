@@ -15,6 +15,7 @@ def load_env_var(name: str, default: Any) -> Any:
 
 
 VERTEBRA_LABEL_NAMES = load_env_var('VERTEBRA_LABEL_NAMES', ['TL', 'TR', 'BL', 'BR'])
+ASM_LABEL_NAMES = load_env_var('ASM_LABEL_NAMES', ['TL', 'TR', 'BL', 'BR'])
 NON_VERTEBRA_LABEL_NAMES = load_env_var(
     'NON_VERTEBRA_LABEL_NAMES', ['Shoulder', 'Clavicle', 'Pelvis', 'Iliac', 'FemoralHead']
 )
