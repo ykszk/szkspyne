@@ -134,7 +134,7 @@ def multivariate_normal(shape: Sequence[int], mu: np.ndarray, sigma: float) -> n
     Args:
         shape (array) : output shape
         mu (array) : mean/center
-        sigma (array or scalar): standard deviation
+        sigma (scalar): sigma
     '''
     if np.isscalar(mu):
         mu = np.repeat(mu, len(shape))
@@ -168,11 +168,11 @@ def create_prob_image(
         out[...] = multivariate_normal(shape, points[0], sigma)
     for p in points[1:]:
         np.maximum(out, multivariate_normal(shape, p, sigma), out=out)
-    # calculate theoretical max value from sigma
-    peak_value = 1 / np.sqrt(2 * np.pi * sigma**2)
-    if normalize:
-        out *= 1 / peak_value
-    assert out is not None  # type narrowing
+
+    if normalize and out.max() != 0:
+        scale = np.sqrt((2 * np.pi * sigma * sigma) ** len(shape))  # normalization factor
+        out *= scale
+
     return out
 
 
