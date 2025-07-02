@@ -102,6 +102,52 @@ class InsertGroupId(DictMapper):
                     writer.writerow(row)
 
 
+def filepath2neck_groupid(filepath: str) -> str:
+    filepath = Path(filepath.replace('\\', '/')).name
+    if filepath.startswith("OUCS") or filepath.startswith("OSC"):
+        group_id = filepath.split("_")[0]
+    else:
+        filepath = filepath.replace("__", "/").split("/")[-1]
+        group_id = filepath.split("_")[0]
+    return group_id
+
+
+class InsertNeckGroupId(DictMapper):
+    def __init__(self, *args):
+        super().__init__(*args)
+        self.path2id = []
+
+    @classmethod
+    def name(cls) -> str:
+        return 'neck_group_id'
+
+    @classmethod
+    def help(cls) -> str:
+        return 'Extract and insert neck group id'
+
+    @classmethod
+    def add_arguments(cls, parser: ArgumentParser):
+        parser.add_argument(
+            "--src_key", help="Extract neck group id from this key. default: %(default)s", default="imagePath"
+        )
+        parser.add_argument("--id_key", help="Insert group id into this key. default: %(default)s", default="group_id")
+        parser.add_argument("--map", help="Save resulting key to gorup_id map as a csv.")
+
+    def map(self, data: dict) -> dict:
+        args = self.args
+        filepath: str = data[args.src_key]
+        group_id = filepath2neck_groupid(filepath)
+        data[args.id_key] = group_id
+        return data
+
+    def finalize(self):
+        args = self.args
+        if args.map:
+            with open(args.map, mode="w", newline="") as file:
+                writer = csv.writer(file)
+                for row in self.path2id:
+                    writer.writerow(row)
+
 class AddAnchor(DictMapper):
     @classmethod
     def name(cls) -> str:
@@ -159,7 +205,7 @@ class AddNeckAnchor(DictMapper):
 def main():
     parser = argparse.ArgumentParser(description="Read ndjson of exp data from stdin and apply mapping functions.")
     sub_parsers = parser.add_subparsers(dest='command_name')
-    for c in [InsertGroupId, AddAnchor, AddNeckAnchor]:
+    for c in [InsertGroupId, AddAnchor, InsertNeckGroupId, AddNeckAnchor]:
         p = sub_parsers.add_parser(c.name(), help=c.help())
         c.add_arguments(p)
         p.set_defaults(new=c)

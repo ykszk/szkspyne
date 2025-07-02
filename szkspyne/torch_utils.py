@@ -103,10 +103,11 @@ def bicubic(arr, yxs):
             xs = torch.clip(yx00[:, 1] + dx, 0, arr.shape[1] - 1)
             zs.append(arr[ys, xs])
 
-    zs = torch.stack(zs, dim=1).reshape((yxs.shape[0], 4, 4))
+    device = yxs.device
+    zs = torch.stack(zs, dim=1).reshape((yxs.shape[0], 4, 4)).to(device=device)
 
-    px = torch.stack([tx**3, tx**2, tx, torch.ones_like(tx)], dim=1).unsqueeze(2)
-    py = torch.stack([ty**3, ty**2, ty, torch.ones_like(ty)], dim=1).unsqueeze(1)
+    px = torch.stack([tx**3, tx**2, tx, torch.ones_like(tx)], dim=1).unsqueeze(2).to(device=device)
+    py = torch.stack([ty**3, ty**2, ty, torch.ones_like(ty)], dim=1).unsqueeze(1).to(device=device)
 
-    p = py @ Cy @ zs @ Cx @ px
+    p = py @ Cy.to(device=device) @ zs @ Cx.to(device=device) @ px
     return p.squeeze(1).squeeze(1)

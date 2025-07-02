@@ -1,4 +1,4 @@
-from typing import List, Union
+from typing import List, Union, Iterable
 import json
 from pathlib import Path
 
@@ -11,6 +11,13 @@ class LineMixin():
         '''
         with open(filename) as f:
             lines = f.readlines()
+        return cls.from_lines(lines)
+       
+    
+    @classmethod
+    def from_lines(cls, lines: Iterable[str]) -> List['LineMixin']:
+        '''Load a list of lines and return a list of cls instances
+        '''
         return [cls.model_validate_json(line) for line in lines]
     
     @classmethod

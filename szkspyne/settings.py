@@ -36,6 +36,20 @@ FLIPPED_NAMES = load_env_var(
 PROB_MAX = 4000
 
 
+USE_NECK_SETTINGS = load_env_var('USE_NECK_SETTINGS', False)
+
+def set_neck_settings():
+    global LABEL_NAMES, FLIPPED_NAMES, ANCHOR_LABEL_NAMES, ASM_LABEL_NAMES, MAX_NUM_POINTS
+    LABEL_NAMES = ["TL", "TR", "BL", "BR", "Brow", "Sella", "ExternalAuditoryCanal", "Orbit", "Occipital", "Chin", "Lamina", "Manubrium", "PosteriorHardPalate", "AnteriorC1Arch", "AnteriorDens", "PosteriorDens", "Lamina1", "C3_BL", "C3_BR"]
+    FLIPPED_NAMES = ["TR", "TL", "BR", "BL", "Brow", "Sella", "ExternalAuditoryCanal", "Orbit", "Occipital", "Chin", "Lamina", "Manubrium", "PosteriorHardPalate", "AnteriorC1Arch", "AnteriorDens", "PosteriorDens", "Lamina1", "C3_BR", "C3_BL"]
+    ANCHOR_LABEL_NAMES = ["AnteriorDens", "PosteriorDens", "Lamina1", "C3_BL", "C3_BR"]
+    ASM_LABEL_NAMES = ["TL", "TR", "BL", "BR", "Lamina", "AnteriorC1Arch", "AnteriorDens", "PosteriorDens"]
+    MAX_NUM_POINTS = { "TL": 7, "TR": 7, "BL": 8, "BR": 8, "Brow": 1, "Sella": 1, "ExternalAuditoryCanal": 1, "Orbit": 1, "Occipital": 1, "Chin": 1, "Lamina": 8, "Manubrium": 1, "PosteriorHardPalate": 1, "AnteriorC1Arch": 1, "AnteriorDens": 1, "PosteriorDens": 1, "C3_BL": 1, "C3_BR": 1, "Lamina1": 1 }
+
+if USE_NECK_SETTINGS:
+    set_neck_settings()
+
+
 def create_flip_pairs(normal, flipped):
     flip_pairs = []
     for i, (ln, fn) in enumerate(zip(normal, flipped)):
