@@ -16,9 +16,9 @@ class ActiveShapeModel:
     point_counts: List[int]
 
     def __init__(self, **kwargs):
-        self.pca_mean = kwargs['pca_mean']
-        self.pca_components = kwargs['pca_components']
-        self.pca_scaled_components = kwargs['pca_components'] * np.sqrt(kwargs['explained_variance'])[:, np.newaxis]
+        self.pca_mean = kwargs['mean']
+        self.pca_components = kwargs['components']
+        self.pca_scaled_components = kwargs['components'] * np.sqrt(kwargs['explained_variance'])[:, np.newaxis]
         self.explained_variance = kwargs['explained_variance']
         self.explained_variance_ratio = kwargs['explained_variance_ratio']
         self.template_points = kwargs['template_points']
@@ -35,8 +35,8 @@ class ActiveShapeModel:
         """
         data = np.load(filename, allow_pickle=True)
         return ActiveShapeModel(
-            pca_mean=data['pca_mean'],
-            pca_components=data['pca_components'],
+            pca_mean=data['mean'],
+            pca_components=data['components'],
             explained_variance=data['explained_variance'],
             explained_variance_ratio=data['explained_variance_ratio'],
             template_points=data['template_points'],

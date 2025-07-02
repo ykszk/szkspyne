@@ -1,0 +1,16 @@
+TL == 6
+TR == 6
+BL == 7
+BR == 7
+AnteriorDens == 1
+PosteriorDens == 1
+AnteriorC1Arch  == 1
+Lamina == 8
+Brow < 2
+Sella < 2
+ExternalAuditoryCanal <= 2 
+Orbit < 2
+Occipital < 2
+Chin < 2
+Manubrium < 2
+PosteriorHardPalate  < 2

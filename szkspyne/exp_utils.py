@@ -433,9 +433,10 @@ def main():
         )
 
         print(len(xs), len(kps))
+        xs_kps = list(zip(xs, kps))
 
         tf = transforms.random_transform if args.transform == 'random' else transforms.base_kps_transform
-        dataset = KeypointDataset(xs, kps, None, flip_pairs, tf, sigma=args.sigma)
+        dataset = KeypointDataset(xs_kps, None, flip_pairs, tf, sigma=args.sigma)
         loader = DataLoader(
             dataset,
             shuffle=False,

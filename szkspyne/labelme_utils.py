@@ -22,6 +22,16 @@ class LabelMe(BaseModel):
         shape_type: str
         flags: Dict[str, bool]
 
+        @staticmethod
+        def from_dict(data: Dict[str, Any]) -> 'LabelMe.Shape':
+            return LabelMe.Shape(
+                label=data['label'],
+                points=data['points'],
+                group_id=data.get('group_id'),
+                shape_type=data['shape_type'],
+                flags=data.get('flags', {}),
+            )
+
     version: str
     shapes: List[Shape]
     imagePath: str
@@ -171,7 +181,7 @@ def kps2shapes(kps, label_names) -> list:
     input point format is 'yx' and output format is 'xy'
     '''
     shapes = []
-    assert len(label_names) == len(kps)
+    assert len(label_names) == len(kps), f'Number of label names ({len(label_names)}) does not match number of keypoints ({len(kps)})'
     for kps, label in zip(kps, label_names):
         for kp in kps:
             if len(kp) >= 2:

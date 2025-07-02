@@ -146,6 +146,20 @@ def measure_json(
             img,
             label_and_point_set,
         )
+    elif image_type == 'neck':
+        svg = pyscol.draw_neck(
+            lm_json,
+            json_path,
+            draws,
+            hide,
+            draw_param_json,
+            label_colors,
+            line_colors,
+            resize_param,
+            svg_wh,
+            img,
+            label_and_point_set,
+        )
     else:
         raise ValueError(f"Unknown image type: {image_type}")
 
@@ -160,7 +174,7 @@ def main():
     parser = argparse.ArgumentParser(description='Measure and draw.')
     parser.add_argument('-c', '--config', help='Config yaml filename')
     parser.add_argument('--title', help='html title', default='Scoliosis Measuaraments')
-    parser.add_argument('--image_type', help='Image type', choices=['ap', 'lateral'], default='ap')
+    parser.add_argument('--image_type', help='Image type', choices=['ap', 'lateral', 'neck'], default='ap')
     parser.add_argument('--imagedb', help='image database filename for heatmap overlay')
     parser.add_argument('--hide', help='Hide specified drawings', nargs='*', default=None)
     parser.add_argument('--resize', help='Resize parameter. default: %(default)s', type=str, default="1024x1024")

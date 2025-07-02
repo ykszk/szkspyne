@@ -4,12 +4,12 @@ import sys
 from typing import Tuple, Dict, Optional
 
 import numpy as np
-from szkmipy import mhd
+from logzero import logger
 
+from szkmipy import mhd
 from szkspyne import labelme_utils, point_utils, settings
 from szkspyne.labelme_utils import LabelMeLine, ShapeDictLine
 from szkspyne.utils import CompDecompGenerator
-
 PROB_MAX = settings.PROB_MAX
 
 
@@ -26,7 +26,7 @@ def hm2labelme(
         max_num = max_num_points.get(label, len(kps)) if max_num_points else len(kps)
         if len(kps) > max_num:
             hm_values = [pred[i_ch, int(kp[0]), int(kp[1])] for kp in kps]
-            kps = [kp for _, kp in sorted(zip(hm_values, kps), reverse=True)[:max_num]]
+            kps = [kp for _, kp in sorted(zip(hm_values, kps), reverse=True, key=lambda t: t[0])[:max_num]]
             # resort kps by y
             kps = sorted(kps, key=lambda x: x[0])
             kps_per_ch[i_ch] = kps
@@ -111,7 +111,7 @@ def main():
                     max_num_points=settings.MAX_NUM_POINTS,
                 )
             else:
-                data = hm2labelme(heatmap, original_shape, data.imagePath, settings.LABEL_NAMES, min_thresh=min_thresh)
+                data = hm2labelme(heatmap, original_shape, data.imagePath, settings.LABEL_NAMES, min_thresh=min_thresh, max_num_points=settings.MAX_NUM_POINTS)
             return data.into_labelme_line(data_line.filename)
 
         logger.info('start heatmap2labelme')

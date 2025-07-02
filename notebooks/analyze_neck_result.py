@@ -27,9 +27,7 @@ ai_filename = str(data_dir / 'measure_test_ai.ndjson')
 
 
 def load_as_measures(filename: str) -> List[scolrs.MeasureListResultLine]:
-    with open(filename, 'r') as f:
-        lines = f.readlines()
-    lines = [scolrs.MeasureListResultLine.model_validate_json(line) for line in lines]
+    lines = scolrs.MeasureListResultLine.from_ndjson(filename)
     # strip parent directory form .filename
     for line in lines:
         line.filename = Path(line.filename).name

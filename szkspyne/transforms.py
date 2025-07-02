@@ -116,7 +116,7 @@ album_transform = A.ReplayCompose(img_tfs, keypoint_params=A.KeypointParams(form
 import warnings
 
 
-def _random_transform(x: np.ndarray, keypoints, flip_pairs: List[Tuple[int, int]], tf_func):
+def _random_transform(x: np.ndarray, keypoints, flip_pairs: List[Tuple[int, int]], tf_func, return_flipped=False):
     # print(1, x.shape)
     x, keypoints = base_transform(x, keypoints)
     x = x[0]  # remove channel dim
@@ -129,19 +129,24 @@ def _random_transform(x: np.ndarray, keypoints, flip_pairs: List[Tuple[int, int]
         tfed = tf_func(image=x, keypoints=flat_points)
     x, keypoints = tfed['image'], tfed['keypoints']
     keypoints = point_utils.partition(keypoints, sizes)
+    flipped = False
     for tf in tfed['replay']['transforms']:
         if tf['__class_fullname__'] == 'HorizontalFlip':
             if tf['applied']:
+                flipped = True
                 for i, j in flip_pairs:
                     keypoints[i], keypoints[j] = keypoints[j], keypoints[i]
     # x = x[np.newaxis]
     # print('batch shape', x.shape)
     # print(3, x.shape)
-    return x, keypoints
+    if return_flipped:
+        return x, keypoints, flipped
+    else:
+        return x, keypoints
 
 
-def random_transform(x: np.ndarray, keypoints, flip_pairs: List[Tuple[int, int]]):
-    return _random_transform(x, keypoints, flip_pairs, album_transform)
+def random_transform(x: np.ndarray, keypoints, flip_pairs: List[Tuple[int, int]], return_flipped=False):
+    return _random_transform(x, keypoints, flip_pairs, album_transform, return_flipped=return_flipped)
 
 
 # def random_crop_transform(x: np.ndarray, keypoints, flip_pairs: List[Tuple[int, int]]):
