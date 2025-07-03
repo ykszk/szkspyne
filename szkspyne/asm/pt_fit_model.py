@@ -3,27 +3,28 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import List, Tuple, Union
+from typing import List
 
 import logzero
 import numpy as np
 import torch
 from joblib import Parallel, delayed
 from logzero import logger
-from PIL import Image
 from scipy.ndimage import gaussian_filter
 from szkmipy import boundingbox, mhd
 from torch import nn
 from torch.optim import Adam
 from tqdm import tqdm
 
-from szkspyne import labelme_utils, point_utils, settings
+from szkspyne import labelme_utils, settings
 
 settings.set_neck_settings()
 from szkspyne.labelme_utils import LabelMe, ShapeDict
-from szkspyne.pca_spine import PointsPCA
 from szkspyne.torch_utils import bicubic, lerp2d
 from szkspyne.asm.point_data import MovablePoints
+from szkmipy import mhd
+from szkspyne.labelme_utils import LabelMe, ShapeDict
+from szkspyne.asm.point_data import MovablePoints, SpinePointData
 
 
 log_format = '%(color)s[%(levelname)1.1s %(asctime)s.%(msecs)d %(module)s:%(lineno)d]%(end_color)s %(message)s'
@@ -110,74 +111,6 @@ class TorchPCA(nn.Module):
             start, end = self.split[i - 1], self.split[i]
             unraveled.append(vec[start:end].reshape(-1, 2))
         return unraveled
-
-
-# %%
-npz_file = '/poseidon/users/suzuki/projects/scoliosis/result/neck_manual_20250620/folds/0/neck_full.npz'
-torch_pca = TorchPCA(npz_file)
-torch_pca.template
-
-# %%
-from szkspyne.labelme_utils import LabelMe, ShapeDict
-from szkspyne.asm.point_data import MovablePoints, SpinePointData
-
-lm_file = '/poseidon/users/suzuki/projects/scoliosis/result/neck_manual_20250620/folds/0/first.json'
-lm_data = LabelMe.from_file(lm_file)
-
-# %%
-from szkmipy import mhd
-import matplotlib.pyplot as plt
-
-vol, h = mhd.read('/poseidon/users/suzuki/projects/scoliosis/result/neck_manual_20250620/folds/0/first.mha')
-mip = np.max(vol, axis=0)
-
-# %%
-image_scale = mip.shape[0] / lm_data.imageHeight
-scaled_lm_data = lm_data.scale(image_scale)
-spine_point_data = SpinePointData.from_shape_dict(scaled_lm_data.into_shape_dict())
-
-# %%
-# spine_point_data.reference_points
-# tf_ref2ind = torch_pca.template.calculate_transform_with_missing(spine_point_data, inverse=True)
-# tf_mat = tf_ref2ind.params
-
-# plt.imshow(mip, cmap='gray')
-
-# ones
-# coefs = torch.ones(2 * len(torch_pca.labels), dtype=torch.float32, device=torch_pca.mean.device)
-# mean_points = torch_pca.unravel(torch_pca.warp(coefs))
-# for i, label in enumerate(torch_pca.labels):
-#     points = mean_points[i]
-#     points = points.detach().cpu().numpy()
-#     points = np.flip(points, axis=1)  # (x, y)
-#     plt.scatter(points[:, 0], points[:, 1], s=10, label=label)
-# plt.legend()
-# plt.axis('off')
-# plt.show()
-
-
-# %%
-# plt.imshow(mip, cmap='gray')
-# # apply transform
-# tfed_mean_points = []
-# pt_tf_mat = torch.from_numpy(tf_mat).to(torch_pca.mean.device).float()
-# for i, label in enumerate(torch_pca.labels):
-#     points = mean_points[i]
-#     # points = torch_pca.template.ref2pt(points)
-#     # points = points.detach().cpu().numpy()
-#     # points = np.flip(points, axis=1)  # (x, y)
-
-#     # xs = tf_mat[0, :2] @ points.T + tf_mat[0, 2]
-#     # ys = tf_mat[1, :2] @ points.T + tf_mat[1, 2]
-#     ys = pt_tf_mat[1, :2].flip(dims=(0,)) @ points.T + pt_tf_mat[1, 2]
-#     xs = pt_tf_mat[0, :2].flip(dims=(0,)) @ points.T + pt_tf_mat[0, 2]
-#     points = np.stack([xs, ys], axis=1)
-
-#     tfed_mean_points.append(points)
-#     plt.scatter(points[:, 0], points[:, 1], s=10, label=label)
-# plt.legend()
-# plt.axis('off')
-# plt.show()
 
 
 # %%
@@ -319,64 +252,6 @@ class PointAlignModel(nn.Module):
             loss.backward()
             optimizer.step()
         return loss.detach()
-
-
-# first_n_comps = torch_pca.calc_n_comps(0.80)
-# print('first_n_comps:', first_n_comps)
-# align_model = PointAlignModel(torch_pca, first_n_comps, spine_point_data, use_bicubic=False)
-# align_model.to(torch.device('cpu'))
-
-# shape_dict = scaled_lm_data.into_shape_dict()
-# vert_points = [np.flip(shape_dict.shapes['point'][l], -1)[:, 0].copy() for l in torch_pca.labels]
-# t_vert_points = [torch.from_numpy(p).float() for p in vert_points]
-
-
-# icp_loss_value = align_model.icp(t_vert_points, lr=0.1, max_iter=100, patience=10)
-# second_n_comps = torch_pca.calc_n_comps(0.95)
-# print('n_comps:', second_n_comps)
-# align_model.resize_n_comps(second_n_comps)
-# #%%
-# from PIL import Image
-
-# print(align_model.coefs)
-# icp_points = align_model.pca.unravel(align_model.warp())
-# bg_path = '/poseidon/users/suzuki/projects/scoliosis/result/neck_manual_20250620/folds/0/bg.jpg'
-# bg = Image.open(bg_path)
-# bg = bg.convert('L')
-# bg.thumbnail((100000, mip.shape[0]), Image.Resampling.BILINEAR)
-
-# plt.imshow(bg, cmap='gray')
-# plt.imshow(mip, alpha=0.5)
-# plt.title('Heatmap overlay')
-
-# #%%
-
-# plt.imshow(bg, cmap='gray')
-
-# for i, label in enumerate(torch_pca.labels):
-#     points = icp_points[i]
-#     points = points.detach().cpu().numpy()
-#     # points = vert_points[i]
-#     points = np.flip(points, axis=1)  # (x, y)
-#     plt.scatter(points[:, 0], points[:, 1], s=10, label=label)
-# # plt.legend()
-# plt.axis('off')
-# plt.title('After ICP')
-# plt.show()
-
-# #%%
-# plt.imshow(bg, cmap='gray')
-# for label in torch_pca.labels:
-#     points = shape_dict.shapes['point'][label]
-#     points = np.array(points)[:, 0]
-#     plt.scatter(points[:, 0], points[:, 1], s=10, label=label)
-# plt.legend()
-# plt.axis('off')
-# plt.title('Heatmap points')
-# plt.show()
-
-
-# %%
 
 
 def fit(args, pca_models: List[TorchPCA], original_json: LabelMe, heatmaps: np.ndarray, heatmap_height: int):
@@ -682,16 +557,7 @@ def main():
                 heatmap = heatmap.transpose(2, 0, 1)
             all_heatmaps.append(trim_bottom_right(heatmap, margin=32))
         logger.info('Heatmaps loaded: %d', len(all_heatmaps))
-        # all_heatmaps, h = mhd.read(hm_filename)
-        # logger.info('Heatmaps shape: %s', all_heatmaps.shape)
-        # heatmap_height = all_heatmaps.shape[1]
-        # if not channel_first:
-        #     logger.info('Transpose heatmaps to channel-first format')
-        #     all_heatmaps = all_heatmaps.transpose(0, 3, 1, 2)
-        # # all_heatmaps = all_heatmaps[:, :len(pca_models[0].labels)]
-        # logger.info('trim bottom right of heatmaps')
-        # # all_heatmaps = trim_bottom_right(all_heatmaps, margin=32).copy()
-        # all_heatmaps = [trim_bottom_right(hm.copy(), margin=32) for hm in all_heatmaps]
+
 
         ndjson = []
         with open(ndjson_fn) as f:
