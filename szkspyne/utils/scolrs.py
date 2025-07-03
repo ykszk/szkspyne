@@ -2,6 +2,7 @@ from typing import Annotated, Any, Dict, Optional, Union, List
 
 from pydantic import BaseModel, Discriminator, Tag
 import pandas as pd
+from szkspyne.type import LineMixin
 
 
 def get_discriminator_value(v: Any) -> Optional[str]:
@@ -169,7 +170,7 @@ class MeasureListResult(BaseModel):
         return MeasureResult(measurements=measurements, unit_of_length=self.unit_of_length)
 
 
-class MeasureListResultLine(BaseModel):
+class MeasureListResultLine(BaseModel, LineMixin):
     filename: str
     content: MeasureListResult
 

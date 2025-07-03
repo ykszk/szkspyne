@@ -39,14 +39,13 @@ def task_build_pca():
         infile = fold_dir / 'train_val.ndjson'
         outfile = fold_dir / TGT_PCA
 
-        pipeline = Pipeline().pipe(['cat', infile]).pipe(
-            ['python3', SRC_DIR / 'labelme_utils.py', 'shape2lm']
-        ).pipe(
-            ['lmrs', 'filter', '--rules', SRC_DIR / 'conf/rules-neck.txt', '-']
-        ).pipe(
-            ['python3', SRC_DIR / 'labelme_utils.py', 'lm2shape']
-        ).pipe(
-            ['python3', script, outfile]
+        pipeline = (
+            Pipeline()
+            .pipe(['cat', infile])
+            .pipe(['python3', SRC_DIR / 'labelme_utils.py', 'shape2lm'])
+            .pipe(['lmrs', 'filter', '--rules', SRC_DIR / 'conf/rules-neck.txt', '-'])
+            .pipe(['python3', SRC_DIR / 'labelme_utils.py', 'lm2shape'])
+            .pipe(['python3', script, outfile])
         )
         action = pipeline.runner(text=True)
         yield {
@@ -56,17 +55,22 @@ def task_build_pca():
             'targets': [outfile],
         }
 
+
 PCA_FIT_PARAMS = [
     '--sigma',
     '1',
+    '0.1',
     '--max_iter',
     '400',
     '--l2_reg',
-    '0.001',
+    '0.00001',
     '--device',
     'cpu',
-    '--jobs',
-    '8',
+    '--contr_rate',
+    '0.9999',
+
+    # '--jobs',
+    # '8',
 ]
 
 
@@ -81,7 +85,7 @@ def task_fit_pca():
         mha_file = fold_dir / 'y_pred.mha'
         ndjson_file = fold_dir / 'auto/heatmap_keypoints.ndjson'
         skipped = fold_dir / 'auto/pca_skipped.txt'
-        icp_weight = '0.01'
+        icp_weight = '0.00001'
         params = PCA_FIT_PARAMS + ['--skipped', skipped, '--icp_weight', icp_weight]
 
         action = ['python3', script, ndjson_file, mha_file, '--output', outfile] + params + ['--model', model_file]
@@ -91,6 +95,7 @@ def task_fit_pca():
             'file_dep': [model_file],
             'targets': [outfile],
         }
+
 
 def task_merge_pca_hm():
     '''
@@ -107,9 +112,7 @@ def task_merge_pca_hm():
         for label in remove_labels:
             label_args.append('--label')
             label_args.append(label)
-        pipeline = Pipeline().pipe(['lmrs', 'remove', infile1] + label_args).pipe(
-            ['lmrs', 'merge', '-', infile2]
-        )
+        pipeline = Pipeline().pipe(['lmrs', 'remove', infile1] + label_args).pipe(['lmrs', 'merge', '-', infile2])
         action = pipeline.runner(text=True, output_file=outfile)
         yield {
             'name': f'{fold_dir.name}',
@@ -129,28 +132,8 @@ def task_merge_pca_hm():
             'actions': [action],
             'file_dep': [infile],
             'targets': [outfile],
-        }    
+        }
 
-
-
-# def task_collect():
-#     '''
-#     Collect all pca and heatmap keypoints
-#     '''
-#     infiles = []
-#     for fold_dir in FOLD_DIRS:
-#         infile = fold_dir / 'auto/pca_hm_keypoints.ndjson'
-#         if infile.exists():
-#             infiles.append(infile)
-
-#     outfile = RESULT_DIR / 'postprocess/pca_hm_keypoints.ndjson'
-    
-#     yield {
-#         'name': 'collect',
-#         'actions': [(concat, [infiles, outfile])],
-#         'file_dep': infiles,
-#         'targets': [outfile],
-#     }
 
 def task_heat2lm():
     '''
@@ -184,6 +167,7 @@ def task_heat2lm():
             'targets': [phony],  # make phony target
         }
 
+
 def task_ref_exp2lm():
     script = SCRIPT_DIR / 'exp2lmjson.py'
     for fold_dir in FOLD_DIRS:
@@ -212,6 +196,18 @@ def task_ref_exp2lm():
         'targets': [outfile],
     }
 
+    # to native
+    infile = outfile
+    outfile = RESULT_DIR / 'postprocess/native_lm_test.ndjson'
+    action = create_conv_action(infile, outfile)
+    yield {
+        'name': 'lm2native',
+        'actions': [action],
+        'file_dep': [infile],
+        'targets': [outfile],
+    }
+
+
 def task_lm2native():
     # scolrs lm2native --input <input> --output <output>
     for fold_dir in FOLD_DIRS:
@@ -228,13 +224,20 @@ def task_lm2native():
             'targets': [outfile],
         }
 
+
+def create_conv_action(infile, outfile):
+    # scolrs conv --ndjson --spacing <input> <output> --from Labelme --to LateralPoints
+    action = ['scolrs', 'conv', '--ndjson', '--spacing', infile, outfile, '--from', 'Labelme', '--to', 'LateralPoints']
+    return action
+
+
 def task_ref_measure():
     # scolrs measure --ref --ndjson --output ref_measure.ndjson --input <input>
     for fold_dir in FOLD_DIRS:
         cmd = 'scolrs'
-        infile = fold_dir / f'native_lm_test.ndjson'
+        infile = fold_dir / 'lm_test.ndjson'
         outfile = fold_dir / 'ref_measure.ndjson'
-        action = [cmd, 'measure', infile, outfile, 'neck']
+        action = [cmd, 'measure', '--labelme', infile, outfile, 'neck']
         yield {
             'name': f'{fold_dir.name}',
             'actions': [action],
@@ -242,51 +245,44 @@ def task_ref_measure():
             'targets': [outfile],
         }
 
-def create_conv_action(infile, outfile):
-    # scolrs conv --ndjson --spacing <input> <output> --from Labelme --to LateralPoints
-    action = ['scolrs', 'conv', '--ndjson', '--spacing', infile, outfile, '--from', 'Labelme', '--to', 'LateralPoints']
-    return action
+    # concat ref_measurements
+    infile = [fold_dir / 'ref_measure.ndjson' for fold_dir in FOLD_DIRS]
+    pipeline = Pipeline().pipe(['cat', *infile])
+    outfile = RESULT_DIR / 'postprocess/measure_test_reference.ndjson'
+    action = pipeline.runner(text=True, output_file=outfile)
+    yield {
+        'name': 'concat-ref-measurements',
+        'actions': [action],
+        'file_dep': infile,
+        'targets': [outfile],
+    }
 
-# def task_ai_native():
-#     for fold_dir in FOLD_DIRS:
-#         infile = fold_dir / 'auto' / TGT_HM_KPS
-#         outfile = fold_dir / 'auto/native_ai_test.ndjson'
-#         action = create_conv_action(infile, outfile)
-#         yield {
-#             'name': f'{fold_dir.name}',
-#             'actions': [action],
-#             'file_dep': [infile],
-#             'targets': [outfile],
-#         }
+    
 
+SVG_IMAGE_SIZE = 800
 
-# def task_conv_format():
-#     script = SCRIPT_DIR / 'exp2lmjson.py'
-#     # for fold_dir in FOLD_DIRS:
-#     #     # convert test.ndjson to lm_test.ndjson
-#     #     infile = fold_dir / 'test.ndjson'
-#     #     outfile = fold_dir / 'lm_test.ndjson'
-#     #     action = ['python', script, infile]
-#     #     yield {
-#     #         'name': f'{fold_dir.name}',
-#     #         'actions': [action],
-#     #         'file_dep': [infile],
-#     #         'targets': [outfile],
-#     #     }
-
-#     # concat
-#     infile = [fold_dir / 'lm_test.ndjson' for fold_dir in FOLD_DIRS
-#               if (fold_dir / 'lm_test.ndjson').exists()
-#               ]
-#     outfile = RESULT_DIR / 'lm_test.ndjson'
-#     if infile:
-#         action = concat(infile, outfile)
-#         yield {
-#             'name': 'concat-lm-test',
-#             'actions': [action],
-#             'file_dep': infile,
-#             'targets': [outfile],
-#         }
+def task_ref_draw():
+    # scolrs svg-ndjson --resize 800x800 postprocess/lm_test.ndjson postprocess/reference/draw neck 
+    outdir = RESULT_DIR / 'postprocess/reference/draw'
+    outdir.mkdir(parents=True, exist_ok=True)
+    infile = RESULT_DIR / 'postprocess/native_lm_test.ndjson'
+    action = [
+        'scolrs',
+        'svg-ndjson',
+        '--labelme',
+        '--pull-spacing',
+        '--html',
+        '--resize', f'{SVG_IMAGE_SIZE}x{SVG_IMAGE_SIZE}',
+        infile,
+        outdir,
+        'neck',]
+    
+    yield {
+        'name': 'ref-draw',
+        'actions': [action],
+        'file_dep': [infile],
+        'targets': [],
+    }
 
 def task_ai_measure():
     # scolrs measure --ndjson --output ai_measure.ndjson --input <input>
@@ -296,7 +292,7 @@ def task_ai_measure():
         cmd = 'scolrs'
         infile = fold_dir / 'auto/native_pca_hm_keypoints.ndjson'
         native_files.append(infile)
-        outfile = fold_dir / 'auto/measure.ndjson'
+        outfile = fold_dir / 'auto/measurements.ndjson'
         action = [cmd, 'measure', infile, outfile, 'neck']
         yield {
             'name': f'{fold_dir.name}',
@@ -305,26 +301,21 @@ def task_ai_measure():
             'targets': [outfile],
         }
 
-    # draw
-    # outfile = RESULT_DIR / 'postprocess/ai_catalog.html'
-    # pipeline = Pipeline().pipe(
-    #     ['cat', *native_files]
-    # ).pipe(
-    #     ['scolrs', 'svg-ndjson', '-', '-', '--resize', '600x600', 'neck']
-    # ).pipe(['scolrs', 'catalog', '-', outfile, '--title', 'AI Neck Measurements'])
-    # action = pipeline.runner()
-    # yield {
-    #     'name': 'ai-catalog',
-    #     'actions': [action],
-    #     'file_dep': native_files,
-    #     'targets': [outfile],
-    # }
+    # concat measurements
+    infile = [fold_dir / 'auto/measurements.ndjson' for fold_dir in FOLD_DIRS]
+    pipeline = Pipeline().pipe(['cat', *infile])
+    outfile = RESULT_DIR / 'postprocess/measure_test_ai.ndjson'
+    action = pipeline.runner(text=True, output_file=outfile)
+    yield {
+        'name': 'concat-measurements',
+        'actions': [action],
+        'file_dep': infile,
+        'targets': [outfile],
+    }
 
     # concat pca hm keypoints
     outfile = RESULT_DIR / 'auto/postprocess/native_pca_hm_keypoints.ndjson'
-    pipeline = Pipeline().pipe(
-        ['cat', *native_files]
-    )
+    pipeline = Pipeline().pipe(['cat', *native_files])
     action = pipeline.runner(text=True, output_file=outfile)
     yield {
         'name': 'concat-native',
@@ -336,9 +327,7 @@ def task_ai_measure():
     hm_files = [fold_dir / 'auto/heatmap_keypoints.ndjson' for fold_dir in FOLD_DIRS]
     hm_keypoints = RESULT_DIR / 'auto/postprocess/heatmap_keypoints.ndjson'
     outfile = hm_keypoints
-    pipeline = Pipeline().pipe(
-        ['cat', *hm_files]
-    )
+    pipeline = Pipeline().pipe(['cat', *hm_files])
     action = pipeline.runner(text=True, output_file=outfile)
     yield {
         'name': 'concat-hm',
@@ -348,11 +337,11 @@ def task_ai_measure():
     }
 
     # draw
-    SVG_IMAGE_SIZE = 800
     script = SRC_DIR / 'measure_and_draw.py'
     outdir = RESULT_DIR / 'auto/postprocess/draw'
     outdir.mkdir(parents=True, exist_ok=True)
     hide = ['Adi', 'Sacs', 'ModifiedRenawatIndex']
+    infile = RESULT_DIR / 'auto/postprocess/native_pca_hm_keypoints.ndjson'
     action = [
         'python',
         script,
@@ -372,8 +361,6 @@ def task_ai_measure():
         infile,
         outdir,
         '--html',
-        '--workers',
-        '8',
     ]
     subdir = 'auto'
     HOLD_OUT = False
@@ -385,10 +372,11 @@ def task_ai_measure():
     file_dep.append(extra_points_files[-1])
     # reference points
     extra_labels.append('reference_points')
-    extra_points_files.append(
-        RESULT_DIR / 'postprocess/lm_test.ndjson'
-    )
+    extra_points_files.append(RESULT_DIR / 'postprocess/lm_test.ndjson')
     file_dep.append(extra_points_files[-1])
+
+    db_phonies = [fold_dir / f'{PHONY_DB_TGT}' for fold_dir in FOLD_DIRS]
+    file_dep.extend(db_phonies)
 
     if subdir == 'auto':
         logger.debug(f'HM_IMAGE_DB: {HM_IMAGE_DB}')
@@ -407,10 +395,12 @@ def task_ai_measure():
         'targets': [draw_phony],
     }
 
+
 def task_summary():
     script = ROOT_DIR / 'notebooks/analyze_neck_result.py'
     output = RESULT_DIR / 'summary.html'
-    file_dep = []
+    file_dep = [RESULT_DIR / 'postprocess/measure_test_reference.ndjson',
+                RESULT_DIR / 'postprocess/measure_test_ai.ndjson']
 
     title = f'{{"title":"neck summary"}}'
     c1 = f"jupytext --to ipynb --output - {script} --update-metadata '{title}'"

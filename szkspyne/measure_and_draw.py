@@ -214,7 +214,7 @@ def main():
     sub_batch.add_argument('--html', help='Save html', action='store_true')
     sub_batch.add_argument('--image', help='Save image', metavar='ext', choices=['.svg', '.png'])
     sub_batch.add_argument(
-        '--workers', help='The number of concurrent workers. Use all available cores by default', type=int, default=0
+        '--workers', help='The number of concurrent workers. Use all available cores by default', type=int, default=-1
     )
     sub_batch.add_argument(
         '--extra_points',
@@ -238,11 +238,11 @@ def main():
         outdir = Path(args.output)
         label_colors = load_label_colors(args.config)
         line_colors = load_line_colors()
-        if args.workers <= 0:
-            import os
+        # if args.workers <= 0:
+        #     import os
 
-            args.workers = os.cpu_count()
-            logger.info("Use %d cores", args.workers)
+        #     args.workers = os.cpu_count()
+        #     logger.info("Use %d cores", args.workers)
         import tqdm
         from joblib import Parallel, delayed
 
@@ -254,7 +254,7 @@ def main():
         for el, ep in zip(args.extra_labels, args.extra_points):
             with open(ep) as f:
                 ndjson = [json.loads(line) for line in f]
-            extra_dict = {obj['filename']: LabelMe.model_validate(obj['content']) for obj in ndjson}
+            extra_dict = {Path(obj['filename']).name: LabelMe.model_validate(obj['content']) for obj in ndjson}
             extra_point_dict[el] = extra_dict
             # add colors
             if 'reference' in el:

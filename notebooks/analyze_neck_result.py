@@ -22,8 +22,8 @@ sns.set_theme(context='notebook', style='whitegrid', font='serif')
 # %%
 
 data_dir = Path(os.getenv('DATA_DIR', '/poseidon/users/suzuki/projects/scoliosis/result/neck_manual_20250217/folds/0'))
-ref_filename = str(data_dir / 'measure_test_reference.ndjson')
-ai_filename = str(data_dir / 'measure_test_ai.ndjson')
+ref_filename = str(data_dir / 'postprocess/measure_test_reference.ndjson')
+ai_filename = str(data_dir / 'postprocess/measure_test_ai.ndjson')
 
 
 def load_as_measures(filename: str) -> List[scolrs.MeasureListResultLine]:
