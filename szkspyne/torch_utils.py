@@ -64,7 +64,7 @@ def lerp2d(arr, idx):
         arr: 2d torch tensor
         idx: [[y, x], ...]
     '''
-    idx = torch.clip(idx, 0, torch.tensor(arr.shape) - 2)
+    idx = torch.clip(idx, torch.tensor(0, device=idx.device), torch.tensor(arr.shape) - 2)
     ia = torch.floor(idx).long()
     ib = ia + 1
     a, b = arr[ia[:, 0], ia[:, 1]], arr[ia[:, 0], ib[:, 1]]
@@ -97,10 +97,13 @@ def bicubic(arr, yxs):
     ty = yxs[:, 0] - yx00[:, 0]
     tx = yxs[:, 1] - yx00[:, 1]
     zs = []
+    clip_min = torch.tensor(0, device=yxs.device)
+    clip_y_max = torch.tensor(arr.shape[0] - 1, device=yxs.device)
+    clip_x_max = torch.tensor(arr.shape[1] - 1, device=yxs.device)
     for dy in [-1, 0, 1, 2]:
         for dx in [-1, 0, 1, 2]:
-            ys = torch.clip(yx00[:, 0] + dy, 0, arr.shape[0] - 1)
-            xs = torch.clip(yx00[:, 1] + dx, 0, arr.shape[1] - 1)
+            ys = torch.clip(yx00[:, 0] + dy, clip_min, clip_y_max)
+            xs = torch.clip(yx00[:, 1] + dx, clip_min, clip_x_max)
             zs.append(arr[ys, xs])
 
     device = yxs.device

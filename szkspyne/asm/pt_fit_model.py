@@ -1,4 +1,4 @@
-#%%
+# %%
 import json
 import os
 import sys
@@ -18,6 +18,7 @@ from torch.optim import Adam
 from tqdm import tqdm
 
 from szkspyne import labelme_utils, point_utils, settings
+
 settings.set_neck_settings()
 from szkspyne.labelme_utils import LabelMe, ShapeDict
 from szkspyne.pca_spine import PointsPCA
@@ -25,14 +26,14 @@ from szkspyne.torch_utils import bicubic, lerp2d
 from szkspyne.asm.point_data import MovablePoints
 
 
-
 log_format = '%(color)s[%(levelname)1.1s %(asctime)s.%(msecs)d %(module)s:%(lineno)d]%(end_color)s %(message)s'
 formatter = logzero.LogFormatter(fmt=log_format)
 logzero.setup_default_logger(formatter=formatter)
 
-#%%
+# %%
 
 from szkspyne.settings import LABEL_NAMES, ANCHOR_LABEL_NAMES
+
 ANCHOR_LABEL_NAMES_INDICES = [LABEL_NAMES.index(l) for l in ANCHOR_LABEL_NAMES]
 EPSILON = np.finfo(float).eps
 
@@ -111,30 +112,31 @@ class TorchPCA(nn.Module):
         return unraveled
 
 
-#%%
+# %%
 npz_file = '/poseidon/users/suzuki/projects/scoliosis/result/neck_manual_20250620/folds/0/neck_full.npz'
 torch_pca = TorchPCA(npz_file)
 torch_pca.template
 
-#%%
+# %%
 from szkspyne.labelme_utils import LabelMe, ShapeDict
 from szkspyne.asm.point_data import MovablePoints, SpinePointData
+
 lm_file = '/poseidon/users/suzuki/projects/scoliosis/result/neck_manual_20250620/folds/0/first.json'
 lm_data = LabelMe.from_file(lm_file)
 
-#%%
+# %%
 from szkmipy import mhd
 import matplotlib.pyplot as plt
 
 vol, h = mhd.read('/poseidon/users/suzuki/projects/scoliosis/result/neck_manual_20250620/folds/0/first.mha')
 mip = np.max(vol, axis=0)
 
-#%%
+# %%
 image_scale = mip.shape[0] / lm_data.imageHeight
 scaled_lm_data = lm_data.scale(image_scale)
 spine_point_data = SpinePointData.from_shape_dict(scaled_lm_data.into_shape_dict())
 
-#%%
+# %%
 # spine_point_data.reference_points
 # tf_ref2ind = torch_pca.template.calculate_transform_with_missing(spine_point_data, inverse=True)
 # tf_mat = tf_ref2ind.params
@@ -154,8 +156,7 @@ spine_point_data = SpinePointData.from_shape_dict(scaled_lm_data.into_shape_dict
 # plt.show()
 
 
-
-#%%
+# %%
 # plt.imshow(mip, cmap='gray')
 # # apply transform
 # tfed_mean_points = []
@@ -178,7 +179,8 @@ spine_point_data = SpinePointData.from_shape_dict(scaled_lm_data.into_shape_dict
 # plt.axis('off')
 # plt.show()
 
-#%%
+
+# %%
 class PointAlignModel(nn.Module):
     def __init__(self, pca: TorchPCA, n_comps: int, points: MovablePoints, use_bicubic=False):
         super().__init__()
@@ -186,7 +188,6 @@ class PointAlignModel(nn.Module):
         self.pca = pca
         self.use_bicubic = use_bicubic
         self.points = points
-
 
         # convert transformation matrix in format (x, y) to (y, x)
         def trans_mat(mat_xy):
@@ -196,10 +197,13 @@ class PointAlignModel(nn.Module):
             yx_mat[0, 2], yx_mat[1, 2] = mat_xy[1, 2], mat_xy[0, 2]
             return yx_mat
 
-
         tf = pca.template.calculate_transform_with_missing(points, inverse=True)
-        self.mat_ref2ind = nn.parameter.Parameter(torch.from_numpy(trans_mat(tf.params.astype(np.float32))), requires_grad=False)
-        self.mat_ind2ref = nn.parameter.Parameter(torch.from_numpy(trans_mat(np.linalg.inv(tf.params).astype(np.float32))), requires_grad=False)
+        self.mat_ref2ind = nn.parameter.Parameter(
+            torch.from_numpy(trans_mat(tf.params.astype(np.float32))), requires_grad=False
+        )
+        self.mat_ind2ref = nn.parameter.Parameter(
+            torch.from_numpy(trans_mat(np.linalg.inv(tf.params).astype(np.float32))), requires_grad=False
+        )
 
     def resize_n_comps(self, n_comps: int):
         '''
@@ -209,7 +213,7 @@ class PointAlignModel(nn.Module):
             return
         if n_comps > len(self.coefs):
             new_coefs = torch.zeros([n_comps], dtype=torch.float32, requires_grad=False)
-            new_coefs[:len(self.coefs)] = self.coefs.detach().clone()
+            new_coefs[: len(self.coefs)] = self.coefs.detach().clone()
             self.coefs = nn.parameter.Parameter(new_coefs, requires_grad=True)
         else:
             self.coefs = nn.parameter.Parameter(self.coefs[:n_comps], requires_grad=True)
@@ -271,9 +275,9 @@ class PointAlignModel(nn.Module):
         assert len(heatmap) == len(warped)
         for ch, pts in zip(heatmap, warped):
             if self.use_bicubic:
-                probas.append(lerp2d(ch, pts))
-            else:
                 probas.append(bicubic(ch, pts))
+            else:
+                probas.append(lerp2d(ch, pts))
         return probas
 
     def icp_loss(self, points):
@@ -315,6 +319,7 @@ class PointAlignModel(nn.Module):
             loss.backward()
             optimizer.step()
         return loss.detach()
+
 
 # first_n_comps = torch_pca.calc_n_comps(0.80)
 # print('first_n_comps:', first_n_comps)
@@ -371,7 +376,7 @@ class PointAlignModel(nn.Module):
 # plt.show()
 
 
-#%%
+# %%
 
 
 def fit(args, pca_models: List[TorchPCA], original_json: LabelMe, heatmaps: np.ndarray, heatmap_height: int):
@@ -418,7 +423,6 @@ def fit(args, pca_models: List[TorchPCA], original_json: LabelMe, heatmaps: np.n
     else:
         device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
-
     results = []
     histories = []
     d_t_heatmaps = {}
@@ -426,9 +430,7 @@ def fit(args, pca_models: List[TorchPCA], original_json: LabelMe, heatmaps: np.n
         if blur_sigma == 0:
             blurred_hm = heatmaps[: len(pca_models[0].labels)]
         else:
-            blurred_hm = np.array(
-                [gaussian_filter(hm, blur_sigma) for hm in heatmaps[: len(pca_models[0].labels)]]
-            )
+            blurred_hm = np.array([gaussian_filter(hm, blur_sigma) for hm in heatmaps[: len(pca_models[0].labels)]])
         blurred_hm = (blurred_hm / settings.PROB_MAX).astype(np.float32)
         blurred_hm = np.clip(blurred_hm, 0.001, None)
         t_heatmaps = torch.FloatTensor(blurred_hm).to(device)
@@ -466,7 +468,7 @@ def fit(args, pca_models: List[TorchPCA], original_json: LabelMe, heatmaps: np.n
             results.append((name, best_loss, pt_pca.coefs.detach().cpu(), pca, []))
         n_comps = pca.calc_n_comps(args.contr_rate)
         pt_pca.resize_n_comps(n_comps)
-        pt_pca.to(device) # TODO:
+        pt_pca.to(device)  # TODO:
         optimizer = Adam([pt_pca.coefs], lr=args.lr, weight_decay=args.l2_reg)
         try:
             for blur_sigma in args.sigma:
@@ -493,6 +495,7 @@ def fit(args, pca_models: List[TorchPCA], original_json: LabelMe, heatmaps: np.n
                     else:
                         patience += 1
                     if patience >= args.patience:
+                        logger.debug('Early stopping at %d %f', i, history[-1])
                         break
                     optimizer.zero_grad()
                     loss.backward()
@@ -518,7 +521,9 @@ def fit(args, pca_models: List[TorchPCA], original_json: LabelMe, heatmaps: np.n
     logger.debug('results: %s', results)
     logger.debug('best loss: %s', best_loss)
     pca = best_pca
-    pt_pca = PointAlignModel(pca, pca.calc_n_comps(args.contr_rate), movable_points, use_bicubic=args.bicubic).to(device)
+    pt_pca = PointAlignModel(pca, pca.calc_n_comps(args.contr_rate), movable_points, use_bicubic=args.bicubic).to(
+        device
+    )
     warped = pca.unravel(pt_pca.ref2ind(pca.warp(best_coefs.to(device))))
     s = original_json.imageHeight / heatmap_height
     scaled_warped = [(s * w.detach().cpu().numpy()).tolist() for w in warped]
@@ -537,7 +542,9 @@ def fit(args, pca_models: List[TorchPCA], original_json: LabelMe, heatmaps: np.n
         result_json['pca'] = histories
     return result_json
 
-#%%
+
+# %%
+
 
 def main():
     import argparse
@@ -593,7 +600,7 @@ def main():
     parser.add_argument(
         '--threads', help='Integer value for torch.set_num_threads(). default: %(default)d', type=int, default=1
     )
-    parser.add_argument('--jobs', help='The number of jobs. default: %(default)d', type=int, default=None)
+    parser.add_argument('--jobs', help='The number of jobs. default: %(default)d', type=int, default=-1)
 
     logger.setLevel(os.environ.get('LOGLEVEL', 'INFO').upper())
     args, unknown = parser.parse_known_args()
@@ -607,7 +614,6 @@ def main():
 
     channel_first = args.channel_first
     pca_models = [TorchPCA(fn) for fn in args.model]
-
 
     n_jobs = args.jobs
     skipped = []
@@ -642,7 +648,7 @@ def main():
             with open(outdir / f'{file_id}.json', 'w') as f:
                 f.write(result.model_dump_json())
                 # json.dump(result_json, f, indent=2)
-            
+
             return None
 
         fns = sorted((data_dir).glob('*.json'))
@@ -732,7 +738,7 @@ def main():
 if __name__ == '__main__':
     sys.exit(main())
 
-#%%
+# %%
 sigma = np.sqrt(5)
 peak_value = 1 / np.sqrt(2 * np.pi * sigma**2)
 peak_value
