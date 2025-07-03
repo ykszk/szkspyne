@@ -384,7 +384,7 @@ def fit(args, pca_models: List[TorchPCA], original_json: LabelMe, heatmaps: np.n
     asm_points = []
     for label in pca_models[0].labels:
         if label in shape_dict.shapes['point']:
-            asm_points.append(np.flip(shape_dict.shapes['point'][label], 2)[0].copy())
+            asm_points.append(np.flip(shape_dict.shapes['point'][label], 2)[:, 0].copy())
         else:
             logger.warning('No point for %s. Using empty point.', label)
             asm_points.append(np.empty((0, 2), dtype=np.float32))  # empty point for missing labels
