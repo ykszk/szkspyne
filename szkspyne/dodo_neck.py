@@ -178,7 +178,9 @@ def task_ref_exp2lm():
         sort_corners = task_utils.CMD_SORT_VERTEBRAL_CORNERS
         sort_non_corners = sort_corners.copy() + ['--inv-label', '--by-x']
 
-        pipeline = Pipeline().pipe(action).pipe(sort_corners).pipe(sort_non_corners)
+        sort_lamina = ['lmrs', 'sort', '-', '--labels', 'Lamina']
+
+        pipeline = Pipeline().pipe(action).pipe(sort_corners).pipe(sort_non_corners).pipe(sort_lamina)
         action = pipeline.runner(text=True, output_file=outfile)
         yield {
             'name': f'{fold_dir.name}',

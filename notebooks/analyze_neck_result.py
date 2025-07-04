@@ -2,6 +2,7 @@
 # title: Neck measurement result analysis
 
 # %%
+import subprocess
 from typing import List
 from szkspyne.utils import scolrs
 from pathlib import Path
@@ -21,7 +22,7 @@ import os
 sns.set_theme(context='notebook', style='whitegrid', font='serif')
 # %%
 
-data_dir = Path(os.getenv('DATA_DIR', '/poseidon/users/suzuki/projects/scoliosis/result/neck_manual_20250217/folds/0'))
+data_dir = Path(os.getenv('DATA_DIR', '/poseidon/users/suzuki/projects/scoliosis/result/neck_manual_20250703'))
 ref_filename = str(data_dir / 'postprocess/measure_test_reference.ndjson')
 ai_filename = str(data_dir / 'postprocess/measure_test_ai.ndjson')
 
@@ -59,11 +60,19 @@ ref_flat_measures = [scolrs.MeasureResultLine(filename=m.filename, content=m.con
 ai_flat_measures = [scolrs.MeasureResultLine(filename=m.filename, content=m.content.flatten()) for m in ai_measures]
 
 df_ref = scolrs.MeasureResultLine.to_dataframe(ref_flat_measures)
-df_ref.to_csv(data_dir / 'measures_reference.csv')
+df_ref.to_csv(data_dir / 'postprocess/measures_reference.csv')
 df_ref = df_ref.apply(pd.to_numeric, errors='coerce')
 df_ai = scolrs.MeasureResultLine.to_dataframe(ai_flat_measures)
-df_ai.to_csv(data_dir / 'measures_ai.csv')
+df_ai.to_csv(data_dir / 'postprocess/measures_ai.csv')
 df_ai = df_ai.apply(pd.to_numeric, errors='coerce')
+
+#%%
+diff_flat_measures = [
+    scolrs.MeasureResultLine(filename=m.filename, content=m.content.flatten()) for m in diff_lines
+]
+df_diff = scolrs.MeasureResultLine.to_dataframe(diff_flat_measures)
+df_diff.to_csv(data_dir / 'postprocess/measures_diff.csv')
+
 
 # %%
 exclude_cols = ['unit_of_length', 'Sacs']
@@ -94,6 +103,11 @@ df_ai[desc_cols].abs().describe()
 
 
 display_header('h2', 'Scatter plots')
+
+cases_output_dir = data_dir / 'postprocess/cases'
+cases_output_dir.mkdir(parents=True, exist_ok=True)
+ref_case_dir = data_dir / 'postprocess/reference/draw'
+ai_case_dir = data_dir / 'auto/postprocess/draw'
 
 for col in df_ref.columns:
     n_non_nan = df_ref[col].notna().sum()
@@ -137,5 +151,19 @@ for col in df_ref.columns:
     df['abs error'] = df['error'].abs()
 
     # worst 5
+    df_sorted = df.sort_values('abs error', ascending=False).head(n=5)
     display_header('h4', 'Worst 5')
-    display(df.sort_values('abs error', ascending=False).head(n=5))
+    display(df_sorted)
+
+    # create case catalog
+    n_cases = 5
+    case_filenames = []
+    for i, row in df_sorted.iloc[:n_cases].iterrows():
+        ref_case = ref_case_dir / row.name
+        ai_case = ai_case_dir / row.name
+        case_filenames.extend([ref_case.with_suffix('.html'), ai_case.with_suffix('.html')])
+    title = f'{col}: {len(df)} data points, worst 5 cases (Reference vs AI)'
+    outfile = cases_output_dir / f'{col}_worst_cases.html'
+    args = ['scolrs', 'catalog', *case_filenames, outfile, '--title', title]
+    args = [str(arg) for arg in args]
+    subprocess.check_call(args)
