@@ -174,19 +174,27 @@ def conv2shape_dict(json_data: dict) -> dict:
     return shape_dict
 
 
-def kps2shapes(kps, label_names) -> list:
+def kps2shapes(kps, label_names, xy_input=False) -> list:
     '''
     Create labelme's `shape` element
 
     input point format is 'yx' and output format is 'xy'
     '''
     shapes = []
+    if xy_input:
+        i_x, i_y = 0, 1
+    else:
+        i_x, i_y = 1, 0
     assert len(label_names) == len(kps), f'Number of label names ({len(label_names)}) does not match number of keypoints ({len(kps)})'
     for kps, label in zip(kps, label_names):
         for kp in kps:
             if len(kp) >= 2:
                 shapes.append(
-                    {"label": label, "points": [[kp[1], kp[0]]], "group_id": None, "shape_type": "point", "flags": {}}
+                    {"label": label, "points": [[kp[i_x], kp[i_y]]], "group_id": None, "shape_type": "point", "flags": {}}
+                )
+            elif len(kp) == 1 and len(kp[0]) == 2:
+                shapes.append(
+                    {"label": label, "points": [[kp[0][i_x], kp[0][i_y]]], "group_id": None, "shape_type": "point", "flags": {}}
                 )
     return shapes
 

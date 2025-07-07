@@ -278,20 +278,16 @@ def fit(args, pca_models: List[TorchPCA], original_json: LabelMe, heatmaps: np.n
     if args.skip_complete:
         for pca in pca_models:
             if np.all(asm_points_count == np.array(pca.pca['point_counts'])):
-                logger.debug('Skip completed set for %s', pca.model_name)
+                logger.info('Skip completed set for %s: %s', original_json.imagePath, pca.model_name)
                 # kps = measure_utils.get_point_dict(original_json)
                 shape_dict: ShapeDict = original_json.into_shape_dict()
                 kps = shape_dict.shapes['point']
-                for label in kps.keys():
-                    kps[label] = np.flip(kps[label], axis=1)  # xy -> yx because kps2shapes's input is in yx format
-                [kps.pop(label, None) for label in ANCHOR_LABEL_NAMES]
-                original_json.shapes = labelme_utils.kps2shapes(list(kps.values()), list(kps.keys()))
+
+                original_json.shapes = labelme_utils.kps2shapes([kps[label] for label in pca.labels], pca.labels, xy_input=True)
                 original_json.flags[pca.model_name] = True
                 original_json.flags['PCA'] = False
-                # original_json['pca'] = {}
 
                 return original_json
-    # heatmaps = trim_bottom_right(heatmaps, 4)
 
     if args.device:
         device = torch.device(args.device)
@@ -563,6 +559,9 @@ def main():
         with open(ndjson_fn) as f:
             for line in f:
                 ndjson.append(json.loads(line))
+        assert heatmap_dims[-1] == len(ndjson), (
+            f'Number of heatmaps ({heatmap_dims[-1]}) does not match number of ndjson entries ({len(ndjson)})'
+        )
 
         def do(original_json, heatmaps):
             torch.set_num_threads(args.threads)

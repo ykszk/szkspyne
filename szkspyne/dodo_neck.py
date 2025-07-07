@@ -86,7 +86,7 @@ def task_fit_pca():
         ndjson_file = fold_dir / 'auto/heatmap_keypoints.ndjson'
         skipped = fold_dir / 'auto/pca_skipped.txt'
         icp_weight = '0.00001'
-        params = PCA_FIT_PARAMS + ['--skipped', skipped, '--icp_weight', icp_weight]
+        params = PCA_FIT_PARAMS + ['--skip_complete', '--skipped', skipped, '--icp_weight', icp_weight]
 
         action = ['python3', script, ndjson_file, mha_file, '--output', outfile] + params + ['--model', model_file]
         yield {
@@ -271,19 +271,20 @@ def task_ref_draw():
     action = [
         'scolrs',
         'svg-ndjson',
-        '--labelme',
-        '--pull-spacing',
         '--html',
         '--resize', f'{SVG_IMAGE_SIZE}x{SVG_IMAGE_SIZE}',
         infile,
         outdir,
         'neck',]
     
+    phony = outdir / '../draw.done'
+    phony_action = (make_phony, [phony])
+    
     yield {
         'name': 'ref-draw',
-        'actions': [action],
+        'actions': [action, phony_action],
         'file_dep': [infile],
-        'targets': [],
+        'targets': [phony],
     }
 
 def task_ai_measure():
@@ -403,6 +404,13 @@ def task_summary():
     output = RESULT_DIR / 'summary.html'
     file_dep = [RESULT_DIR / 'postprocess/measure_test_reference.ndjson',
                 RESULT_DIR / 'postprocess/measure_test_ai.ndjson']
+    
+    # deps of draw phony
+    draw_phony = RESULT_DIR / 'auto/draw.done'
+    file_dep.append(draw_phony)
+    draw_phony = RESULT_DIR / 'postprocess/reference/draw.done'
+    file_dep.append(draw_phony)
+
 
     title = f'{{"title":"neck summary"}}'
     c1 = f"jupytext --to ipynb --output - {script} --update-metadata '{title}'"
