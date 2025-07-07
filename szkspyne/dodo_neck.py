@@ -68,7 +68,6 @@ PCA_FIT_PARAMS = [
     'cpu',
     '--contr_rate',
     '0.9999',
-
     # '--jobs',
     # '8',
 ]
@@ -259,33 +258,46 @@ def task_ref_measure():
         'targets': [outfile],
     }
 
-    
 
 SVG_IMAGE_SIZE = 800
 
+
 def task_ref_draw():
-    # scolrs svg-ndjson --resize 800x800 postprocess/lm_test.ndjson postprocess/reference/draw neck 
+    # scolrs svg-ndjson --resize 800x800 postprocess/lm_test.ndjson postprocess/reference/draw neck
     outdir = RESULT_DIR / 'postprocess/reference/draw'
     outdir.mkdir(parents=True, exist_ok=True)
     infile = RESULT_DIR / 'postprocess/native_lm_test.ndjson'
+    config_dir = SRC_DIR / '../configs'
+    line_colors = config_dir / 'default_line_colors_label.csv'
+    label_colors = config_dir / 'default_label_colors.yaml'
+    hides = ['Adi', 'Sacs', 'ModifiedRenawatIndex']
     action = [
         'scolrs',
         'svg-ndjson',
         '--html',
-        '--resize', f'{SVG_IMAGE_SIZE}x{SVG_IMAGE_SIZE}',
+        '--label-colors',
+        label_colors,
+        '--line-colors',
+        line_colors,
+        '--resize',
+        f'{SVG_IMAGE_SIZE}x{SVG_IMAGE_SIZE}',
         infile,
         outdir,
-        'neck',]
-    
+        'neck',
+    ]
+    for hide in hides:
+        action += ['--hide', hide]
+
     phony = outdir / '../draw.done'
     phony_action = (make_phony, [phony])
-    
+
     yield {
         'name': 'ref-draw',
         'actions': [action, phony_action],
         'file_dep': [infile],
         'targets': [phony],
     }
+
 
 def task_ai_measure():
     # scolrs measure --ndjson --output ai_measure.ndjson --input <input>
@@ -402,15 +414,16 @@ def task_ai_measure():
 def task_summary():
     script = ROOT_DIR / 'notebooks/analyze_neck_result.py'
     output = RESULT_DIR / 'summary.html'
-    file_dep = [RESULT_DIR / 'postprocess/measure_test_reference.ndjson',
-                RESULT_DIR / 'postprocess/measure_test_ai.ndjson']
-    
+    file_dep = [
+        RESULT_DIR / 'postprocess/measure_test_reference.ndjson',
+        RESULT_DIR / 'postprocess/measure_test_ai.ndjson',
+    ]
+
     # deps of draw phony
     draw_phony = RESULT_DIR / 'auto/draw.done'
     file_dep.append(draw_phony)
     draw_phony = RESULT_DIR / 'postprocess/reference/draw.done'
     file_dep.append(draw_phony)
-
 
     title = f'{{"title":"neck summary"}}'
     c1 = f"jupytext --to ipynb --output - {script} --update-metadata '{title}'"

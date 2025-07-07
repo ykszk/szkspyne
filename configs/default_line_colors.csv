@@ -31,3 +31,12 @@ upper_slope,red
 lower_slope,blue
 WedgeAngle,red
 Sacs,green
+ADI,lime
+OC2,orange
+ModifiedRenawatIndex,mediumpurple
+ThoracicInletAngle,blueviolet
+NeckTilt,pink
+SpinoCranialAngle,lightcoral
+OccipitocervicalInclination,lightseagreen
+CranialSlope,lightskyblue
+TPR,midnightblue
