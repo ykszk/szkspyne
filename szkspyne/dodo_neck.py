@@ -28,6 +28,17 @@ PHONY_DB_TGT = 'hm2db.done'
 
 TGT_PCA = 'pca_model.npz'
 
+EXTERNAL_TEST = os.environ.get('EXTERNAL_TEST', 'False').lower() in ('true', '1', 'yes')
+
+AI_SUBDIR = 'auto'
+if EXTERNAL_TEST:
+    # to differentiate file dependencies of external test from regular tasks
+    AI_SUBDIR = 'ai'
+
+if EXTERNAL_TEST:
+    FOLDS_DIRS = [RESULT_DIR / 'folds/0']
+    (FOLD_DIRS[0] / 'ai').mkdir(parents=True, exist_ok=True)
+    (RESULT_DIR / 'postprocess').mkdir(parents=True, exist_ok=True)
 
 def task_build_pca():
     '''
@@ -96,14 +107,54 @@ def task_fit_pca():
         }
 
 
+def task_ext_fit_pca():
+    '''
+    Fit PCA models for external test
+    '''
+    if not EXTERNAL_TEST:
+        return
+    script = SRC_DIR / 'asm/pt_fit_model.py'
+    fold_dir = RESULT_DIR / 'folds/0'
+    model_dir = os.environ.get('MODEL_DIR')
+    assert model_dir is not None
+    model_dir = Path(model_dir)
+
+    model_file = model_dir / TGT_PCA
+    outdir = fold_dir / 'auto/pca'
+    outdir.mkdir(parents=True, exist_ok=True)
+    indir = fold_dir / 'result'
+    # mha_file = fold_dir / 'y_pred.mha'
+    # ndjson_file = fold_dir / 'test.ndjson'
+    skipped = fold_dir / 'auto/pca_skipped.txt'
+    icp_weight = '0.00001'
+    params = PCA_FIT_PARAMS + ['--skip_complete', '--skipped', skipped, '--icp_weight', icp_weight]
+
+    action = ['python3', script, indir, '--output', outdir] + params + ['--model', model_file]
+
+    ndjson_file = fold_dir / AI_SUBDIR / 'pca_keypoints.ndjson'
+    action2 = (
+        Pipeline()
+        .pipe(['lmrs', 'ndjson', '--parent', 'remove', str(outdir)])
+        .runner(text=True, output_file=ndjson_file)
+    )
+    file_dep = [RESULT_DIR / 'folds/0/' / AI_SUBDIR / 'heatmap_keypoints.ndjson']
+    yield {
+        'name': f'{fold_dir.name}',
+        'actions': [action, action2],
+        'file_dep': file_dep,
+        'targets': [ndjson_file],
+    }
+
+
 def task_merge_pca_hm():
     '''
     Merge PCA and heatmap keypoints
     '''
     for fold_dir in FOLD_DIRS:
-        infile1 = fold_dir / 'auto/heatmap_keypoints.ndjson'
-        infile2 = fold_dir / 'auto/pca_keypoints.ndjson'
-        outfile = fold_dir / 'auto/pca_hm_keypoints.ndjson'
+        infile1 = fold_dir / AI_SUBDIR / 'heatmap_keypoints.ndjson'
+        infile2 = fold_dir / AI_SUBDIR / 'pca_keypoints.ndjson'
+        outfile = fold_dir / AI_SUBDIR / 'pca_hm_keypoints.ndjson'
+
         # remove pca labels
         remove_labels = ASM_LABEL_NAMES + ["Lamina1", "C3_BL", "C3_BR"]
         # --label <name> to remove label
@@ -123,7 +174,7 @@ def task_merge_pca_hm():
         # filter
         #             ['lmrs', 'filter', '--rules', SRC_DIR / 'conf/rules-neck.txt', '-']
         infile = outfile
-        outfile = fold_dir / 'auto/pca_hm_keypoints_filtered.ndjson'
+        outfile = fold_dir / AI_SUBDIR / 'pca_hm_keypoints_filtered.ndjson'
         pipeline = Pipeline().pipe(['lmrs', 'filter', '--rules', SRC_DIR / 'conf/rules-neck.txt', infile])
         action = pipeline.runner(text=True, output_file=outfile)
         yield {
@@ -172,7 +223,10 @@ def task_ref_exp2lm():
     for fold_dir in FOLD_DIRS:
         infile = fold_dir / f'test.ndjson'
         outfile = fold_dir / 'lm_test.ndjson'
-        action = ['python', script, infile]
+        if EXTERNAL_TEST:
+            action = ['cat', infile]
+        else:
+            action = ['python', script, infile]
 
         sort_corners = task_utils.CMD_SORT_VERTEBRAL_CORNERS
         sort_non_corners = sort_corners.copy() + ['--inv-label', '--by-x']
@@ -212,8 +266,8 @@ def task_ref_exp2lm():
 def task_lm2native():
     # scolrs lm2native --input <input> --output <output>
     for fold_dir in FOLD_DIRS:
-        infile = fold_dir / 'auto/pca_hm_keypoints_filtered.ndjson'
-        outfile = fold_dir / 'auto/native_pca_hm_keypoints.ndjson'
+        infile = fold_dir /  AI_SUBDIR / 'pca_hm_keypoints_filtered.ndjson'
+        outfile = fold_dir /  AI_SUBDIR / 'native_pca_hm_keypoints.ndjson'
         action = create_conv_action(
             infile,
             outfile,
@@ -305,9 +359,9 @@ def task_ai_measure():
     for fold_dir in FOLD_DIRS:
         # measure
         cmd = 'scolrs'
-        infile = fold_dir / 'auto/native_pca_hm_keypoints.ndjson'
+        infile = fold_dir / AI_SUBDIR / 'native_pca_hm_keypoints.ndjson'
         native_files.append(infile)
-        outfile = fold_dir / 'auto/measurements.ndjson'
+        outfile = fold_dir / AI_SUBDIR / 'measurements.ndjson'
         action = [cmd, 'measure', infile, outfile, 'neck']
         yield {
             'name': f'{fold_dir.name}',
@@ -317,7 +371,7 @@ def task_ai_measure():
         }
 
     # concat measurements
-    infile = [fold_dir / 'auto/measurements.ndjson' for fold_dir in FOLD_DIRS]
+    infile = [fold_dir / AI_SUBDIR / 'measurements.ndjson' for fold_dir in FOLD_DIRS]
     pipeline = Pipeline().pipe(['cat', *infile])
     outfile = RESULT_DIR / 'postprocess/measure_test_ai.ndjson'
     action = pipeline.runner(text=True, output_file=outfile)
@@ -329,7 +383,7 @@ def task_ai_measure():
     }
 
     # concat pca hm keypoints
-    outfile = RESULT_DIR / 'auto/postprocess/native_pca_hm_keypoints.ndjson'
+    outfile = RESULT_DIR / AI_SUBDIR / 'postprocess/native_pca_hm_keypoints.ndjson'
     pipeline = Pipeline().pipe(['cat', *native_files])
     action = pipeline.runner(text=True, output_file=outfile)
     yield {
@@ -338,9 +392,10 @@ def task_ai_measure():
         'file_dep': native_files,
         'targets': [outfile],
     }
+    
     # concat hm keypoints
-    hm_files = [fold_dir / 'auto/heatmap_keypoints.ndjson' for fold_dir in FOLD_DIRS]
-    hm_keypoints = RESULT_DIR / 'auto/postprocess/heatmap_keypoints.ndjson'
+    hm_files = [fold_dir / AI_SUBDIR / 'heatmap_keypoints.ndjson' for fold_dir in FOLD_DIRS]
+    hm_keypoints = RESULT_DIR / AI_SUBDIR / 'postprocess/heatmap_keypoints.ndjson'
     outfile = hm_keypoints
     pipeline = Pipeline().pipe(['cat', *hm_files])
     action = pipeline.runner(text=True, output_file=outfile)
@@ -353,10 +408,13 @@ def task_ai_measure():
 
     # draw
     script = SRC_DIR / 'measure_and_draw.py'
-    outdir = RESULT_DIR / 'auto/postprocess/draw'
+    outdir = RESULT_DIR / AI_SUBDIR / 'postprocess/draw'
     outdir.mkdir(parents=True, exist_ok=True)
     hide = ['Adi', 'Sacs', 'ModifiedRenawatIndex']
-    infile = RESULT_DIR / 'auto/postprocess/native_pca_hm_keypoints.ndjson'
+    if EXTERNAL_TEST:
+        infile = RESULT_DIR / 'folds/0/ai/native_pca_hm_keypoints.ndjson'
+    else:
+        infile = RESULT_DIR / AI_SUBDIR / 'postprocess/native_pca_hm_keypoints.ndjson'
     action = [
         'python',
         script,
@@ -364,8 +422,6 @@ def task_ai_measure():
         f'{SVG_IMAGE_SIZE}x{SVG_IMAGE_SIZE}',
         '--svg_size',
         str(SVG_IMAGE_SIZE),
-        '--image_type',
-        'neck',
         '--title',
         'AI Neck Measurements',
         '--hide',
@@ -390,25 +446,30 @@ def task_ai_measure():
     extra_points_files.append(RESULT_DIR / 'postprocess/lm_test.ndjson')
     file_dep.append(extra_points_files[-1])
 
-    db_phonies = [fold_dir / f'{PHONY_DB_TGT}' for fold_dir in FOLD_DIRS]
+    if EXTERNAL_TEST:
+        db_phonies = []
+    else:
+        db_phonies = [fold_dir / f'{PHONY_DB_TGT}' for fold_dir in FOLD_DIRS]
     file_dep.extend(db_phonies)
 
-    if subdir == 'auto':
+    if not EXTERNAL_TEST:
         logger.debug(f'HM_IMAGE_DB: {HM_IMAGE_DB}')
         action += ['--imagedb', HM_IMAGE_DB]
+    action += ['--image_type', 'neck'] # placing `--image_type` (or any `--` option?) right before `batch` otherwise parsing fails
     action += batch_args
     action += ['--extra_labels', *extra_labels]
     action += ['--extra_points', *extra_points_files]
     if HOLD_OUT:
         db_phony = OUTPUT_MAIN_DIR / f'holdout_{PHONY_DB_TGT}'
         file_dep.append(db_phony)
-    draw_phony = RESULT_DIR / subdir / f'draw.done'
+    draw_phony = RESULT_DIR / AI_SUBDIR / f'draw.done'
     yield {
         'name': f'draw-{subdir}',
         'actions': [action, (make_phony, [draw_phony])],
         'file_dep': file_dep,
         'targets': [draw_phony],
     }
+
 
 
 def task_summary():
@@ -420,7 +481,7 @@ def task_summary():
     ]
 
     # deps of draw phony
-    draw_phony = RESULT_DIR / 'auto/draw.done'
+    draw_phony = RESULT_DIR / AI_SUBDIR / 'draw.done'
     file_dep.append(draw_phony)
     draw_phony = RESULT_DIR / 'postprocess/reference/draw.done'
     file_dep.append(draw_phony)
@@ -434,4 +495,72 @@ def task_summary():
         'actions': [action],
         'file_dep': file_dep,
         'targets': [output],
+    }
+
+
+def task_apply_model():
+    if not EXTERNAL_TEST:
+        return
+    # use fold/0 for external test
+    fold_dir = RESULT_DIR / 'folds/0'
+    fold_dir.mkdir(parents=True, exist_ok=True)
+    # create path file
+    path_file = RESULT_DIR / f'folds/0/test_paths.txt'
+
+    jq_command = '.content.imagePath'
+
+    ndjson_filename = RESULT_DIR / 'folds/0/test.ndjson'
+    action = Pipeline().pipe(['cat', ndjson_filename]).pipe(['jq', '-r', jq_command])
+    action = action.runner(text=True, output_file=path_file)
+    yield {
+        'name': f'extract-path',
+        'actions': [action],
+        'file_dep': [ndjson_filename],
+        'targets': [path_file],
+    }
+
+    # apply model
+    script = SRC_DIR / 'apply_model.py'
+    outdir = RESULT_DIR / 'folds/0/result'
+    outdir.mkdir(parents=True, exist_ok=True)
+    # search for the best model
+    model_dir = os.environ.get('MODEL_DIR')
+    assert model_dir is not None
+    model_dir = Path(model_dir) / 'checkpoint'
+    logger.debug(f'MODEL_DIR: {model_dir}')
+    model_files = list(model_dir.glob('*.ckpt'))
+    model_files.sort()
+    model_file = model_files[-1]
+    # read height
+    with open(model_dir / '../args.json') as f:
+        args = json.load(f)
+        height = str(args['height'])
+        # height = str(256 * 6)  # TODO: Implement two step model?
+    action = [
+        'python',
+        script,
+        'batch',
+        path_file,
+        '--ckpt',
+        model_file,
+        '--height',
+        height,
+        '--labelme',
+        '--output',
+        outdir,
+        '--keep_image_path',
+    ]
+    if False:  # APPLY_CLAHE:
+        action.append('--clahe')
+
+
+    outfile = RESULT_DIR / 'folds/0/' / AI_SUBDIR / 'heatmap_keypoints.ndjson'
+    action2 = Pipeline().pipe(['lmrs', 'ndjson', '--parent', 'remove', str(outdir)]).runner(
+        text=True, output_file=outfile)
+
+    yield {
+        'name': f'apply-model',
+        'actions': [action, action2],
+        'file_dep': [path_file, model_file],
+        'targets': [outfile],
     }

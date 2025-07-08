@@ -90,6 +90,7 @@ class RandomClahe(ImageOnlyTransform):
 img_tfs = [
     RandomClahe(p=0.25),
     A.HorizontalFlip(p=0.25),
+    A.InvertImg(p=0.25),
     A.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.1, p=0.25),
     A.Affine(scale={'x': (0.9, 1.1), 'y': (0.9, 1.1)}, rotate=[-15, 15], shear=[-10, 10], p=0.25),
     A.GaussNoise(p=0.1),

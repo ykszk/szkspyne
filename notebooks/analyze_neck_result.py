@@ -26,6 +26,8 @@ data_dir = Path(os.getenv('DATA_DIR', '/poseidon/users/suzuki/projects/scoliosis
 ref_filename = str(data_dir / 'postprocess/measure_test_reference.ndjson')
 ai_filename = str(data_dir / 'postprocess/measure_test_ai.ndjson')
 
+EXTERNAL_TEST = os.environ.get('EXTERNAL_TEST', 'False').lower() in ('true', '1', 'yes')
+
 
 def load_as_measures(filename: str) -> List[scolrs.MeasureListResultLine]:
     lines = scolrs.MeasureListResultLine.from_ndjson(filename)
@@ -107,7 +109,10 @@ display_header('h2', 'Scatter plots')
 cases_output_dir = data_dir / 'postprocess/cases'
 cases_output_dir.mkdir(parents=True, exist_ok=True)
 ref_case_dir = data_dir / 'postprocess/reference/draw'
-ai_case_dir = data_dir / 'auto/postprocess/draw'
+if EXTERNAL_TEST:
+    ai_case_dir = data_dir / 'ai/postprocess/draw'
+else:
+    ai_case_dir = data_dir / 'auto/postprocess/draw'
 
 for col in df_ref.columns:
     n_non_nan = df_ref[col].notna().sum()
