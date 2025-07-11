@@ -947,3 +947,21 @@ def task_train_summary():
         yield from _train_summary(source_file, output_dir)
         source_file = fold_dir / 'test.ndjson'
         yield from _train_summary(source_file, output_dir)
+
+def task_onnx():
+    '''
+    Convert labelme to onnx
+    '''
+    script = SRC_DIR / 'pretrained_models.py'
+    model_dir = RESULT_DIR / 'folds/0/checkpoint'
+    model_files = list(model_dir.glob('*.ckpt'))
+    model_files.sort()
+    model_file = model_files[-1]
+    outfile = model_dir / 'model.onnx'
+    action = ['python', script, 'onnx', '1', '13', model_file, outfile]
+    yield {
+        'name': 'convert-onnx',
+        'actions': [action],
+        'file_dep': [model_file],
+        'targets': [outfile],
+    }

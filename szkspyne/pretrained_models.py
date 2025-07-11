@@ -123,7 +123,6 @@ class LitSMP(pl.LightningModule):
             resized_xs.append(resized_x[0, 0])  # TODO: handle channel dimension (second dim) properly
         constant_value = int(torch.min(heatmaps))
         del heatmaps
-        cropped_batch = img_utils.pad_batch(resized_xs, DOWN_FACTOR, 0)
         cropped_batch = torch.Tensor(np.stack(cropped_batch)).to(self.device)
 
         heatmaps = self.model(cropped_batch)
@@ -154,7 +153,6 @@ def show_summary(args):
 
 
 def create_onnx(args):
-    model = LitSMP(args.in_chs, args.out_chs, args).model
 
     def set_align_false(model):
         for l in model.children():
@@ -165,34 +163,35 @@ def create_onnx(args):
             setattr(model, 'align_corners', False)
             # model.align_corners = False
 
-    set_align_false(model)
-
-    model.load_state_dict(torch.load(args.weights))
-    set_align_false(model)
-    try:
-        model.encoder.set_swish(memory_efficient=False)
-    except Exception as e:
-        print(e)
+    if args.weights.endswith('.ckpt'):
+        model = LitSMP.load_from_checkpoint(args.weights).to('cpu')
+        set_align_false(model)
+    else:
+        model = LitSMP(args.in_chs, args.out_chs, args).model
+        model.load_state_dict(torch.load(args.weights))
+        set_align_false(model)
     model.eval()
 
     # Let's create a dummy input tensor
-    dummy_input = torch.randn((1, 1, 768, 768), requires_grad=True)
+    dummy_input = torch.randn((1, 1, args.height, 768), requires_grad=True)
 
     # Export the model
-    torch.onnx.export(
-        model,  # model being run
-        dummy_input,  # model input (or a tuple for multiple inputs)
-        args.output,  # where to save the model
-        export_params=True,  # store the trained parameter weights inside the model file
-        opset_version=12,  # the ONNX version to export the model to
-        do_constant_folding=True,  # whether to execute constant folding for optimization
-        input_names=['modelInput'],  # the model's input names
-        output_names=['modelOutput'],  # the model's output names
-        dynamic_axes={
-            'modelInput': {0: 'batch_size', 3: 'image_width'},  # variable length axes
-            'modelOutput': {0: 'batch_size', 3: 'image_width'},
-        },
-    )
+    with torch.amp.autocast(device_type='cpu', enabled=args.amp):
+        torch.onnx.export(
+            model,  # model being run
+            dummy_input,  # model input (or a tuple for multiple inputs)
+            args.output,  # where to save the model
+            export_params=True,  # store the trained parameter weights inside the model file
+            # opset_version=12,  # the ONNX version to export the model to
+            do_constant_folding=True,  # whether to execute constant folding for optimization
+            input_names=['modelInput'],  # the model's input names
+            output_names=['modelOutput'],  # the model's output names
+            dynamic_axes={
+                'modelInput': {0: 'batch_size', 3: 'image_width'},  # variable length axes
+                'modelOutput': {0: 'batch_size', 3: 'image_width'},
+            },
+            # dynamo=True,
+        )
     print(" ")
     print('Model has been converted to ONNX')
 
@@ -212,6 +211,11 @@ if __name__ == "__main__":
     parser_onnx.add_argument('out_chs', help='The # of output channels', type=int)
     parser_onnx.add_argument('weights', help='Path of the trained weight')
     parser_onnx.add_argument('output', help='Output onnx filename')
+    parser_onnx.add_argument('--amp', help='Use AMP', action='store_true')
+    # height
+    parser_onnx.add_argument(
+        '--height', help='Height of the input image', type=int, default=768, metavar='<value>'
+    )
     args = parser.parse_args()
 
     has_func = hasattr(args, 'func')
