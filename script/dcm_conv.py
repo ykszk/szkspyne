@@ -34,7 +34,10 @@ def normalize(x, percentile):
     height, width = x.shape
     mh, mw = height // 10, width // 10
 
-    tmp = x[mh:-mh, mw:-mw]
+    if mh < 1 or mw < 1:
+        tmp = x
+    else:
+        tmp = x[mh:-mh, mw:-mw]
     minmax = np.percentile(tmp, [percentile, 100 - percentile])
     x = np.clip(x, minmax[0], minmax[1]).astype(np.float32)
     return np.round(255 * (x - minmax[0]) / (minmax[1] - minmax[0])).astype(np.uint8), minmax.tolist()
