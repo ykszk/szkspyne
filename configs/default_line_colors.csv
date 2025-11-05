@@ -18,7 +18,11 @@ PelvicTilt,lime
 LegLength,lime
 SacralObliquity,hotpink
 ThoracicKyphosis,red
-Mid/LowerThoracicKyphosis,green
+Mid/LowerThoracicKyphosis,orange
+MidLowerThoracicKyphosis,orange
+ThoracolumbarSagittalAlignment,green
+T1Slope,red
+SagittalBalance,lavender
 ProximalThoracicKyphosis,blue
 LumbarLordosis,blue
 SacralSlope,magenta
