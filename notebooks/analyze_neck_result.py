@@ -25,20 +25,32 @@ sns.set_theme(context='notebook', style='whitegrid', font='serif')
 data_dir = Path(os.getenv('DATA_DIR', '/poseidon/users/suzuki/projects/scoliosis/result/neck_manual_20250703'))
 ref_filename = str(data_dir / 'postprocess/measure_test_reference.ndjson')
 ai_filename = str(data_dir / 'postprocess/measure_test_ai.ndjson')
+exlude_filename = data_dir / 'exclude.txt'
+
+if exlude_filename.exists():
+    with open(exlude_filename, 'r') as f:
+        exclude = [line.strip() for line in f.readlines() if line.strip()]
+    exclude = set(exclude)
+else:
+    exclude = None
 
 EXTERNAL_TEST = os.environ.get('EXTERNAL_TEST', 'False').lower() in ('true', '1', 'yes')
 
 
-def load_as_measures(filename: str) -> List[scolrs.MeasureListResultLine]:
+def load_as_measures(filename: str, exclude = None) -> List[scolrs.MeasureListResultLine]:
     lines = scolrs.MeasureListResultLine.from_ndjson(filename)
+    new_lines = []
     # strip parent directory form .filename
     for line in lines:
+        if exclude and Path(line.filename).stem in exclude:
+            continue
         line.filename = Path(line.filename).name
-    return lines
+        new_lines.append(line)
+    return new_lines
 
 
-ref_measures = load_as_measures(ref_filename)
-ai_measures = load_as_measures(ai_filename)
+ref_measures = load_as_measures(ref_filename, exclude)
+ai_measures = load_as_measures(ai_filename, exclude)
 
 ref_measure_dict = {m.filename: m for m in ref_measures}
 ai_measure_dict = {m.filename: m for m in ai_measures}

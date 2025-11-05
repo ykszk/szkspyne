@@ -56,7 +56,7 @@ def task_build_pca():
             .pipe(['python3', SRC_DIR / 'labelme_utils.py', 'shape2lm'])
             .pipe(['lmrs', 'filter', '--rules', SRC_DIR / 'conf/rules-neck.txt', '-'])
             .pipe(['python3', SRC_DIR / 'labelme_utils.py', 'lm2shape'])
-            .pipe(['python3', script, outfile])
+            .pipe(['python3', script, outfile, '--json', outfile.with_suffix('.json')])
         )
         action = pipeline.runner(text=True)
         yield {

@@ -173,6 +173,22 @@ class ActiveShapeModelBuilder:
         """
         np.savez(filename, model_name=model_name, mean=self.pca.mean_, components=self.pca.components_, explained_variance=self.pca.explained_variance_, explained_variance_ratio=self.pca.explained_variance_ratio_, template_points=self.template.points, template_reference=self.template.reference_points, labels=labels, point_counts=point_counts)
 
+    def to_dict(self) -> dict:
+        """
+        Convert the ActiveShapeModel to a JSON serializable dictionary.
+        """
+        return {
+            'model_name': self.pca.__class__.__name__,
+            'mean': self.pca.mean_.tolist(),
+            'components': self.pca.components_.tolist(),
+            'explained_variance': self.pca.explained_variance_.tolist(),
+            'explained_variance_ratio': self.pca.explained_variance_ratio_.tolist(),
+            'template_points': self.template.points.tolist(),
+            'template_reference': self.template.reference_points,
+            'labels': settings.ASM_LABEL_NAMES,
+            'point_counts': self.template.point_counts
+        }
+
 
 def main():
     import sys
@@ -190,6 +206,9 @@ def main():
         help='Name of the model: %(default)s',
         default='active_shape_model',
     )
+    parser.add_argument(
+        '--json',
+        help="Save the model as a JSON file")
 
     args = parser.parse_args()
 
@@ -204,6 +223,13 @@ def main():
     logger.info('Saving Active Shape Model to %s', args.output)
     asm_builder.save(args.output, args.model_name, settings.ASM_LABEL_NAMES, spine_data[0].point_counts)
     logger.info('Active Shape Model saved successfully.')
+
+    if args.json:
+        import json
+        json_output = asm_builder.to_dict()
+        with open(args.json, 'w') as f:
+            json.dump(json_output, f, indent=4)
+        logger.info('Active Shape Model saved as JSON to %s', args.json)
 
 if __name__ == '__main__':
     main()
