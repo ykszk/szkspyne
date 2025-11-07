@@ -193,8 +193,8 @@ with JsonsDirIO(input, output) if input.is_dir() else NDJsonIO(input, output) as
             for label in ['Shoulder', 'Clavicle', 'Pelvis', 'Iliac', 'FemoralHead']:
                 lefts, rights = [], []
                 points = shapes['point'].get(label, [])
-                if len(points) <= 2:
-                    continue
+                # if len(points) <= 2:
+                #     continue
                 for p in points:
                     if p[0][0] > x_middle:
                         rights.append(p)
