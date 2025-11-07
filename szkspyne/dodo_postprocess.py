@@ -3,6 +3,7 @@ import sys
 from pathlib import Path
 import json
 from logzero import logger
+from typing import Optional
 import szkspyne.utils.measure as measure_utils
 from szkspyne.utils.doit import concat, make_phony
 from szkspyne.utils.doit import Pipeline
@@ -33,6 +34,8 @@ DOIT_CONFIG = {
 }
 
 IMAGE_TYPES = ['ap_whole', 'lateral_whole']
+IMAGE_TYPES = os.environ.get('IMAGE_TYPES', ','.join(IMAGE_TYPES)).split(',') # Specify `IMAGE_TYPES=ap_whole` to process only ap_whole
+logger.debug(f'IMAGE_TYPES: {IMAGE_TYPES}')
 
 TGT_PCA = 'pca_ap_whole_L4.npz'
 
@@ -748,7 +751,8 @@ def task_apply_model():
         with open(model_dir / '../args.json') as f:
             args = json.load(f)
             height = str(args['height'])
-            # height = str(256 * 6)  # TODO: Implement two step model?
+            # height = str(256 * 5)  # TODO: Implement two step model?
+        auto_crop_multiplier = '1.0'
         action = [
             'python',
             script,
@@ -759,7 +763,7 @@ def task_apply_model():
             '--height',
             height,
             '--auto_crop_multiplier',
-            '1.5',
+            auto_crop_multiplier,
             '--labelme',
             '--output',
             outdir,
@@ -777,6 +781,19 @@ def task_apply_model():
             'targets': [phony],
         }
 
+def parse_optional_bool(str_bool) -> Optional[bool]:
+    if str_bool=='None':
+        return None
+    elif str_bool=='True':
+        return True
+    elif str_bool=='False':
+        return False
+    else:
+        raise ValueError(f'Invalid boolean string: {str_bool}')
+
+SUMMARY_POST_OPS = ['None', 'False', 'True']
+SUMMARY_POST_OPS = os.environ.get('SUMMARY_POST_OPS', ','.join(SUMMARY_POST_OPS)).split(',')
+SUMMARY_POST_OPS = [parse_optional_bool(v) for v in SUMMARY_POST_OPS]
 
 def task_summary():
     ''' '
@@ -794,7 +811,7 @@ def task_summary():
             file_dep.append(draw_phony)
 
     for image_type in IMAGE_TYPES:
-        for post_op in [None, False, True]:
+        for post_op in SUMMARY_POST_OPS:
             c2 = f'RESULT_DIR={RESULT_DIR} IMAGE_TYPE={image_type} jupyter nbconvert --stdin --to html --execute --no-input'
             if post_op is not None:
                 if post_op:
@@ -956,6 +973,8 @@ def task_onnx():
     model_dir = RESULT_DIR / 'folds/0/checkpoint'
     model_files = list(model_dir.glob('*.ckpt'))
     model_files.sort()
+    if not model_files:
+        return
     model_file = model_files[-1]
     outfile = model_dir / 'model.onnx'
     action = ['python', script, 'onnx', '1', '13', model_file, outfile]

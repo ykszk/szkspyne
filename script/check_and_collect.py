@@ -4,7 +4,7 @@ import json
 from collections import defaultdict
 from pathlib import Path
 from typing import List, Union, Optional
-
+from logzero import logger
 import lmrspy
 import numpy as np
 import tqdm
@@ -21,8 +21,10 @@ parser.add_argument(
     help='Directory containing rules files such as "rule-spine.txt". default: %(default)s',
     default='rules',
 )
-parser.add_argument('--add_flag', help='Add new flag to the output', type=str, required=False, nargs="*")
+parser.add_argument('--add_flag', help='Add new flag to the output', type=str, required=False, nargs="*", default=[])
 parser.add_argument('--image_parent', help='Parent directory of images', type=Path)
+parser.add_argument('--ap', help='Subdirectory for ap_whole images', nargs='*',type=str, default=['ap_whole'])
+parser.add_argument('--lateral', help='Subdirectory for lateral_whole images', nargs='*', type=str, default=['lateral_whole'])
 args = parser.parse_args()
 
 data_dir = Path(args.input)
@@ -65,9 +67,11 @@ for rule in ['L4', 'L5', 'L6', 'congenital']:
     rule_set = rule_dict['spine'] + rule_dict[rule]
     rule_sets[rule] = rule_set
 
-for kind in ['ap_whole', 'lateral_whole']:
-    print(kind)
-    fns = sorted(data_dir.glob(kind + '/*.json'))
+subdirs = [('ap_whole', subdir) for subdir in args.ap] + [('lateral_whole', subdir) for subdir in args.lateral]
+# for kind in ['ap_whole', 'lateral_whole']:
+for kind, subdir in subdirs:
+    logger.info(f'Processing {subdir} as {kind}')
+    fns = sorted(data_dir.glob(subdir + '/*.json'))
     validators: List[lmrspy.Validator] = []
     for ignore in ['L5', 'L4', 'L6', '先天性側彎']:
         ignores = IGNORES.copy()
@@ -103,7 +107,10 @@ for kind in ['ap_whole', 'lateral_whole']:
     print('Total file count:', len(fns))
     print('Valid:', len(valid_json))
     print('Invalid:', len(invalid_json))
-    outname = outdir / ('valid_' + kind + '.ndjson')
+    if kind==subdir:
+        outname = outdir / ('valid_' + kind + '.ndjson')
+    else:
+        outname = outdir / (f'valid_{kind}_{subdir}.ndjson')
     outname.parent.mkdir(parents=True, exist_ok=True)
     save_ndjson(outname, valid_json, args.add_flag, args.image_parent)
     if len(invalid_json) > 0:
