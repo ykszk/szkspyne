@@ -1,4 +1,4 @@
-from typing import Annotated, Any, Dict, Optional, Union, List
+from typing import Annotated, Any, Dict, Optional, Tuple, Union, List
 
 from pydantic import BaseModel, Discriminator, Tag
 import pandas as pd
@@ -188,6 +188,46 @@ class MeasureListResultLine(BaseModel, LineMixin):
         return pd.DataFrame(rows).set_index('filename')
 
 
+class ImageMetadata(BaseModel):
+    path: str
+    height: int
+    width: int
+    spacing_xy: Tuple[float, float]
+    unit: str
+
+
+class CoronalPoints(BaseModel):
+    spine: List[List[List[float]]]
+    clavicle: List[List[float]]
+    shoulder: List[List[float]]
+    pelvis: List[List[float]]
+    femoral_head: List[List[float]]
+    image_metadata: ImageMetadata
+
+class CoronalPointsLine(BaseModel, LineMixin):
+    filename: str
+    content: CoronalPoints
+
+class SagittalPoints(BaseModel):
+    spine: List[List[List[float]]]
+    femoral_head: List[List[float]]
+    image_metadata: ImageMetadata
+
+class SagittalPointsLine(BaseModel, LineMixin):
+    filename: str
+    content: SagittalPoints
+
+
+class SpinalPoints(BaseModel):
+    spine: List[List[List[float]]]
+    femoral_head: List[List[float]]
+    image_metadata: ImageMetadata
+
+class SpinalPointsLine(BaseModel, LineMixin):
+    filename: str
+    content: SpinalPoints
+
+
 import sys
 import argparse
 
@@ -196,6 +236,8 @@ def main():
     parser = argparse.ArgumentParser("Convert ndjson to csv")
     parser.add_argument('ndjson', type=str, help='ndjson file to load')
     parser.add_argument('csv', type=str, help='csv file to save')
+    # remove "unit_of_length"
+    parser.add_argument('--no-unit', action='store_true', help='Remove unit_of_length column in output csv')
     args = parser.parse_args()
 
     with open(args.ndjson, 'r') as f:
@@ -203,6 +245,8 @@ def main():
     lines = [MeasureResultLine.model_validate_json(line) for line in lines]
 
     df = MeasureResultLine.to_dataframe(lines)
+    if args.no_unit:
+        df.drop(columns=['unit_of_length'], inplace=True)
     df.to_csv(args.csv, index=True)
 
     return 0

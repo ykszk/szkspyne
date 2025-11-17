@@ -26,5 +26,5 @@ class LineMixin():
         '''
         with open(filename, 'w') as f:
             for item in data:
-                f.write(json.dumps(item.model_dump(), ensure_ascii=False, separators=(',', ':')))
+                f.write(json.dumps(item.model_dump(), ensure_ascii=ensure_ascii, separators=(',', ':')))
                 f.write('\n')
