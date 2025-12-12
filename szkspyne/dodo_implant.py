@@ -91,7 +91,7 @@ def task_count():
 
     in_ndjson = RESULT_DIR / 'reference/lm_implant_keypoints.ndjson'
     output = RESULT_DIR / 'reference/counts.ndjson'
-    action = ['scolrs', 'implant', '--count', in_ndjson]
+    action = ['scolrs', 'implant', '--task', 'count', in_ndjson]
     runner = Pipeline().pipe(action).runner(text=True, output_file=output)
     yield {
         'name': 'reference',
@@ -105,7 +105,7 @@ def task_count():
     in_ndjson = RESULT_DIR / 'ai/dtron2_lm_combined.ndjson'
     output = RESULT_DIR / 'ai/counts.ndjson'
 
-    action = ['scolrs', 'implant', '--count', in_ndjson]
+    action = ['scolrs', 'implant', '--task', 'count', in_ndjson]
     runner = Pipeline().pipe(action).runner(text=True, output_file=output)
     yield {
         'name': 'ai',

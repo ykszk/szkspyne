@@ -261,6 +261,7 @@ def main():
     parser.add_argument(
         '--icp_lr', help='Initial learning rate for ICP. default: %(default)s', type=float, default=0.1
     )
+    parser.add_argument('--init_icp', help='Initialize with ICP fitting.', action='store_true')
     parser.add_argument('--icp_weight', help='Weight for ICP loss. default: %(default)s', type=float, default=0.01)
     parser.add_argument(
         '--max_iter', help='The maximum number of iteration for fitting. default: %(default)s', type=int, default=200
@@ -381,7 +382,7 @@ def main():
                 )
                 results.append((name, 100, pt_pca.coefs.detach().cpu(), pca, []))
                 # continue
-            else:
+            elif args.init_icp:
                 best_loss = pt_pca.icp(t_vert_points, args.icp_lr, args.max_iter, args.patience)
                 histories.append(
                     {

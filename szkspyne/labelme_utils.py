@@ -58,6 +58,27 @@ class LabelMe(BaseModel):
             points = [[p[0] * s, p[1] * s] for p in shape.points]
             shapes.append(shape.model_copy(update={'points': points}))
         return self.model_copy(update={'shapes': shapes})
+    
+    def rotate(self, angle_deg: float, center: Optional[List[float]] = None) -> "LabelMe":
+        angle_rad = np.deg2rad(angle_deg)
+        cos_a = np.cos(angle_rad)
+        sin_a = np.sin(angle_rad)
+
+        if center is None:
+            center = [self.imageWidth / 2, self.imageHeight / 2]
+
+        cx, cy = center
+        shapes = []
+        for shape in self.shapes:
+            points = []
+            for p in shape.points:
+                x_shifted = p[0] - cx
+                y_shifted = p[1] - cy
+                x_rotated = x_shifted * cos_a - y_shifted * sin_a + cx
+                y_rotated = x_shifted * sin_a + y_shifted * cos_a + cy
+                points.append([x_rotated, y_rotated])
+            shapes.append(shape.model_copy(update={'points': points}))
+        return self.model_copy(update={'shapes': shapes})
 
     def _into_dict(self) -> Dict[str, Dict[str, list]]:
         '''

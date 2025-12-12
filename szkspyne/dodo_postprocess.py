@@ -34,7 +34,9 @@ DOIT_CONFIG = {
 }
 
 IMAGE_TYPES = ['ap_whole', 'lateral_whole']
-IMAGE_TYPES = os.environ.get('IMAGE_TYPES', ','.join(IMAGE_TYPES)).split(',') # Specify `IMAGE_TYPES=ap_whole` to process only ap_whole
+IMAGE_TYPES = os.environ.get('IMAGE_TYPES', ','.join(IMAGE_TYPES)).split(
+    ','
+)  # Specify `IMAGE_TYPES=ap_whole` to process only ap_whole
 logger.debug(f'IMAGE_TYPES: {IMAGE_TYPES}')
 
 TGT_PCA = 'pca_ap_whole_L4.npz'
@@ -44,6 +46,7 @@ if RESULT_DIR.exists():
     OUTPUT_MAIN_DIR.mkdir(exist_ok=True, parents=True)
 
 RENDER_TRAIN = os.environ.get('RENDER_TRAIN', False) == 'True'
+
 
 def task_split():
     '''
@@ -84,7 +87,6 @@ def task_pca():
 TGT_HM_KPS = 'all_heatmap_keypoints.ndjson'
 HM_IMAGE_DB = OUTPUT_MAIN_DIR / f'heatmap_images.sqlite3'
 PHONY_DB_TGT = 'hm2db.done'
-
 
 
 def _task_holdout_heat2lm():
@@ -229,6 +231,7 @@ def task_fit():
                 'file_dep': [infile, infile2, pca_model],
                 'targets': [outfile],
             }
+
 
 # FLAGS = RESULT_DIR / 'flags.ndjson'
 FLAGS = {
@@ -435,7 +438,7 @@ hide_dict = {'ap_whole': AP_HIDE, 'lateral_whole': LATERAL_HIDE}
 
 MES_HIDE = 'CurveApex SpinalLine APT CoronalBalance T1Tilt ClavicleAngle ShoulderHeight Pelvis FemoralHead PelvicObliquity LegLength SacralObliquity Mid/LowerThoracicKyphosis ProximalThoracicKyphosis SacralSlope PelvicIncidence PelvicRadiusAngle L5IncidenceAngle LumbosacralAngle'
 JQ_REMOVE_BEND = '. | select(.content.flags."除外" or .content.flags."左屈" or .content.flags."右屈" or .content.flags."先天性側彎"|not)'
-
+CURVE_ALGO = 'apex'
 
 def task_curve():
     '''
@@ -450,7 +453,7 @@ def task_curve():
             c1 = f"jq -c '{JQ_REMOVE_BEND}' {infile}"
             script = SCRIPT_DIR / 'sort_points.py'
             c2 = f'python {script} -'
-            c3 = f'scolrs curve --algorithm apex -'
+            c3 = f'scolrs curve --algorithm {CURVE_ALGO} -'
             # c3 = f'scolrs curve -'
             script = SRC_DIR / 'curve.py'
             # c4 = f'python {script}'
@@ -504,7 +507,7 @@ def task_closest_endplate():
     ]
     # measure
     output_measure = outdir / 'no-bend_measures_ap_whole.ndjson'
-    action3 = ['scolrs', 'measure', outfile, output_measure, 'coronal']
+    action3 = ['scolrs', 'measure', outfile, output_measure, 'coronal', '--algo', CURVE_ALGO]
     # convert ndjson to csv
     script = SRC_DIR / 'utils/scolrs.py'
     action3_1 = ['python', script, output_measure, output_measure.with_suffix('.csv')]
@@ -629,10 +632,13 @@ def task_native():
             # measure
             infile = outfile
             outfile = RESULT_DIR / subdir / f'no-bend_measures_{image_type}.ndjson'
-            command = "coronal" if image_type == "ap_whole" else "sagittal"
+            if image_type == 'ap_whole':
+                command = ["coronal", "--algo", CURVE_ALGO]
+            else:
+                command = ["sagittal"]
             yield {
                 'name': f'measure-{image_type}-{subdir}',
-                'actions': [['scolrs', 'measure', infile, outfile, command]],
+                'actions': [['scolrs', 'measure', infile, outfile, *command]],
                 'file_dep': [infile],
                 'targets': [outfile],
             }
@@ -781,19 +787,22 @@ def task_apply_model():
             'targets': [phony],
         }
 
-def parse_optional_bool(str_bool) -> Optional[bool]:
-    if str_bool=='None':
+
+def parse_optional_bool(str_bool: str) -> Optional[bool]:
+    if str_bool == 'None':
         return None
-    elif str_bool=='True':
+    elif str_bool == 'True':
         return True
-    elif str_bool=='False':
+    elif str_bool == 'False':
         return False
     else:
         raise ValueError(f'Invalid boolean string: {str_bool}')
 
+
 SUMMARY_POST_OPS = ['None', 'False', 'True']
 SUMMARY_POST_OPS = os.environ.get('SUMMARY_POST_OPS', ','.join(SUMMARY_POST_OPS)).split(',')
 SUMMARY_POST_OPS = [parse_optional_bool(v) for v in SUMMARY_POST_OPS]
+
 
 def task_summary():
     ''' '
@@ -876,10 +885,13 @@ def _train_summary(source_file: Path, output_dir: Path):
         # measure
         infile = outfile
         outfile = output_dir / (source_file.stem + f'_{image_type}_measures.ndjson')
-        command = "coronal" if image_type == "ap_whole" else "sagittal"
+        if image_type == 'ap_whole':
+            command = ["coronal", "--algo", CURVE_ALGO]
+        else:
+            command = ["sagittal"]
         yield {
             'name': f'measure-{image_type}_{subname}',
-            'actions': [['scolrs', 'measure', infile, outfile, command]],
+            'actions': [['scolrs', 'measure', infile, outfile, *command]],
             'file_dep': [infile],
             'targets': [outfile],
         }
@@ -964,6 +976,7 @@ def task_train_summary():
         yield from _train_summary(source_file, output_dir)
         source_file = fold_dir / 'test.ndjson'
         yield from _train_summary(source_file, output_dir)
+
 
 def task_onnx():
     '''
