@@ -35,8 +35,8 @@ class ActiveShapeModel:
         """
         data = np.load(filename, allow_pickle=True)
         return ActiveShapeModel(
-            pca_mean=data['mean'],
-            pca_components=data['components'],
+            mean=data['mean'],
+            components=data['components'],
             explained_variance=data['explained_variance'],
             explained_variance_ratio=data['explained_variance_ratio'],
             template_points=data['template_points'],
@@ -82,15 +82,46 @@ class ActiveShapeModel:
         """
         cat = np.concatenate(deformed_points, axis=0)
         return self.transform(cat.ravel())
-    
-model_filename = '/tmp/tmp_neck.npz'
+
+import argparse
+from pathlib import Path
+
+import matplotlib.pyplot as plt
+import matplotlib.animation as animation
+
+# command line arguments
+parser = argparse.ArgumentParser(description="Visualize Active Shape Model")
+parser.add_argument('model', type=Path, help="Path to the ASM model file")
+parser.add_argument('--pc', type=int, default=0, help="Principal component index to visualize")
+parser.add_argument('--pc_start', type=float, default=-2.0, help="Start value for the selected principal component")
+parser.add_argument('--pc_end', type=float, default=2.0, help="End value for the selected principal component")
+parser.add_argument('--pc_num', type=int, default=100, help="Number of values for the selected principal component to visualize if pc_values is not given")
+parser.add_argument('--fps', type=int, default=10, help="Frames per second for animation")
+parser.add_argument('--interval', type=int, default=100, help="Interval between frames in milliseconds")
+# save figure of cumulative explained variance
+parser.add_argument('--variance_fig', type=Path, help="Path to save the cumulative explained variance figure")
+parser.add_argument('output', type=Path, help="Output MP4 filename")
+args = parser.parse_args()
+
+model_filename = args.model
 
 asm = ActiveShapeModel.load(model_filename)
-mean_point_sets = asm.unravel(asm.pca_mean)
-import matplotlib.pyplot as plt
+
+
+if args.variance_fig:
+    cum_variance = np.cumsum(asm.explained_variance_ratio)
+    plt.clf()
+    plt.plot(np.arange(1, len(cum_variance) + 1), cum_variance, marker='o')
+    plt.xlabel('Number of Principal Components')
+    plt.ylabel('Cumulative Explained Variance Ratio')
+    plt.title('Cumulative Explained Variance by Principal Components')
+    plt.grid()
+    print(f'Saving cumulative explained variance figure to {args.variance_fig}...')
+    plt.savefig(args.variance_fig, dpi=200)
+
 
 def plot_points(points: List[np.ndarray], labels: List[str], title: str = 'Active Shape Model'):
-    plt.figure(figsize=(10, 6))
+    plt.clf()
     for pts, label in zip(points, labels):
         plt.scatter(pts[:, 0], pts[:, 1], label=label)
     plt.gca().invert_yaxis()
@@ -100,113 +131,17 @@ def plot_points(points: List[np.ndarray], labels: List[str], title: str = 'Activ
     plt.legend()
     plt.axis('equal')
     plt.grid()
-    plt.show()
 
-plot_points(mean_point_sets, asm.labels, 'Active Shape Model Points')
+pc_values = np.linspace(args.pc_start, args.pc_end, args.pc_num)
 
-deformation = np.zeros((asm.pca_components.shape[0],))
-for first_component in [-2, -1, 0, 1, 2]:
-    deformation[0] = first_component  # Example deformation
+def plot_frame(frame):
+    deformation = np.zeros((asm.pca_components.shape[0],))
+    pc_value = pc_values[frame]
+    deformation[args.pc] = pc_value
     deformed_points = asm.deform(deformation)
-    plot_points(deformed_points, asm.labels, 'Deformed Active Shape Model Points')
-    params = asm.undo_deform(deformed_points)
+    plot_points(deformed_points, asm.labels, f'Deformed Active Shape Model Points (PC{args.pc + 1} = {pc_value:.2f})')
 
-# %%
-
-# %%
-import szkspyne.settings as settings
-settings.ASM_LABEL_NAMES = ['TL', 'TR', 'BL', 'BR', "Lamina", "AnteriorC1Arch", "AnteriorDens", "PosteriorDens"]
-settings.ANCHOR_LABEL_NAMES = ["AnteriorDens", "PosteriorDens", "Lamina1", "C3_BL", "C3_BR"]
-
-ndjson_filename = '/tmp/tmp_neck.ndjson'
-from szkspyne import labelme_utils
-from szkspyne.asm.point_data import SpinePointData, MovablePoints
-data = labelme_utils.ShapeDictLine.from_ndjson(ndjson_filename)
-print(f'Loaded {len(data)} lines from {ndjson_filename}')
-import matplotlib.pyplot as plt
-# %%
-# spine_data = [SpinePointData.from_shape_dict(d.content) for d in data]
-spine_data = []
-filtered_data = []
-for i in range(len(data)):
-    line = data[i]
-    # print(line.filename)
-    try:
-        spine_data.append(SpinePointData.from_shape_dict(line.content))
-        filtered_data.append(line)
-    except Exception as e:
-        print(f'Error processing line {i}: {e}')
-        continue
-print(f'Loaded {len(spine_data)} spine data points')
-# %%
-template = MovablePoints(asm.template_points, asm.template_reference, asm.point_counts)
-# %%
-aligned_data = [template.align(d)[0] for d in spine_data]
-
-#%%
-params = [asm.transform(d.ravel()) for d in aligned_data]
-# %%
-# %%
-from PIL import Image
-from skimage.transform import warp
-from tqdm import tqdm
-
-def ticks_off():
-    plt.xticks([])
-    plt.yticks([])
-    [s.set_visible(False) for s in plt.gca().spines.values()]
-
-#%%
-from functools import lru_cache
-@lru_cache(maxsize=None)
-def load_image(image_path: str) -> Image.Image:
-    return Image.open(image_path)
-
-param_index = 2
-param_index_label = f'PC{param_index + 1}'
-frames = []
-i_frame = 0
-fps = 24
-max_value = 2
-sequence = np.concatenate([np.linspace(0, -max_value, 24*3), np.linspace(-max_value, 0, 24*3), np.linspace(0, max_value, 24*3), np.linspace(max_value,0,24*3)], axis=0)
-for param_value in tqdm(sequence):
-    plt.clf()
-    target_params = np.zeros((asm.pca_components.shape[0],))
-    target_params[param_index] = param_value  # Example deformation
-    l2_norms = [np.linalg.norm((p - target_params)[:10]) for p in params]
-    # l2_norms = [abs(p[param_index] - param_value) for p in params]
-    closest_index = np.argmin(l2_norms)
-
-
-    image_path = filtered_data[closest_index].content.imagePath
-    # image = Image.open(image_path)
-    image = load_image(image_path)
-    tf = template.calculate_transform(spine_data[closest_index])
-    warped_image = warp(np.array(image), tf.inverse)
-    plt.imshow(warped_image, 'gray')
-    point_sets = asm.deform(target_params)
-    # point_sets = asm.unravel(aligned_data[closest_index].ravel())
-    for points, label in zip(point_sets, asm.labels):
-        plt.scatter(points[:, 0], points[:, 1], s=10, label=label)
-    
-    plt.title(f'{param_index_label} = {param_value:.2f}')
-    ticks_off()
-
-    plt.gcf().savefig(f'/tmp/frames/{i_frame:04d}.png', format='png', dpi=100, bbox_inches='tight', pad_inches=0.1)
-    i_frame += 1
-
-#%%
-'ffmpeg -y -framerate 24 -i /tmp/frames/%04d.png -c:v libx264 -vf format=yuv420p -r 24  -vf "pad=ceil(iw/2)*2:ceil(ih/2)*2" /tmp/output.mp4 && open /tmp/output.mp4'
-
-# %%
-# worst_param_index = np.argmax([np.linalg.norm(p) for p in params])
-arg_sorted = np.argsort([np.linalg.norm(p) for p in params])
-worst_param_index = arg_sorted[-10]  # Get the index of the worst parameter
-worst_param_value = params[worst_param_index][param_index]
-print(f'Worst parameter index: {worst_param_index}, value: {worst_param_value}')
-worst_image_path = filtered_data[worst_param_index].content.imagePath
-worst_image = Image.open(worst_image_path)
-plt.imshow(worst_image, 'gray')
-ticks_off()
-# %%
-params[worst_param_index]
+fig = plt.figure(figsize=(6, 6), dpi=200)
+ani = animation.FuncAnimation(fig, plot_frame, frames=len(pc_values), interval=args.interval)
+print(f'Saving animation to {args.output}...')
+ani.save(args.output, writer='ffmpeg', fps=args.fps)

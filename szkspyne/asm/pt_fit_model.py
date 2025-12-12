@@ -24,7 +24,7 @@ from szkspyne.torch_utils import bicubic, lerp2d
 from szkspyne.asm.point_data import MovablePoints
 from szkmipy import mhd
 from szkspyne.labelme_utils import LabelMe, ShapeDict
-from szkspyne.asm.point_data import MovablePoints, SpinePointData
+from szkspyne.asm.point_data import MovablePoints, PresetPointData
 
 
 log_format = '%(color)s[%(levelname)1.1s %(asctime)s.%(msecs)d %(module)s:%(lineno)d]%(end_color)s %(message)s'
@@ -315,7 +315,7 @@ def fit(args, pca_models: List[TorchPCA], original_json: LabelMe, heatmaps: np.n
             continue
         name = pca.model_name
         icp_n_comps = pca.calc_n_comps(args.icp_contr_rate)
-        movable_points = SpinePointData.from_shape_dict(scaled_lm_data.into_shape_dict())
+        movable_points = PresetPointData.from_shape_dict(scaled_lm_data.into_shape_dict())
         pt_pca = PointAlignModel(pca, icp_n_comps, movable_points, use_bicubic=args.bicubic)
         pt_pca.to(device)
         # t_vert_points = [pt_pca.pt2ref(torch.Tensor(p).to(device)) for p in vert_points]

@@ -35,6 +35,10 @@ parser.add_argument(
     metavar='<input>',
 )
 parser.add_argument('--mirror', help='Add horizontally mirrored point set to the dataset', action='store_true')
+# output filename
+parser.add_argument('--l4', help='Output L4 augmented ndjson filename', metavar='<l4>')
+parser.add_argument('--l5', help='Output L5 augmented ndjson filename', metavar='<l5>')
+parser.add_argument('--l6', help='Output L6 augmented ndjson filename', metavar='<l6>')
 # parser.add_argument('--labelme', help='Input is in labelme format', action='store_true')
 
 args, _unknown = parser.parse_known_args()
@@ -56,6 +60,7 @@ if args.mirror:
         if 'ap_whole' not in data_line.content.flags:
             continue
         data_line = copy.deepcopy(data_line)
+        data_line.content.flags.add('mirrored')
         d = data_line.content
         width = d.imageWidth
         kps = d.shapes['point']
@@ -122,12 +127,13 @@ all_data += l4_data + l6_data
 
 logger.info('Total data after augmentation: %d', len(all_data))
 valid_count = 0
+lines = {'L4': [], 'L5': [], 'L6': []}
 for data_line in all_data:
     d = data_line.content
     ns = {k: len(v) for k, v in d.shapes['point'].items()}
     valid = True
 
-    for point_count in (L4_POINT_COUNTS, L5_POINT_COUNTS, L6_POINT_COUNTS):
+    for l_count, point_count in zip(['L4', 'L5', 'L6'], [L4_POINT_COUNTS, L5_POINT_COUNTS, L6_POINT_COUNTS]):
         valid = True
         for label in VERT_LABELS:
             if ns[label] != point_count[VERT_LABELS.index(label)]:
@@ -143,8 +149,20 @@ for data_line in all_data:
                 new_points[label] = pts[:, np.newaxis].tolist()
             data_line.content.shapes['point'] = new_points
             lm_data_line = data_line.into_labelme_line()
-            # print(data_line.model_dump())
-            print(json.dumps(lm_data_line.model_dump(), ensure_ascii=False))
+            flags = lm_data_line.content.flags
+            for l in ['L4', 'L5', 'L6']:
+                flags.pop(l, None)
+            flags[l_count] = True
+            lines[l_count].append(lm_data_line)
             break
 
 logger.info('Valid data count: %d', valid_count)
+if args.l4:
+    labelme_utils.ShapeDictLine.save_to_ndjson(lines['L4'], args.l4)
+    logger.info('Wrote L4 data (%d) to %s', len(lines['L4']), args.l4)
+if args.l5:
+    labelme_utils.ShapeDictLine.save_to_ndjson(lines['L5'], args.l5)
+    logger.info('Wrote L5 data (%d) to %s', len(lines['L5']), args.l5)
+if args.l6:
+    labelme_utils.ShapeDictLine.save_to_ndjson(lines['L6'], args.l6)
+    logger.info('Wrote L6 data (%d) to %s', len(lines['L6']), args.l6)

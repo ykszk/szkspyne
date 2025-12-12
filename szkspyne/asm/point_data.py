@@ -130,11 +130,11 @@ class MovablePoints():
                 reference_points.append(None)
         return MovablePoints(points=points, reference_points=reference_points, point_counts=point_counts)
 
-class SpinePointData(MovablePoints):
+class PresetPointData(MovablePoints):
     @staticmethod
     def from_shape_dict(shape_dict: labelme_utils.ShapeDict) -> 'MovablePoints':
         """
-        Convert LabelMe data to SpinePointData
+        Convert LabelMe data to PresetPointData based on settings.ASM_LABEL_NAMES and settings.ANCHOR_LABEL_NAMES.
         """
         return MovablePoints.from_labels(
             shape_dict,
@@ -173,19 +173,19 @@ class ActiveShapeModelBuilder:
         """
         np.savez(filename, model_name=model_name, mean=self.pca.mean_, components=self.pca.components_, explained_variance=self.pca.explained_variance_, explained_variance_ratio=self.pca.explained_variance_ratio_, template_points=self.template.points, template_reference=self.template.reference_points, labels=labels, point_counts=point_counts)
 
-    def to_dict(self) -> dict:
+    def to_dict(self, model_name: str, labels: List[str]) -> dict:
         """
         Convert the ActiveShapeModel to a JSON serializable dictionary.
         """
         return {
-            'model_name': self.pca.__class__.__name__,
+            'model_name': model_name,
             'mean': self.pca.mean_.tolist(),
             'components': self.pca.components_.tolist(),
             'explained_variance': self.pca.explained_variance_.tolist(),
             'explained_variance_ratio': self.pca.explained_variance_ratio_.tolist(),
             'template_points': self.template.points.tolist(),
             'template_reference': self.template.reference_points,
-            'labels': settings.ASM_LABEL_NAMES,
+            'labels': labels,
             'point_counts': self.template.point_counts
         }
 
@@ -203,24 +203,35 @@ def main():
     )
     parser.add_argument(
         '--model_name',
-        help='Name of the model: %(default)s',
-        default='active_shape_model',
+        help='Name of the model',
     )
     parser.add_argument(
         '--json',
         help="Save the model as a JSON file")
+    parser.add_argument(
+        '--labelme',
+        help='Input is in labelme format',
+        action='store_true',
+    )
 
     args = parser.parse_args()
 
-    shape_dicts = labelme_utils.ShapeDictLine.from_lines(args.input)
+    if args.labelme:
+        shape_dicts = [line.into_shape_dict_line() for line in labelme_utils.LabelMeLine.from_lines(args.input)]
+    else:
+        shape_dicts = labelme_utils.ShapeDictLine.from_ndjson(args.input)
     logger.info('Loaded %d shape dicts', len(shape_dicts))
-    spine_data = [SpinePointData.from_shape_dict(shape_dict.content) for shape_dict in shape_dicts]
+    logger.info(f"Loading point data for {settings.ASM_LABEL_NAMES} and {settings.ANCHOR_LABEL_NAMES}")
+    spine_data = [PresetPointData.from_shape_dict(shape_dict.content) for shape_dict in shape_dicts]
     logger.info('Point counts: %s', spine_data[0].point_counts)
 
     logger.info('Building Active Shape Model from %d spine data', len(spine_data))
     asm_builder = ActiveShapeModelBuilder.from_data(spine_data)
     # %%
     logger.info('Saving Active Shape Model to %s', args.output)
+    if not args.model_name:
+        from pathlib import Path
+        args.model_name = Path(args.output).stem
     asm_builder.save(args.output, args.model_name, settings.ASM_LABEL_NAMES, spine_data[0].point_counts)
     logger.info('Active Shape Model saved successfully.')
 
