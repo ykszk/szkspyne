@@ -104,11 +104,30 @@ l4_data = copy.deepcopy(all_data)
 for data_line in l4_data:
     d = data_line.content
     np_pts = {}
+    # Remove bottom point of vertebrae
     for label, pts in d.shapes['point'].items():
         if label in VERT_LABELS:
-            np_pts[label] = pts[1:].copy()
+            np_pts[label] = pts[:-1].copy()
         else:
             np_pts[label] = pts.copy()
+    # # reset "C7-TL" and "C7-TR" with highest point (minimum y) of TL and TR respectively
+    # if 'TL' in d.shapes['point'] and 'C7-TL' in d.shapes['point']:
+    #     tl_pts = d.shapes['point']['TL']
+    #     min_idx = np.argmin(tl_pts[:, 1])
+    #     np_pts['C7-TL'] = tl_pts[min_idx:min_idx+1].copy()
+    # if 'TR' in d.shapes['point'] and 'C7-TR' in d.shapes['point']:
+    #     tr_pts = d.shapes['point']['TR']
+    #     min_idx = np.argmin(tr_pts[:, 1])
+    #     np_pts['C7-TR'] = tr_pts[min_idx:min_idx+1].copy()
+    # reset "S-TL" and "S-TR" with lowest point (maximum y) of TL and TR respectively
+    if 'TL' in d.shapes['point'] and 'S-TL' in d.shapes['point']:
+        tl_pts = np_pts['TL']
+        max_idx = np.argmax(tl_pts[:, 1])
+        np_pts['S-TL'] = tl_pts[max_idx:max_idx+1].copy()
+    if 'TR' in d.shapes['point'] and 'S-TR' in d.shapes['point']:
+        tr_pts = np_pts['TR']
+        max_idx = np.argmax(tr_pts[:, 1])
+        np_pts['S-TR'] = tr_pts[max_idx:max_idx+1].copy()
     d.shapes['point'] = np_pts
 
 # Create L6 data from L5 (and L5 from L4)
@@ -122,6 +141,15 @@ for data_line in l6_data:
             np_pts[label] = extrapolate(pts)
         else:
             np_pts[label] = pts.copy()
+    # reset "S-TL" and "S-TR" with lowest point (maximum y) of TL and TR respectively
+    if 'TL' in d.shapes['point'] and 'S-TL' in d.shapes['point']:
+        tl_pts = np_pts['TL']
+        max_idx = np.argmax(tl_pts[:, 1])
+        np_pts['S-TL'] = tl_pts[max_idx:max_idx+1].copy()
+    if 'TR' in d.shapes['point'] and 'S-TR' in d.shapes['point']:
+        tr_pts = np_pts['TR']
+        max_idx = np.argmax(tr_pts[:, 1])
+        np_pts['S-TR'] = tr_pts[max_idx:max_idx+1].copy()
     d.shapes['point'] = np_pts
 all_data += l4_data + l6_data
 
