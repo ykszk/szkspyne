@@ -174,11 +174,11 @@ def create_onnx(args):
             # model.align_corners = False
 
     if args.weights.endswith('.ckpt'):
-        model = LitSMP.load_from_checkpoint(args.weights).to('cpu')
-        set_align_false(model)
+        model = LitSMP.load_from_checkpoint(args.weights, map_location=torch.device('cpu'))
     else:
         model = LitSMP(args.in_chs, args.out_chs, args).model
         model.load_state_dict(torch.load(args.weights))
+    if args.align_false:
         set_align_false(model)
     model.eval()
 
@@ -225,6 +225,10 @@ if __name__ == "__main__":
     # height
     parser_onnx.add_argument(
         '--height', help='Height of the input image', type=int, default=768, metavar='<value>'
+    )
+    # align false
+    parser_onnx.add_argument(
+        '--align_false', help='Set align corner false in upsampling layers. Note that this may affect model accuracy.', action='store_true'
     )
     args = parser.parse_args()
 
