@@ -10,6 +10,7 @@ from logzero import logger
 from typing import Union
 
 from szkmipy import mhd
+from szkmipy import boundingbox as bb
 from szkspyne import settings
 from szkspyne.heatmap2labelme import save_kps_json
 
@@ -234,13 +235,17 @@ def main():
         from torch.utils.data import DataLoader, Dataset
 
         class NDArray(Dataset):
-            def __init__(self, filenames: List[Path]):
+            def __init__(self, filenames: List[Path], bounding_boxes: List = None):
                 self.filenames = filenames
+                self.bounding_boxes = bounding_boxes
 
             def __getitem__(self, index):
                 filename = self.filenames[index]
                 target_height = int(args.height * args.auto_crop_multiplier)
                 arr, original_shape = load(filename, target_height, False, args.clahe)
+                if self.bounding_boxes is not None:
+                    bbox = self.bounding_boxes[index]
+                    arr = bb.crop(arr, bbox)
                 if args.clahe:
                     original_arr, _ = load(filename, target_height, False, False)
                     arr = [arr, original_arr]

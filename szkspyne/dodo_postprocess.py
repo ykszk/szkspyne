@@ -990,7 +990,11 @@ def task_onnx():
         return
     model_file = model_files[-1]
     outfile = model_dir / 'model.onnx'
-    action = ['python', script, 'onnx', '1', '13', model_file, outfile]
+    with open(model_dir / '../args.json') as f:
+        args = json.load(f)
+        height = str(args['height'])
+        encoder = args['encoder_name']
+    action = ['python', script, 'onnx', '1', '13', model_file, outfile, '--height', height, '--encoder_name', encoder]
     yield {
         'name': 'convert-onnx',
         'actions': [action],
