@@ -1,7 +1,7 @@
 #%%
 from typing import List, Optional
 
-from skimage.transform import AffineTransform
+from skimage.transform import SimilarityTransform
 import numpy as np
 from logzero import logger
 from szkspyne import settings, labelme_utils
@@ -25,7 +25,7 @@ class MovablePoints():
             )
         self.point_counts = point_counts
 
-    def calculate_transform(self, src_points: 'MovablePoints', inverse=False) -> AffineTransform:
+    def calculate_transform(self, src_points: 'MovablePoints', inverse=False) -> SimilarityTransform:
         """
         Calculate the transform parameters to transform the src_points to the template points.
         The transform parameters are defined as (scale, rotation, translation).
@@ -33,14 +33,14 @@ class MovablePoints():
         src = src_points.reference_points
         dst = self.reference_points
         # calculate similarity transform parameters
-        tf = AffineTransform()
+        tf = SimilarityTransform()
         if inverse:
             tf.estimate(dst, src)
         else:
             tf.estimate(src, dst)
         return tf
     
-    def calculate_transform_with_missing(self, src_points: 'MovablePoints', inverse=False) -> AffineTransform:
+    def calculate_transform_with_missing(self, src_points: 'MovablePoints', inverse=False) -> SimilarityTransform:
         """
         Calculate the transform parameters to transform the src_points to the template points.
         The transform parameters are defined as (scale, rotation, translation).
@@ -51,7 +51,7 @@ class MovablePoints():
         dst = np.array([self.reference_points[i] for i in valid_indices])
         if len(src) < 2 or len(dst) < 2:
             raise ValueError("Not enough reference points to calculate transform")
-        tf = AffineTransform()
+        tf = SimilarityTransform()
         if inverse:
             tf.estimate(dst, src)
         else:
@@ -80,14 +80,14 @@ class MovablePoints():
         if len(mps) == 1:
             return tentative_template
         tfs = [tentative_template.calculate_transform(mp) for mp in mps[1:]]
-        param_arrs = np.array([[tf.scale[0], tf.scale[1], tf.translation[0], tf.translation[1], tf.rotation] for tf in tfs])
+        param_arrs = np.array([[tf.scale, tf.translation[0], tf.translation[1], tf.rotation] for tf in tfs])
         mean_params = np.mean(param_arrs, axis=0)
         # calculate the mahalanobis distance from the mean
         cov = np.cov(param_arrs.T)
         inv_cov = np.linalg.inv(cov)
         distances = []
         for tf in tfs:
-            diff = np.array([tf.scale[0], tf.scale[1], tf.translation[0], tf.translation[1], tf.rotation]) - mean_params
+            diff = np.array([tf.scale, tf.translation[0], tf.translation[1], tf.rotation]) - mean_params
             mahalanobis_distance = np.sqrt(diff @ inv_cov @ diff.T)
             distances.append(mahalanobis_distance)
         # find the index of the minimum distance
@@ -166,14 +166,14 @@ class ActiveShapeModelBuilder:
 
         return ActiveShapeModelBuilder(pca=pca, template=template)
     
-    def save(self, filename: str, model_name: str, labels: List[str], point_counts: List[int]) -> None:
+    def save(self, filename: str, model_name: str, labels: List[str], reference_labels: List[str]) -> None:
         """
         Save the ActiveShapeModel to a file.
         The file will contain the PCA components and the template points.
         """
-        np.savez(filename, model_name=model_name, mean=self.pca.mean_, components=self.pca.components_, explained_variance=self.pca.explained_variance_, explained_variance_ratio=self.pca.explained_variance_ratio_, template_points=self.template.points, template_reference=self.template.reference_points, labels=labels, point_counts=point_counts)
+        np.savez(filename, model_name=model_name, pca_mean=self.pca.mean_, pca_components=self.pca.components_, explained_variance=self.pca.explained_variance_, explained_variance_ratio=self.pca.explained_variance_ratio_, template_points=self.template.points, template_reference=self.template.reference_points, labels=labels, point_counts=self.template.point_counts, reference_labels=reference_labels)
 
-    def to_dict(self, model_name: str, labels: List[str]) -> dict:
+    def to_dict(self, model_name: str, labels: List[str], reference_labels: List[str]) -> dict:
         """
         Convert the ActiveShapeModel to a JSON serializable dictionary.
         """
@@ -186,6 +186,7 @@ class ActiveShapeModelBuilder:
             'template_points': self.template.points.tolist(),
             'template_reference': self.template.reference_points,
             'labels': labels,
+            'reference_labels': reference_labels,
             'point_counts': self.template.point_counts
         }
 
@@ -219,7 +220,7 @@ def main():
     if args.labelme:
         shape_dicts = [line.into_shape_dict_line() for line in labelme_utils.LabelMeLine.from_lines(args.input)]
     else:
-        shape_dicts = labelme_utils.ShapeDictLine.from_ndjson(args.input)
+        shape_dicts = labelme_utils.ShapeDictLine.from_lines(args.input)
     logger.info('Loaded %d shape dicts', len(shape_dicts))
     logger.info(f"Loading point data for {settings.ASM_LABEL_NAMES} and {settings.ANCHOR_LABEL_NAMES}")
     spine_data = [PresetPointData.from_shape_dict(shape_dict.content) for shape_dict in shape_dicts]
@@ -232,12 +233,12 @@ def main():
     if not args.model_name:
         from pathlib import Path
         args.model_name = Path(args.output).stem
-    asm_builder.save(args.output, args.model_name, settings.ASM_LABEL_NAMES, spine_data[0].point_counts)
+    asm_builder.save(args.output, args.model_name, settings.ASM_LABEL_NAMES, settings.ANCHOR_LABEL_NAMES)
     logger.info('Active Shape Model saved successfully.')
 
     if args.json:
         import json
-        json_output = asm_builder.to_dict()
+        json_output = asm_builder.to_dict(args.model_name, settings.ASM_LABEL_NAMES, settings.ANCHOR_LABEL_NAMES)
         with open(args.json, 'w') as f:
             json.dump(json_output, f, indent=4)
         logger.info('Active Shape Model saved as JSON to %s', args.json)
