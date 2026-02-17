@@ -8,24 +8,86 @@ import numpy as np
 from scipy.interpolate import CubicSpline
 import json
 
+# def extrapolate(pts: np.ndarray):
+#     '''
+#     Append one extra point using extrapolation
+#     '''
+#     pts = pts[pts[:, 1].argsort()]  # sort by y
+#     bc_type = 'natural'
+
+#     xs = np.arange(len(pts))
+#     sp_x = CubicSpline(xs, pts[:, 0], bc_type=bc_type)
+#     sp_y = CubicSpline(xs, pts[:, 1], bc_type=bc_type)
+#     tl_xs = sp_x(len(pts))
+#     tl_ys = sp_y(len(pts))
+#     new_pts = np.zeros((pts.shape[0] + 1, 2), dtype=pts.dtype)
+#     new_pts[:-1] = pts
+#     new_pts[-1, 0] = tl_xs
+#     new_pts[-1, 1] = tl_ys
+#     return new_pts
+
+# def extrapolate(pts: np.ndarray):
+#     '''
+#     Append one extra point using extrapolation with arc-length parametrization
+#     '''
+#     pts = pts[pts[:, 1].argsort()]  # sort by y
+    
+#     # Calculate cumulative arc length as parameter
+#     diffs = np.diff(pts, axis=0)
+#     segment_lengths = np.sqrt((diffs**2).sum(axis=1))
+#     cumulative_lengths = np.concatenate([[0], np.cumsum(segment_lengths)])
+    
+#     # Fit cubic splines using arc length as parameter
+#     bc_type = 'natural'
+#     sp_x = CubicSpline(cumulative_lengths, pts[:, 0], bc_type=bc_type)
+#     sp_y = CubicSpline(cumulative_lengths, pts[:, 1], bc_type=bc_type)
+    
+#     # Extrapolate by extending the arc length
+#     # Estimate the next segment length (e.g., average of last few segments)
+#     if len(segment_lengths) >= 2:
+#         next_segment_length = np.mean(segment_lengths[-2:])
+#     else:
+#         next_segment_length = segment_lengths[-1]
+    
+#     next_param = cumulative_lengths[-1] + next_segment_length
+    
+#     tl_xs = sp_x(next_param)
+#     tl_ys = sp_y(next_param)
+    
+#     new_pts = np.zeros((pts.shape[0] + 1, 2), dtype=pts.dtype)
+#     new_pts[:-1] = pts
+#     new_pts[-1, 0] = tl_xs
+#     new_pts[-1, 1] = tl_ys
+#     return new_pts
+
+
 def extrapolate(pts: np.ndarray):
     '''
-    Append one extra point using extrapolation
+    Append one extra point using polynomial fitting (5-degree)
     '''
     pts = pts[pts[:, 1].argsort()]  # sort by y
-    bc_type = 'natural'
-
-    xs = np.arange(len(pts))
-    sp_x = CubicSpline(xs, pts[:, 0], bc_type=bc_type)
-    sp_y = CubicSpline(xs, pts[:, 1], bc_type=bc_type)
-    tl_xs = sp_x(len(pts))
-    tl_ys = sp_y(len(pts))
+    
+    # Use indices as parameter for polynomial fitting
+    t = np.arange(len(pts))
+    
+    # Determine polynomial degree (5 or less if we have fewer points)
+    poly_degree = min(5, len(pts) - 1)
+    
+    # Fit polynomials for x(t) and y(t)
+    poly_x = np.polyfit(t, pts[:, 0], poly_degree)
+    poly_y = np.polyfit(t, pts[:, 1], poly_degree)
+    
+    # Extrapolate to the next parameter value
+    next_t = len(pts)
+    
+    tl_xs = np.polyval(poly_x, next_t)
+    tl_ys = np.polyval(poly_y, next_t)
+    
     new_pts = np.zeros((pts.shape[0] + 1, 2), dtype=pts.dtype)
     new_pts[:-1] = pts
     new_pts[-1, 0] = tl_xs
     new_pts[-1, 1] = tl_ys
     return new_pts
-
 
 # if __name__ == '__main__':
 parser = argparse.ArgumentParser(description='Augment spine point dataset')
