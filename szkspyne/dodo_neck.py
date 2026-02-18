@@ -1,11 +1,12 @@
+import json
 import os
 from pathlib import Path
-import json
+
 from logzero import logger
-from szkspyne.utils.doit import Pipeline, concat
-from szkspyne.utils.doit import make_phony, Pipeline
-from szkspyne.settings import ASM_LABEL_NAMES
+
 import szkspyne.utils.task as task_utils
+from szkspyne.settings import ASM_LABEL_NAMES
+from szkspyne.utils.doit import Pipeline, concat, make_phony
 
 RESULT_DIR = Path(os.environ['RESULT_DIR'])
 os.environ['DATA_DIR'] = str(RESULT_DIR)
@@ -191,8 +192,8 @@ def task_heat2lm():
     '''
     for fold_dir in FOLD_DIRS:
         script = SRC_DIR / 'heatmap2labelme.py'
-        infile = fold_dir / f'y_pred.mha'
-        infile2 = fold_dir / f'test.ndjson'
+        infile = fold_dir / 'y_pred.mha'
+        infile2 = fold_dir / 'test.ndjson'
         outdir = fold_dir / 'auto'
         outdir.mkdir(parents=True, exist_ok=True)
         outfile = outdir / TGT_HM_KPS
@@ -205,7 +206,7 @@ def task_heat2lm():
         }
 
         script = SCRIPT_DIR / 'hm2db.py'
-        infile = fold_dir / f'y_pred.mha'
+        infile = fold_dir / 'y_pred.mha'
         infile2 = outfile
         outfile = HM_IMAGE_DB
         phony = fold_dir / f'{PHONY_DB_TGT}'
@@ -486,7 +487,7 @@ def task_summary():
     draw_phony = RESULT_DIR / 'postprocess/reference/draw.done'
     file_dep.append(draw_phony)
 
-    title = f'{{"title":"neck summary"}}'
+    title = '{{"title":"neck summary"}}'
     c1 = f"jupytext --to ipynb --output - {script} --update-metadata '{title}'"
     c2 = f'jupyter nbconvert --stdin --to html --execute --no-input --output {output}'
 
@@ -523,6 +524,7 @@ def task_apply_model():
     script = SRC_DIR / 'apply_model.py'
     outdir = RESULT_DIR / 'folds/0/result'
     outdir.mkdir(parents=True, exist_ok=True)
+    max_nums_json = SRC_DIR / 'conf/max_nums_neck.json'
     # search for the best model
     model_dir = os.environ.get('MODEL_DIR')
     assert model_dir is not None
@@ -549,6 +551,8 @@ def task_apply_model():
         '--output',
         outdir,
         '--keep_image_path',
+        '--max_nums',
+        max_nums_json,
     ]
     if False:  # APPLY_CLAHE:
         action.append('--clahe')

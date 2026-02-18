@@ -1,7 +1,8 @@
-from typing import Annotated, Any, Dict, Optional, Tuple, Union, List
+from typing import Annotated, Any, Dict, List, Optional, Tuple, Union
 
-from pydantic import BaseModel, Discriminator, Tag
 import pandas as pd
+from pydantic import BaseModel, Discriminator, Tag
+
 from szkspyne.type import LineMixin
 
 
@@ -66,9 +67,11 @@ class MeasureResult(BaseModel):
                 pass
             elif isinstance(ak, cls.Error):
                 measurements[k] = ak.model_copy()
-            else:
-                assert isinstance(bk, cls.Error)
+            elif isinstance(bk, cls.Error):
                 measurements[k] = bk.model_copy()
+            else:
+                # raise ValueError(f'Measurement {k} is missing in one of the MeasureResult objects')
+                measurements[k] = cls.Error(Err='Measurement is missing in one of the MeasureResult objects')
         return MeasureResult(measurements=measurements, unit_of_length=a.unit_of_length)
 
     def difference(self, other: 'MeasureResult') -> 'MeasureResult':
@@ -78,7 +81,7 @@ class MeasureResult(BaseModel):
         return MeasureResult.differences(self, other)
 
 
-class MeasureResultLine(BaseModel):
+class MeasureResultLine(BaseModel, LineMixin):
     filename: str
     content: MeasureResult
 
@@ -228,8 +231,8 @@ class SpinalPointsLine(BaseModel, LineMixin):
     content: SpinalPoints
 
 
-import sys
 import argparse
+import sys
 
 
 def main():

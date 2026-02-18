@@ -2,18 +2,20 @@
 # title: Neck measurement result analysis
 
 # %%
-import subprocess
-from typing import List
-from szkspyne.utils import scolrs
-from pathlib import Path
 import json
-import matplotlib.pyplot as plt
-import seaborn as sns
-from scipy import stats
-from math import sqrt
-from IPython.display import display, HTML
-import pandas as pd
 import os
+import subprocess
+from math import sqrt
+from pathlib import Path
+from typing import List
+
+import matplotlib.pyplot as plt
+import pandas as pd
+import seaborn as sns
+from IPython.display import HTML, display
+from scipy import stats
+
+from szkspyne.utils import scolrs
 
 # display(HTML("<style>.main-container { max-width:600 !important; }</style>"))
 # display(HTML('<style>table.dataframe{overflow-x: scroll}</style>'))
@@ -37,8 +39,8 @@ else:
 EXTERNAL_TEST = os.environ.get('EXTERNAL_TEST', 'False').lower() in ('true', '1', 'yes')
 
 
-def load_as_measures(filename: str, exclude = None) -> List[scolrs.MeasureListResultLine]:
-    lines = scolrs.MeasureListResultLine.from_ndjson(filename)
+def load_as_measures(filename: str, exclude = None) -> List[scolrs.MeasureResultLine]:
+    lines = scolrs.MeasureResultLine.from_ndjson(filename)
     new_lines = []
     # strip parent directory form .filename
     for line in lines:
@@ -60,18 +62,18 @@ diff_lines = []
 for ai_measure in ai_measures:
     ref_measure = ref_measure_dict[ai_measure.filename]
     diff = ref_measure.content.difference(ai_measure.content)
-    diff_line = scolrs.MeasureListResultLine(filename=ai_measure.filename, content=diff)
+    diff_line = scolrs.MeasureResultLine(filename=ai_measure.filename, content=diff)
     diff_lines.append(diff_line)
 
 # %%
-df = scolrs.MeasureListResultLine.to_dataframe(diff_lines)
+df = scolrs.MeasureResultLine.to_dataframe(diff_lines)
 # df.head()
 
 # %%
 
 
-ref_flat_measures = [scolrs.MeasureResultLine(filename=m.filename, content=m.content.flatten()) for m in ref_measures]
-ai_flat_measures = [scolrs.MeasureResultLine(filename=m.filename, content=m.content.flatten()) for m in ai_measures]
+ref_flat_measures = ref_measures#[scolrs.MeasureResultLine(filename=m.filename, content=m.content.flatten()) for m in ref_measures]
+ai_flat_measures = ai_measures#[scolrs.MeasureResultLine(filename=m.filename, content=m.content.flatten()) for m in ai_measures]
 
 df_ref = scolrs.MeasureResultLine.to_dataframe(ref_flat_measures)
 df_ref.to_csv(data_dir / 'postprocess/measures_reference.csv')
@@ -81,9 +83,10 @@ df_ai.to_csv(data_dir / 'postprocess/measures_ai.csv')
 df_ai = df_ai.apply(pd.to_numeric, errors='coerce')
 
 #%%
-diff_flat_measures = [
-    scolrs.MeasureResultLine(filename=m.filename, content=m.content.flatten()) for m in diff_lines
-]
+# diff_flat_measures = [
+#     scolrs.MeasureResultLine(filename=m.filename, content=m.content.flatten()) for m in diff_lines
+# ]
+diff_flat_measures = diff_lines
 df_diff = scolrs.MeasureResultLine.to_dataframe(diff_flat_measures)
 df_diff.to_csv(data_dir / 'postprocess/measures_diff.csv')
 
@@ -136,7 +139,16 @@ for col in df_ref.columns:
     df = df.dropna()
 
     display_header('h3', f'{col}: {len(df)} data points')
-    plt.axline(
+
+    # ax = sns.scatterplot(data=df, x='Reference', y='AI', alpha=0.5)
+    g = sns.jointplot(data=df, x='Reference', y='AI', joint_kws={'alpha': 0.5})
+    # draw diagonal line
+    x0, x1 = g.ax_joint.get_xlim()
+    y0, y1 = g.ax_joint.get_ylim()
+    lims = [max(x0, y0), min(x1, y1)]
+    # g.ax_joint.plot(lims, lims, '-r')
+
+    g.ax_joint.axline(
         (df['Reference'].min(), df['Reference'].min()),
         slope=1,
         color='gray',
@@ -144,15 +156,10 @@ for col in df_ref.columns:
         label='y = x',
         alpha=0.25,
     )
-    ax = sns.scatterplot(data=df, x='Reference', y='AI', alpha=0.5)
-    # draw diagonal line
-    x0, x1 = ax.get_xlim()
-    y0, y1 = ax.get_ylim()
-    lims = [max(x0, y0), min(x1, y1)]
 
     plt.xlabel('Reference')
     plt.ylabel('AI')
-    plt.title(col)
+    # plt.title(col)
     plt.legend()
     plt.show()
 
@@ -173,6 +180,7 @@ for col in df_ref.columns:
     display(df_sorted)
 
     # create case catalog
+    continue
     n_cases = 5
     case_filenames = []
     for i, row in df_sorted.iloc[:n_cases].iterrows():

@@ -1,0 +1,18 @@
+{
+    "TL": 6,
+    "TR": 6,
+    "BL": 7,
+    "BR": 7,
+    "AnteriorDens": 1,
+    "PosteriorDens": 1,
+    "AnteriorC1Arch ": 1,
+    "Lamina": 8,
+    "Brow": 1,
+    "Sella": 1,
+    "ExternalAuditoryCanal": 2,
+    "Orbit": 1,
+    "Occipital": 1,
+    "Chin": 1,
+    "Manubrium": 1,
+    "PosteriorHardPalate": 1
+}

@@ -327,10 +327,6 @@ def sort_kps(points):
     return kps
 
 
-def crop_image(inname: str, outname: str):
-    pass
-
-
 def main():
     import argparse
 
