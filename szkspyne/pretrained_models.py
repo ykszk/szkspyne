@@ -175,6 +175,7 @@ def create_onnx(args):
             # model.align_corners = False
 
     if args.weights.endswith('.ckpt'):
+        torch.serialization.add_safe_globals([argparse.Namespace])
         model = LitSMP.load_from_checkpoint(args.weights, map_location=torch.device('cpu'))
     else:
         model = LitSMP(args.in_chs, args.out_chs, args).model
@@ -201,7 +202,7 @@ def create_onnx(args):
                 'modelInput': {0: 'batch_size', 3: 'image_width'},  # variable length axes
                 'modelOutput': {0: 'batch_size', 3: 'image_width'},
             },
-            # dynamo=True,
+            dynamo=args.dynamo,
         )
     print(" ")
     print('Model has been converted to ONNX')
@@ -230,6 +231,10 @@ if __name__ == "__main__":
     # align false
     parser_onnx.add_argument(
         '--align_false', help='Set align corner false in upsampling layers. Note that this may affect model accuracy.', action='store_true'
+    )
+    # dynamo
+    parser_onnx.add_argument(
+        '--dynamo', help='Use torch dynamo to optimize the model before export. Note that this may affect model accuracy.', action='store_true'
     )
     args = parser.parse_args()
 
