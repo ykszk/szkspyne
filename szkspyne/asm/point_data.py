@@ -1,11 +1,12 @@
 #%%
+from dataclasses import dataclass
 from typing import List, Optional
 
-from skimage.transform import SimilarityTransform
 import numpy as np
 from logzero import logger
-from szkspyne import settings, labelme_utils
-from dataclasses import dataclass
+from skimage.transform import SimilarityTransform
+
+from szkspyne import labelme_utils, settings
 
 #%%
 
@@ -146,6 +147,7 @@ class PresetPointData(MovablePoints):
 # %%
 from sklearn.decomposition import PCA
 
+
 @dataclass
 class ActiveShapeModelBuilder:
     pca: PCA
@@ -171,7 +173,7 @@ class ActiveShapeModelBuilder:
         Save the ActiveShapeModel to a file.
         The file will contain the PCA components and the template points.
         """
-        np.savez(filename, model_name=model_name, pca_mean=self.pca.mean_, pca_components=self.pca.components_, explained_variance=self.pca.explained_variance_, explained_variance_ratio=self.pca.explained_variance_ratio_, template_points=self.template.points, template_reference=self.template.reference_points, labels=labels, point_counts=self.template.point_counts, reference_labels=reference_labels)
+        np.savez(filename, model_name=model_name, mean=self.pca.mean_, components=self.pca.components_, explained_variance=self.pca.explained_variance_, explained_variance_ratio=self.pca.explained_variance_ratio_, template_points=self.template.points, template_reference=self.template.reference_points, labels=labels, point_counts=self.template.point_counts, reference_labels=reference_labels)
 
     def to_dict(self, model_name: str, labels: List[str], reference_labels: List[str]) -> dict:
         """
@@ -192,8 +194,9 @@ class ActiveShapeModelBuilder:
 
 
 def main():
-    import sys
     import argparse
+    import sys
+
     from szkspyne import labelme_utils
 
     parser = argparse.ArgumentParser(

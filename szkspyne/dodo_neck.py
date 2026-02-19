@@ -1,7 +1,11 @@
+#%%
+import base64
+import gzip
 import json
 import os
 from pathlib import Path
 
+from bs4 import BeautifulSoup
 from logzero import logger
 
 import szkspyne.utils.task as task_utils
@@ -40,6 +44,42 @@ if EXTERNAL_TEST:
     FOLDS_DIRS = [RESULT_DIR / 'folds/0']
     (FOLD_DIRS[0] / 'ai').mkdir(parents=True, exist_ok=True)
     (RESULT_DIR / 'postprocess').mkdir(parents=True, exist_ok=True)
+
+
+def extract_measurements_from_html(html_path) -> str:
+    with open(html_path) as f:
+        soup = BeautifulSoup(f, 'html.parser')
+    mes_json = soup.find(id="embedded-measurements.json")
+    assert mes_json is not None, "No element with id 'embedded-measurements.json' found"
+
+
+    json_str = gzip.decompress(base64.b64decode(mes_json.text.strip())).decode('utf-8')
+    return json_str
+
+
+def task_create_onnx():
+    '''
+    Convert PyTorch model to ONNX format for external test
+    '''
+    if EXTERNAL_TEST:
+        return
+    script = SRC_DIR / 'pretrained_models.py'
+    for fold_dir in FOLD_DIRS:
+        logger.info(f'Processing fold directory: {fold_dir}')
+        model_dir = fold_dir / "checkpoint"
+        assert model_dir is not None
+        model_dir = Path(model_dir)
+        model_files = list(model_dir.glob('*.ckpt'))
+        model_files.sort()
+        model_file = model_files[-1]
+        output_file = fold_dir / 'model.onnx'
+        action = ['python3', script, 'onnx', str(model_file), str(output_file)]
+        yield {
+            'name': f'{fold_dir.name}',
+            'actions': [action],
+            'file_dep': [model_file],
+            'targets': [output_file],
+        }
 
 def task_build_pca():
     '''
@@ -355,24 +395,8 @@ def task_ref_draw():
 
 
 def task_ai_measure():
-    # scolrs measure --ndjson --output ai_measure.ndjson --input <input>
-    native_files = []
-    for fold_dir in FOLD_DIRS:
-        # measure
-        cmd = 'scolrs'
-        infile = fold_dir / AI_SUBDIR / 'native_pca_hm_keypoints.ndjson'
-        native_files.append(infile)
-        outfile = fold_dir / AI_SUBDIR / 'measurements.ndjson'
-        action = [cmd, 'measure', infile, outfile, 'neck']
-        yield {
-            'name': f'{fold_dir.name}',
-            'actions': [action],
-            'file_dep': [infile],
-            'targets': [outfile],
-        }
-
     # concat measurements
-    infile = [fold_dir / AI_SUBDIR / 'measurements.ndjson' for fold_dir in FOLD_DIRS]
+    infile = [str(fold_dir / AI_SUBDIR / 'measurements.ndjson') for fold_dir in FOLD_DIRS]
     pipeline = Pipeline().pipe(['cat', *infile])
     outfile = RESULT_DIR / 'postprocess/measure_test_ai.ndjson'
     action = pipeline.runner(text=True, output_file=outfile)
@@ -383,96 +407,6 @@ def task_ai_measure():
         'targets': [outfile],
     }
 
-    # concat pca hm keypoints
-    outfile = RESULT_DIR / AI_SUBDIR / 'postprocess/native_pca_hm_keypoints.ndjson'
-    pipeline = Pipeline().pipe(['cat', *native_files])
-    action = pipeline.runner(text=True, output_file=outfile)
-    yield {
-        'name': 'concat-native',
-        'actions': [action],
-        'file_dep': native_files,
-        'targets': [outfile],
-    }
-    
-    # concat hm keypoints
-    hm_files = [fold_dir / AI_SUBDIR / 'heatmap_keypoints.ndjson' for fold_dir in FOLD_DIRS]
-    hm_keypoints = RESULT_DIR / AI_SUBDIR / 'postprocess/heatmap_keypoints.ndjson'
-    outfile = hm_keypoints
-    pipeline = Pipeline().pipe(['cat', *hm_files])
-    action = pipeline.runner(text=True, output_file=outfile)
-    yield {
-        'name': 'concat-hm',
-        'actions': [action],
-        'file_dep': hm_files,
-        'targets': [outfile],
-    }
-
-    # draw
-    script = SRC_DIR / 'measure_and_draw.py'
-    outdir = RESULT_DIR / AI_SUBDIR / 'postprocess/draw'
-    outdir.mkdir(parents=True, exist_ok=True)
-    hide = ['Adi', 'Sacs', 'ModifiedRenawatIndex']
-    if EXTERNAL_TEST:
-        infile = RESULT_DIR / 'folds/0/ai/native_pca_hm_keypoints.ndjson'
-    else:
-        infile = RESULT_DIR / AI_SUBDIR / 'postprocess/native_pca_hm_keypoints.ndjson'
-    action = [
-        'python',
-        script,
-        '--resize',
-        f'{SVG_IMAGE_SIZE}x{SVG_IMAGE_SIZE}',
-        '--svg_size',
-        str(SVG_IMAGE_SIZE),
-        '--title',
-        'AI Neck Measurements',
-        '--hide',
-        *hide,
-    ]
-    batch_args = [
-        'batch',
-        infile,
-        outdir,
-        '--html',
-    ]
-    subdir = 'auto'
-    HOLD_OUT = False
-    file_dep = [infile]
-    extra_labels = []
-    extra_points_files = []
-    extra_labels.append('heatmap_points')
-    extra_points_files.append(hm_keypoints)
-    file_dep.append(extra_points_files[-1])
-    # reference points
-    extra_labels.append('reference_points')
-    extra_points_files.append(RESULT_DIR / 'postprocess/lm_test.ndjson')
-    file_dep.append(extra_points_files[-1])
-
-    if EXTERNAL_TEST:
-        db_phonies = []
-    else:
-        db_phonies = [fold_dir / f'{PHONY_DB_TGT}' for fold_dir in FOLD_DIRS]
-    file_dep.extend(db_phonies)
-
-    if not EXTERNAL_TEST:
-        logger.debug(f'HM_IMAGE_DB: {HM_IMAGE_DB}')
-        action += ['--imagedb', HM_IMAGE_DB]
-    action += ['--image_type', 'neck'] # placing `--image_type` (or any `--` option?) right before `batch` otherwise parsing fails
-    action += batch_args
-    action += ['--extra_labels', *extra_labels]
-    action += ['--extra_points', *extra_points_files]
-    if HOLD_OUT:
-        db_phony = OUTPUT_MAIN_DIR / f'holdout_{PHONY_DB_TGT}'
-        file_dep.append(db_phony)
-    draw_phony = RESULT_DIR / AI_SUBDIR / f'draw.done'
-    yield {
-        'name': f'draw-{subdir}',
-        'actions': [action, (make_phony, [draw_phony])],
-        'file_dep': file_dep,
-        'targets': [draw_phony],
-    }
-
-
-
 def task_summary():
     script = ROOT_DIR / 'notebooks/analyze_neck_result.py'
     output = RESULT_DIR / 'summary.html'
@@ -482,13 +416,14 @@ def task_summary():
     ]
 
     # deps of draw phony
-    draw_phony = RESULT_DIR / AI_SUBDIR / 'draw.done'
-    file_dep.append(draw_phony)
+    # draw_phony = RESULT_DIR / AI_SUBDIR / 'draw.done'
+    # file_dep.append(draw_phony)
     draw_phony = RESULT_DIR / 'postprocess/reference/draw.done'
     file_dep.append(draw_phony)
 
     title = '{{"title":"neck summary"}}'
-    c1 = f"jupytext --to ipynb --output - {script} --update-metadata '{title}'"
+    # c1 = f"jupytext --to ipynb --output - {script} --update-metadata '{title}'"
+    c1 = f"jupytext --to ipynb --output - {script}"
     c2 = f'jupyter nbconvert --stdin --to html --execute --no-input --output {output}'
 
     action = Pipeline().pipe(c1).pipe(c2).runner(text=True)
@@ -498,72 +433,83 @@ def task_summary():
         'targets': [output],
     }
 
-
-def task_apply_model():
+def task_extract_measurements():
     if not EXTERNAL_TEST:
         return
+    fold_dir = RESULT_DIR / 'folds/0'
+    measure_ndjson = fold_dir / AI_SUBDIR / 'measurements.ndjson'
+    file_dep = fold_dir / AI_SUBDIR / 'deepscol_keypoints.ndjson'
+
+    html_dir = fold_dir / 'result'
+    def action():
+        all_jsons= []
+        for html_file in html_dir.glob('*.html'):
+            json_str = extract_measurements_from_html(html_file)
+            all_jsons.append((json_str, html_file))
+        with open(measure_ndjson, 'w') as f:
+            for json_str, html_file in all_jsons:
+                obj = json.loads(json_str)
+                obj_line = {'content': obj, 'filename': html_file.with_suffix('.json').name}
+                json_str = json.dumps(obj_line, ensure_ascii=False, separators=(',', ':'))
+                f.write(json_str + '\n')
+    return {
+        'actions': [action],
+        'file_dep': [file_dep],
+        'targets': [measure_ndjson],
+    }
+
+def task_apply_model():
     # use fold/0 for external test
     fold_dir = RESULT_DIR / 'folds/0'
     fold_dir.mkdir(parents=True, exist_ok=True)
     # create path file
-    path_file = RESULT_DIR / f'folds/0/test_paths.txt'
+    path_file = RESULT_DIR / 'folds/0/test_paths.txt'
 
     jq_command = '.content.imagePath'
 
     ndjson_filename = RESULT_DIR / 'folds/0/test.ndjson'
-    action = Pipeline().pipe(['cat', ndjson_filename]).pipe(['jq', '-r', jq_command])
+    action = Pipeline().pipe(['cat', str(ndjson_filename)]).pipe(['jq', '-r', jq_command])
     action = action.runner(text=True, output_file=path_file)
     yield {
-        'name': f'extract-path',
+        'name': 'extract-path',
         'actions': [action],
         'file_dep': [ndjson_filename],
         'targets': [path_file],
     }
 
     # apply model
-    script = SRC_DIR / 'apply_model.py'
     outdir = RESULT_DIR / 'folds/0/result'
     outdir.mkdir(parents=True, exist_ok=True)
-    max_nums_json = SRC_DIR / 'conf/max_nums_neck.json'
     # search for the best model
     model_dir = os.environ.get('MODEL_DIR')
     assert model_dir is not None
-    model_dir = Path(model_dir) / 'checkpoint'
+    model_dir = Path(model_dir)
     logger.debug(f'MODEL_DIR: {model_dir}')
-    model_files = list(model_dir.glob('*.ckpt'))
-    model_files.sort()
-    model_file = model_files[-1]
-    # read height
-    with open(model_dir / '../args.json') as f:
-        args = json.load(f)
-        height = str(args['height'])
-        # height = str(256 * 6)  # TODO: Implement two step model?
+    model_file = model_dir / "model.onnx"
+    asm_file = model_dir / "pca_model.json"
+    os.environ['DS__SIZE__IMAGE_RESIZE'] = "800,800"
+    os.environ['DS__SESSION__INTRA_THREADS'] = "8"
     action = [
-        'python',
-        script,
+        'deepscol',
         'batch',
         path_file,
-        '--ckpt',
+        '--model',
         model_file,
-        '--height',
-        height,
+        '--asm',
+        asm_file,
+        '--direction',
+        'neck-lateral',
         '--labelme',
-        '--output',
+        '--html',
         outdir,
-        '--keep_image_path',
-        '--max_nums',
-        max_nums_json,
     ]
-    if False:  # APPLY_CLAHE:
-        action.append('--clahe')
 
-
-    outfile = RESULT_DIR / 'folds/0/' / AI_SUBDIR / 'heatmap_keypoints.ndjson'
+    outfile = RESULT_DIR / 'folds/0/' / AI_SUBDIR / 'deepscol_keypoints.ndjson'
     action2 = Pipeline().pipe(['lmrs', 'ndjson', '--parent', 'remove', str(outdir)]).runner(
         text=True, output_file=outfile)
 
     yield {
-        'name': f'apply-model',
+        'name': 'apply-model-deepscol',
         'actions': [action, action2],
         'file_dep': [path_file, model_file],
         'targets': [outfile],

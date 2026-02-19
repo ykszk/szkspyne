@@ -1,12 +1,13 @@
 from typing import List
+
+import img_utils
+import numpy as np
 import pytorch_lightning as pl
 import segmentation_models_pytorch as smp
 import torch
+import torch.nn.functional as F
 import torch.optim as optim
 from szkmipy import boundingbox as bb
-import img_utils
-import numpy as np
-import torch.nn.functional as F
 
 DOWN_FACTOR = 256
 bb.enable_torch()
@@ -217,8 +218,8 @@ if __name__ == "__main__":
 
     parser_onnx = subparsers.add_parser('onnx', help="Create ONNX model.")
     parser_onnx.set_defaults(func=create_onnx)
-    parser_onnx.add_argument('in_chs', help='The # of input channels', type=int)
-    parser_onnx.add_argument('out_chs', help='The # of output channels', type=int)
+    parser_onnx.add_argument('--in_chs', help='The # of input channels', type=int)
+    parser_onnx.add_argument('--out_chs', help='The # of output channels', type=int)
     parser_onnx.add_argument('weights', help='Path of the trained weight')
     parser_onnx.add_argument('output', help='Output onnx filename')
     parser_onnx.add_argument('--amp', help='Use AMP', action='store_true')

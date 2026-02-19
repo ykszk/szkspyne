@@ -19,13 +19,11 @@ from tqdm import tqdm
 from szkspyne import labelme_utils, settings
 
 settings.set_neck_settings()
+from szkmipy import mhd
+
+from szkspyne.asm.point_data import MovablePoints, PresetPointData
 from szkspyne.labelme_utils import LabelMe, ShapeDict
 from szkspyne.torch_utils import bicubic, lerp2d
-from szkspyne.asm.point_data import MovablePoints
-from szkmipy import mhd
-from szkspyne.labelme_utils import LabelMe, ShapeDict
-from szkspyne.asm.point_data import MovablePoints, PresetPointData
-
 
 log_format = '%(color)s[%(levelname)1.1s %(asctime)s.%(msecs)d %(module)s:%(lineno)d]%(end_color)s %(message)s'
 formatter = logzero.LogFormatter(fmt=log_format)
@@ -33,7 +31,7 @@ logzero.setup_default_logger(formatter=formatter)
 
 # %%
 
-from szkspyne.settings import LABEL_NAMES, ANCHOR_LABEL_NAMES
+from szkspyne.settings import ANCHOR_LABEL_NAMES, LABEL_NAMES
 
 ANCHOR_LABEL_NAMES_INDICES = [LABEL_NAMES.index(l) for l in ANCHOR_LABEL_NAMES]
 EPSILON = np.finfo(float).eps
@@ -278,7 +276,7 @@ def fit(args, pca_models: List[TorchPCA], original_json: LabelMe, heatmaps: np.n
     if args.skip_complete:
         for pca in pca_models:
             if np.all(asm_points_count == np.array(pca.pca['point_counts'])):
-                logger.info('Skip completed set for %s: %s', original_json.imagePath, pca.model_name)
+                logger.debug('Skip completed set for %s: %s', original_json.imagePath, pca.model_name)
                 # kps = measure_utils.get_point_dict(original_json)
                 shape_dict: ShapeDict = original_json.into_shape_dict()
                 kps = shape_dict.shapes['point']
@@ -567,7 +565,8 @@ def main():
             torch.set_num_threads(args.threads)
             file_id = original_json['filename']
             try:
-                result = fit(args, pca_models, LabelMe.model_validate(original_json['content']), heatmaps, heatmap_height)
+                lm = LabelMe.model_validate(original_json['content'])
+                result = fit(args, pca_models, lm, heatmaps, heatmap_height)
             except Exception as e:
                 return f"{file_id},{e}"
             result_json = result.model_dump()
