@@ -489,6 +489,20 @@ def task_apply_model():
     asm_file = model_dir / "pca_model.json"
     os.environ['DS__SIZE__IMAGE_RESIZE'] = "800,800"
     os.environ['DS__SESSION__INTRA_THREADS'] = "8"
+    # set LD_LIBRARY_PATH to include ONNX Runtime library
+    # directory containing `deepscol`
+    which_deepscol = os.popen('which deepscol').read().strip()
+    deepscol_dir = Path(which_deepscol).parent
+    ld_library_path = os.environ.get('LD_LIBRARY_PATH', '')
+    new_ld_library_path = f"{deepscol_dir}:{ld_library_path}" if ld_library_path else str(deepscol_dir)
+    os.environ['LD_LIBRARY_PATH'] = new_ld_library_path
+    # assuming conda, set LD_LIBRARY_PATH for cuda libraries if using cuda
+    which_nvcc = os.popen('which nvcc').read().strip()
+    if which_nvcc:
+        cuda_dir = Path(which_nvcc).parent.parent
+        cuda_lib_dir = cuda_dir / 'lib'
+        os.environ['LD_LIBRARY_PATH'] = f"{cuda_lib_dir}:{os.environ['LD_LIBRARY_PATH']}"
+
     action = [
         'deepscol',
         'batch',
@@ -501,6 +515,8 @@ def task_apply_model():
         'neck-lateral',
         '--labelme',
         '--html',
+        '--accelerators',
+        'cuda',
         outdir,
     ]
 
