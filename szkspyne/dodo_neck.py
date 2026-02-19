@@ -1,8 +1,8 @@
-#%%
 import base64
 import gzip
 import json
 import os
+import shutil
 from pathlib import Path
 
 from bs4 import BeautifulSoup
@@ -50,7 +50,6 @@ def extract_measurements_from_html(html_path) -> str:
     mes_json = soup.find(id="embedded-measurements.json")
     assert mes_json is not None, "No element with id 'embedded-measurements.json' found"
 
-
     json_str = gzip.decompress(base64.b64decode(mes_json.text.strip())).decode('utf-8')
     return json_str
 
@@ -78,6 +77,7 @@ def task_create_onnx():
             'file_dep': [model_file],
             'targets': [output_file],
         }
+
 
 def task_build_pca():
     '''
@@ -149,6 +149,7 @@ def task_fit_pca():
             'targets': [outfile],
         }
 
+
 def task_ref_exp2lm():
     script = SCRIPT_DIR / 'exp2lmjson.py'
     for fold_dir in FOLD_DIRS:
@@ -193,6 +194,7 @@ def task_ref_exp2lm():
         'targets': [outfile],
     }
 
+
 def create_conv_action(infile, outfile):
     # scolrs conv --ndjson --spacing <input> <output> --from Labelme --to LateralPoints
     action = ['scolrs', 'conv', '--ndjson', '--spacing', infile, outfile, '--from', 'Labelme', '--to', 'LateralPoints']
@@ -208,6 +210,7 @@ def task_ref_measure():
         'file_dep': [infile],
         'targets': [outfile],
     }
+
 
 SVG_IMAGE_SIZE = 800
 
@@ -262,6 +265,7 @@ def task_ai_measure():
         'targets': [outfile],
     }
 
+
 def task_summary():
     script = ROOT_DIR / 'notebooks/analyze_neck_result.py'
     output = RESULT_DIR / 'summary.html'
@@ -288,30 +292,37 @@ def task_summary():
         'targets': [output],
     }
 
-def task_extract_measurements():
-    if not EXTERNAL_TEST:
-        return
-    fold_dir = RESULT_DIR / 'folds/0'
-    measure_ndjson = fold_dir / AI_SUBDIR / 'measurements.ndjson'
-    file_dep = fold_dir / AI_SUBDIR / 'deepscol_keypoints.ndjson'
 
-    html_dir = fold_dir / 'result'
-    def action():
-        all_jsons= []
-        for html_file in html_dir.glob('*.html'):
-            json_str = extract_measurements_from_html(html_file)
-            all_jsons.append((json_str, html_file))
-        with open(measure_ndjson, 'w') as f:
-            for json_str, html_file in all_jsons:
-                obj = json.loads(json_str)
-                obj_line = {'content': obj, 'filename': html_file.with_suffix('.json').name}
-                json_str = json.dumps(obj_line, ensure_ascii=False, separators=(',', ':'))
-                f.write(json_str + '\n')
-    return {
-        'actions': [action],
-        'file_dep': [file_dep],
-        'targets': [measure_ndjson],
-    }
+def task_extract_measurements():
+    html_move_dir = RESULT_DIR / 'auto/postprocess/draw'
+    html_move_dir.mkdir(parents=True, exist_ok=True)
+
+    for fold_dir in FOLD_DIRS:
+        measure_ndjson = fold_dir / AI_SUBDIR / 'measurements.ndjson'
+        file_dep = fold_dir / AI_SUBDIR / 'deepscol_keypoints.ndjson'
+
+        html_dir = fold_dir / 'result'
+
+        def action():
+            all_jsons = []
+            for html_file in html_dir.glob('*.html'):
+                json_str = extract_measurements_from_html(html_file)
+                all_jsons.append((json_str, html_file))
+                shutil.move(str(html_file), html_move_dir / html_file.name)
+            with open(measure_ndjson, 'w') as f:
+                for json_str, html_file in all_jsons:
+                    obj = json.loads(json_str)
+                    obj_line = {'content': obj, 'filename': html_file.with_suffix('.json').name}
+                    json_str = json.dumps(obj_line, ensure_ascii=False, separators=(',', ':'))
+                    f.write(json_str + '\n')
+
+        yield {
+            'name': fold_dir.name,
+            'actions': [action],
+            'file_dep': [file_dep],
+            'targets': [measure_ndjson],
+        }
+
 
 def task_apply_model():
     # use fold/0 for external test
@@ -353,12 +364,15 @@ def task_apply_model():
         ld_library_path = os.environ.get('LD_LIBRARY_PATH', '')
         new_ld_library_path = f"{deepscol_dir}:{ld_library_path}" if ld_library_path else str(deepscol_dir)
         os.environ['LD_LIBRARY_PATH'] = new_ld_library_path
-        # assuming conda, set LD_LIBRARY_PATH for cuda libraries if using cuda
+        # set LD_LIBRARY_PATH for cuda libraries if using cuda
         which_nvcc = os.popen('which nvcc').read().strip()
         if which_nvcc:
             cuda_dir = Path(which_nvcc).parent.parent
-            cuda_lib_dir = cuda_dir / 'lib'
-            os.environ['LD_LIBRARY_PATH'] = f"{cuda_lib_dir}:{os.environ['LD_LIBRARY_PATH']}"
+            for lib_dir in ['lib64', 'lib']:
+                cuda_lib_dir = cuda_dir / lib_dir
+                if cuda_lib_dir.exists():
+                    os.environ['LD_LIBRARY_PATH'] = f"{cuda_lib_dir}:{os.environ['LD_LIBRARY_PATH']}"
+                    break
 
         action = [
             'deepscol',
@@ -376,10 +390,15 @@ def task_apply_model():
             'cuda',
             outdir,
         ]
+        logger.info(f'Running command: {" ".join([str(a) for a in action])}')
 
-        outfile = RESULT_DIR / 'folds/0/' / AI_SUBDIR / 'deepscol_keypoints.ndjson'
-        action2 = Pipeline().pipe(['lmrs', 'ndjson', '--parent', 'remove', str(outdir)]).runner(
-            text=True, output_file=outfile)
+        outfile = fold_dir / AI_SUBDIR / 'deepscol_keypoints.ndjson'
+        outfile.parent.mkdir(parents=True, exist_ok=True)
+        action2 = (
+            Pipeline()
+            .pipe(['lmrs', 'ndjson', '--parent', 'remove', str(outdir)])
+            .runner(text=True, output_file=outfile)
+        )
 
         yield {
             'name': fold_dir.name,
