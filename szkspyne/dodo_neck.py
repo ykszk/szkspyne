@@ -9,7 +9,6 @@ from bs4 import BeautifulSoup
 from logzero import logger
 
 import szkspyne.utils.task as task_utils
-from szkspyne.settings import ASM_LABEL_NAMES
 from szkspyne.utils.doit import Pipeline, concat, make_phony
 
 RESULT_DIR = Path(os.environ['RESULT_DIR'])
@@ -28,10 +27,9 @@ if RESULT_DIR.exists():
 FOLD_DIRS = list((RESULT_DIR / 'folds').glob('*'))
 
 TGT_HM_KPS = 'heatmap_keypoints.ndjson'
-HM_IMAGE_DB = OUTPUT_MAIN_DIR / f'heatmap_images.sqlite3'
-PHONY_DB_TGT = 'hm2db.done'
 
 TGT_PCA = 'pca_model.npz'
+TGT_PCA_JSON = 'pca_model.json'
 
 EXTERNAL_TEST = os.environ.get('EXTERNAL_TEST', 'False').lower() in ('true', '1', 'yes')
 
@@ -90,21 +88,25 @@ def task_build_pca():
         # cat infile | python3 SRC_DIR/labelme_utils.py shape2lm | lmrs filter --rules SRC_DIR/conf/rules-neck.txt - | python3 SRC_DIR/labelme_utils.py lm2shape | python3 script outfile
         infile = fold_dir / 'train_val.ndjson'
         outfile = fold_dir / TGT_PCA
+        json_outfile = fold_dir / TGT_PCA_JSON
 
         pipeline = (
             Pipeline()
             .pipe(['cat', infile])
             .pipe(['python3', SRC_DIR / 'labelme_utils.py', 'shape2lm'])
             .pipe(['lmrs', 'filter', '--rules', SRC_DIR / 'conf/rules-neck.txt', '-'])
+            .pipe(task_utils.CMD_SORT_VERTEBRAL_CORNERS)
+            .pipe(task_utils.CMD_SORT_NON_VERTEBRAL)
+            .pipe(['lmrs', 'sort', '-', '--labels', 'Lamina'])
             .pipe(['python3', SRC_DIR / 'labelme_utils.py', 'lm2shape'])
-            .pipe(['python3', script, outfile, '--json', outfile.with_suffix('.json')])
+            .pipe(['python3', script, outfile, '--json', json_outfile])
         )
         action = pipeline.runner(text=True)
         yield {
             'name': f'{fold_dir.name}',
             'actions': [action],
             'file_dep': [infile],
-            'targets': [outfile],
+            'targets': [outfile, json_outfile],
         }
 
 
@@ -147,122 +149,10 @@ def task_fit_pca():
             'targets': [outfile],
         }
 
-
-def task_ext_fit_pca():
-    '''
-    Fit PCA models for external test
-    '''
-    if not EXTERNAL_TEST:
-        return
-    script = SRC_DIR / 'asm/pt_fit_model.py'
-    fold_dir = RESULT_DIR / 'folds/0'
-    model_dir = os.environ.get('MODEL_DIR')
-    assert model_dir is not None
-    model_dir = Path(model_dir)
-
-    model_file = model_dir / TGT_PCA
-    outdir = fold_dir / 'auto/pca'
-    outdir.mkdir(parents=True, exist_ok=True)
-    indir = fold_dir / 'result'
-    # mha_file = fold_dir / 'y_pred.mha'
-    # ndjson_file = fold_dir / 'test.ndjson'
-    skipped = fold_dir / 'auto/pca_skipped.txt'
-    icp_weight = '0.00001'
-    params = PCA_FIT_PARAMS + ['--skip_complete', '--skipped', skipped, '--icp_weight', icp_weight]
-
-    action = ['python3', script, indir, '--output', outdir] + params + ['--model', model_file]
-
-    ndjson_file = fold_dir / AI_SUBDIR / 'pca_keypoints.ndjson'
-    action2 = (
-        Pipeline()
-        .pipe(['lmrs', 'ndjson', '--parent', 'remove', str(outdir)])
-        .runner(text=True, output_file=ndjson_file)
-    )
-    file_dep = [RESULT_DIR / 'folds/0/' / AI_SUBDIR / 'heatmap_keypoints.ndjson']
-    yield {
-        'name': f'{fold_dir.name}',
-        'actions': [action, action2],
-        'file_dep': file_dep,
-        'targets': [ndjson_file],
-    }
-
-
-def task_merge_pca_hm():
-    '''
-    Merge PCA and heatmap keypoints
-    '''
-    for fold_dir in FOLD_DIRS:
-        infile1 = fold_dir / AI_SUBDIR / 'heatmap_keypoints.ndjson'
-        infile2 = fold_dir / AI_SUBDIR / 'pca_keypoints.ndjson'
-        outfile = fold_dir / AI_SUBDIR / 'pca_hm_keypoints.ndjson'
-
-        # remove pca labels
-        remove_labels = ASM_LABEL_NAMES + ["Lamina1", "C3_BL", "C3_BR"]
-        # --label <name> to remove label
-        label_args = []
-        for label in remove_labels:
-            label_args.append('--label')
-            label_args.append(label)
-        pipeline = Pipeline().pipe(['lmrs', 'remove', infile1] + label_args).pipe(['lmrs', 'merge', '-', infile2])
-        action = pipeline.runner(text=True, output_file=outfile)
-        yield {
-            'name': f'{fold_dir.name}',
-            'actions': [action],
-            'file_dep': [infile1, infile2],
-            'targets': [outfile],
-        }
-
-        # filter
-        #             ['lmrs', 'filter', '--rules', SRC_DIR / 'conf/rules-neck.txt', '-']
-        infile = outfile
-        outfile = fold_dir / AI_SUBDIR / 'pca_hm_keypoints_filtered.ndjson'
-        pipeline = Pipeline().pipe(['lmrs', 'filter', '--rules', SRC_DIR / 'conf/rules-neck.txt', infile])
-        action = pipeline.runner(text=True, output_file=outfile)
-        yield {
-            'name': f'{fold_dir.name}-filter',
-            'actions': [action],
-            'file_dep': [infile],
-            'targets': [outfile],
-        }
-
-
-def task_heat2lm():
-    '''
-    Process heatmap to 1. create labelme files from heatmaps, 2. create heatmap image database
-    '''
-    for fold_dir in FOLD_DIRS:
-        script = SRC_DIR / 'heatmap2labelme.py'
-        infile = fold_dir / 'y_pred.mha'
-        infile2 = fold_dir / 'test.ndjson'
-        outdir = fold_dir / 'auto'
-        outdir.mkdir(parents=True, exist_ok=True)
-        outfile = outdir / TGT_HM_KPS
-        action = ['python', script, infile, infile2, outdir, '--save_ndjson', outfile]
-        yield {
-            'name': f'lm-{fold_dir.name}',
-            'actions': [action],
-            'file_dep': [infile],
-            'targets': [outfile],
-        }
-
-        script = SCRIPT_DIR / 'hm2db.py'
-        infile = fold_dir / 'y_pred.mha'
-        infile2 = outfile
-        outfile = HM_IMAGE_DB
-        phony = fold_dir / f'{PHONY_DB_TGT}'
-        action = ['python', script, infile, infile2, outfile]
-        yield {
-            'name': f'db-{fold_dir.name}',
-            'actions': [action, (make_phony, [phony])],
-            'file_dep': [infile2],
-            'targets': [phony],  # make phony target
-        }
-
-
 def task_ref_exp2lm():
     script = SCRIPT_DIR / 'exp2lmjson.py'
     for fold_dir in FOLD_DIRS:
-        infile = fold_dir / f'test.ndjson'
+        infile = fold_dir / 'test.ndjson'
         outfile = fold_dir / 'lm_test.ndjson'
         if EXTERNAL_TEST:
             action = ['cat', infile]
@@ -270,7 +160,7 @@ def task_ref_exp2lm():
             action = ['python', script, infile]
 
         sort_corners = task_utils.CMD_SORT_VERTEBRAL_CORNERS
-        sort_non_corners = sort_corners.copy() + ['--inv-label', '--by-x']
+        sort_non_corners = task_utils.CMD_SORT_NON_VERTEBRAL
 
         sort_lamina = ['lmrs', 'sort', '-', '--labels', 'Lamina']
 
@@ -303,24 +193,6 @@ def task_ref_exp2lm():
         'targets': [outfile],
     }
 
-
-def task_lm2native():
-    # scolrs lm2native --input <input> --output <output>
-    for fold_dir in FOLD_DIRS:
-        infile = fold_dir /  AI_SUBDIR / 'pca_hm_keypoints_filtered.ndjson'
-        outfile = fold_dir /  AI_SUBDIR / 'native_pca_hm_keypoints.ndjson'
-        action = create_conv_action(
-            infile,
-            outfile,
-        )
-        yield {
-            'name': f'{fold_dir.name}',
-            'actions': [action],
-            'file_dep': [infile],
-            'targets': [outfile],
-        }
-
-
 def create_conv_action(infile, outfile):
     # scolrs conv --ndjson --spacing <input> <output> --from Labelme --to LateralPoints
     action = ['scolrs', 'conv', '--ndjson', '--spacing', infile, outfile, '--from', 'Labelme', '--to', 'LateralPoints']
@@ -328,31 +200,14 @@ def create_conv_action(infile, outfile):
 
 
 def task_ref_measure():
-    # scolrs measure --ref --ndjson --output ref_measure.ndjson --input <input>
-    for fold_dir in FOLD_DIRS:
-        cmd = 'scolrs'
-        infile = fold_dir / 'lm_test.ndjson'
-        outfile = fold_dir / 'ref_measure.ndjson'
-        action = [cmd, 'measure', '--labelme', infile, outfile, 'neck']
-        yield {
-            'name': f'{fold_dir.name}',
-            'actions': [action],
-            'file_dep': [infile],
-            'targets': [outfile],
-        }
-
-    # concat ref_measurements
-    infile = [fold_dir / 'ref_measure.ndjson' for fold_dir in FOLD_DIRS]
-    pipeline = Pipeline().pipe(['cat', *infile])
+    infile = RESULT_DIR / 'postprocess/native_lm_test.ndjson'
     outfile = RESULT_DIR / 'postprocess/measure_test_reference.ndjson'
-    action = pipeline.runner(text=True, output_file=outfile)
-    yield {
-        'name': 'concat-ref-measurements',
+    action = ['scolrs', 'measure', infile, outfile, 'neck']
+    return {
         'actions': [action],
-        'file_dep': infile,
+        'file_dep': [infile],
         'targets': [outfile],
     }
-
 
 SVG_IMAGE_SIZE = 800
 
@@ -460,73 +315,75 @@ def task_extract_measurements():
 
 def task_apply_model():
     # use fold/0 for external test
-    fold_dir = RESULT_DIR / 'folds/0'
-    fold_dir.mkdir(parents=True, exist_ok=True)
-    # create path file
-    path_file = RESULT_DIR / 'folds/0/test_paths.txt'
+    for fold_dir in FOLD_DIRS:
+        fold_dir.mkdir(parents=True, exist_ok=True)
+        # create path file
+        path_file = fold_dir / 'test_paths.txt'
 
-    jq_command = '.content.imagePath'
+        jq_command = '.content.imagePath'
 
-    ndjson_filename = RESULT_DIR / 'folds/0/test.ndjson'
-    action = Pipeline().pipe(['cat', str(ndjson_filename)]).pipe(['jq', '-r', jq_command])
-    action = action.runner(text=True, output_file=path_file)
-    yield {
-        'name': 'extract-path',
-        'actions': [action],
-        'file_dep': [ndjson_filename],
-        'targets': [path_file],
-    }
+        ndjson_filename = fold_dir / 'test.ndjson'
+        action = Pipeline().pipe(['cat', str(ndjson_filename)]).pipe(['jq', '-r', jq_command])
+        action = action.runner(text=True, output_file=path_file)
+        yield {
+            'name': 'extract-path',
+            'actions': [action],
+            'file_dep': [ndjson_filename],
+            'targets': [path_file],
+        }
 
-    # apply model
-    outdir = RESULT_DIR / 'folds/0/result'
-    outdir.mkdir(parents=True, exist_ok=True)
-    # search for the best model
-    model_dir = os.environ.get('MODEL_DIR')
-    assert model_dir is not None
-    model_dir = Path(model_dir)
-    logger.debug(f'MODEL_DIR: {model_dir}')
-    model_file = model_dir / "model.onnx"
-    asm_file = model_dir / "pca_model.json"
-    os.environ['DS__SIZE__IMAGE_RESIZE'] = "800,800"
-    os.environ['DS__SESSION__INTRA_THREADS'] = "8"
-    # set LD_LIBRARY_PATH to include ONNX Runtime library
-    # directory containing `deepscol`
-    which_deepscol = os.popen('which deepscol').read().strip()
-    deepscol_dir = Path(which_deepscol).parent
-    ld_library_path = os.environ.get('LD_LIBRARY_PATH', '')
-    new_ld_library_path = f"{deepscol_dir}:{ld_library_path}" if ld_library_path else str(deepscol_dir)
-    os.environ['LD_LIBRARY_PATH'] = new_ld_library_path
-    # assuming conda, set LD_LIBRARY_PATH for cuda libraries if using cuda
-    which_nvcc = os.popen('which nvcc').read().strip()
-    if which_nvcc:
-        cuda_dir = Path(which_nvcc).parent.parent
-        cuda_lib_dir = cuda_dir / 'lib'
-        os.environ['LD_LIBRARY_PATH'] = f"{cuda_lib_dir}:{os.environ['LD_LIBRARY_PATH']}"
+        # apply model
+        outdir = fold_dir / 'result'
+        outdir.mkdir(parents=True, exist_ok=True)
+        if EXTERNAL_TEST:
+            model_dir = os.environ.get('MODEL_DIR')
+        else:
+            model_dir = fold_dir
+        assert model_dir is not None
+        model_dir = Path(model_dir)
+        logger.debug(f'MODEL_DIR: {model_dir}')
+        model_file = model_dir / "model.onnx"
+        asm_file = model_dir / TGT_PCA_JSON
+        os.environ['DS__SIZE__IMAGE_RESIZE'] = "800,800"
+        os.environ['DS__SESSION__INTRA_THREADS'] = "8"
+        # set LD_LIBRARY_PATH to include ONNX Runtime library
+        # directory containing `deepscol`
+        which_deepscol = os.popen('which deepscol').read().strip()
+        deepscol_dir = Path(which_deepscol).parent
+        ld_library_path = os.environ.get('LD_LIBRARY_PATH', '')
+        new_ld_library_path = f"{deepscol_dir}:{ld_library_path}" if ld_library_path else str(deepscol_dir)
+        os.environ['LD_LIBRARY_PATH'] = new_ld_library_path
+        # assuming conda, set LD_LIBRARY_PATH for cuda libraries if using cuda
+        which_nvcc = os.popen('which nvcc').read().strip()
+        if which_nvcc:
+            cuda_dir = Path(which_nvcc).parent.parent
+            cuda_lib_dir = cuda_dir / 'lib'
+            os.environ['LD_LIBRARY_PATH'] = f"{cuda_lib_dir}:{os.environ['LD_LIBRARY_PATH']}"
 
-    action = [
-        'deepscol',
-        'batch',
-        path_file,
-        '--model',
-        model_file,
-        '--asm',
-        asm_file,
-        '--direction',
-        'neck-lateral',
-        '--labelme',
-        '--html',
-        '--accelerators',
-        'cuda',
-        outdir,
-    ]
+        action = [
+            'deepscol',
+            'batch',
+            path_file,
+            '--model',
+            model_file,
+            '--asm',
+            asm_file,
+            '--direction',
+            'neck-lateral',
+            '--labelme',
+            '--html',
+            '--accelerators',
+            'cuda',
+            outdir,
+        ]
 
-    outfile = RESULT_DIR / 'folds/0/' / AI_SUBDIR / 'deepscol_keypoints.ndjson'
-    action2 = Pipeline().pipe(['lmrs', 'ndjson', '--parent', 'remove', str(outdir)]).runner(
-        text=True, output_file=outfile)
+        outfile = RESULT_DIR / 'folds/0/' / AI_SUBDIR / 'deepscol_keypoints.ndjson'
+        action2 = Pipeline().pipe(['lmrs', 'ndjson', '--parent', 'remove', str(outdir)]).runner(
+            text=True, output_file=outfile)
 
-    yield {
-        'name': 'apply-model-deepscol',
-        'actions': [action, action2],
-        'file_dep': [path_file, model_file],
-        'targets': [outfile],
-    }
+        yield {
+            'name': fold_dir.name,
+            'actions': [action, action2],
+            'file_dep': [path_file, model_file, asm_file],
+            'targets': [outfile],
+        }

@@ -1,6 +1,3 @@
-# %% metadata for Pretty Jupyter [raw]
-# title: Neck measurement result analysis
-
 # %%
 import json
 import os
@@ -180,7 +177,6 @@ for col in df_ref.columns:
     display(df_sorted)
 
     # create case catalog
-    continue
     n_cases = 5
     case_filenames = []
     for i, row in df_sorted.iloc[:n_cases].iterrows():
