@@ -149,30 +149,36 @@ def task_fit_pca():
             'targets': [outfile],
         }
 
+def sub_exp2lm(name, infile, outfile):
+    '''
+    Convert exp results to lm format for external test
+    '''
+    script = SCRIPT_DIR / 'exp2lmjson.py'
+    if EXTERNAL_TEST:
+        action = ['cat', infile]
+    else:
+        action = ['python', script, infile]
+
+    sort_corners = task_utils.CMD_SORT_VERTEBRAL_CORNERS
+    sort_non_corners = task_utils.CMD_SORT_NON_VERTEBRAL
+
+    sort_lamina = ['lmrs', 'sort', '-', '--labels', 'Lamina']
+
+    pipeline = Pipeline().pipe(action).pipe(sort_corners).pipe(sort_non_corners).pipe(sort_lamina)
+    action = pipeline.runner(text=True, output_file=outfile)
+    return {
+        'name': name,
+        'actions': [action],
+        'file_dep': [infile],
+        'targets': [outfile],
+    }
 
 def task_ref_exp2lm():
-    script = SCRIPT_DIR / 'exp2lmjson.py'
     for fold_dir in FOLD_DIRS:
         infile = fold_dir / 'test.ndjson'
         outfile = fold_dir / 'lm_test.ndjson'
-        if EXTERNAL_TEST:
-            action = ['cat', infile]
-        else:
-            action = ['python', script, infile]
+        yield sub_exp2lm(f'{fold_dir.name}', infile, outfile)
 
-        sort_corners = task_utils.CMD_SORT_VERTEBRAL_CORNERS
-        sort_non_corners = task_utils.CMD_SORT_NON_VERTEBRAL
-
-        sort_lamina = ['lmrs', 'sort', '-', '--labels', 'Lamina']
-
-        pipeline = Pipeline().pipe(action).pipe(sort_corners).pipe(sort_non_corners).pipe(sort_lamina)
-        action = pipeline.runner(text=True, output_file=outfile)
-        yield {
-            'name': f'{fold_dir.name}',
-            'actions': [action],
-            'file_dep': [infile],
-            'targets': [outfile],
-        }
     # concat
     infile = [fold_dir / 'lm_test.ndjson' for fold_dir in FOLD_DIRS]
     outfile = RESULT_DIR / 'postprocess/lm_test.ndjson'
@@ -223,7 +229,7 @@ def task_ref_draw():
     config_dir = SRC_DIR / '../configs'
     line_colors = config_dir / 'default_line_colors_label.csv'
     label_colors = config_dir / 'default_label_colors.yaml'
-    hides = ['Adi', 'Sacs', 'ModifiedRenawatIndex']
+    hides = ['Adi', 'Sacs', 'ModifiedRenawatIndex', 'Tpr', 'EndPlateAngle', 'Eacsva', 'C2c7sva']
     action = [
         'scolrs',
         'svg-ndjson',
@@ -265,6 +271,41 @@ def task_ai_measure():
         'targets': [outfile],
     }
 
+def task_train_exp2lm():
+    # exp to labelme format
+    for fold_dir in FOLD_DIRS:
+        infile = fold_dir / 'train_val.ndjson'
+        outfile = fold_dir / 'train_lm.json'
+        yield sub_exp2lm(f'{fold_dir.name}', infile, outfile)
+
+def task_train_lm2native():
+    # train labelme to native format
+    for fold_dir in FOLD_DIRS:
+        infile = fold_dir / 'train_lm.json'
+        outfile = fold_dir / 'train_native.ndjson'
+        action = create_conv_action(infile, outfile)
+        yield {
+            'name': f'{fold_dir.name}',
+            'actions': [action],
+            'file_dep': [infile],
+            'targets': [outfile],
+        }
+
+def task_train_measure():
+    # measure train data
+    for fold_dir in FOLD_DIRS:
+        infile = fold_dir / 'train_native.ndjson'
+        outfile = fold_dir / 'measure_train.ndjson'
+        action1 = ['scolrs', 'measure', infile, outfile, 'neck']
+        # ndjson to csv
+        script = SRC_DIR / 'utils/scolrs.py'
+        action2 = ['python', script, outfile, outfile.with_suffix('.csv')]
+
+        return {
+            'actions': [action1, action2],
+            'file_dep': [infile],
+            'targets': [outfile],
+        }
 
 def task_summary():
     script = ROOT_DIR / 'notebooks/analyze_neck_result.py'
@@ -355,6 +396,7 @@ def task_apply_model():
         logger.debug(f'MODEL_DIR: {model_dir}')
         model_file = model_dir / "model.onnx"
         asm_file = model_dir / TGT_PCA_JSON
+        asm_config = SRC_DIR / 'conf/asm_config_neck.toml'
         os.environ['DS__SIZE__IMAGE_RESIZE'] = "800,800"
         os.environ['DS__SESSION__INTRA_THREADS'] = "8"
         # set LD_LIBRARY_PATH to include ONNX Runtime library
@@ -381,7 +423,7 @@ def task_apply_model():
             '--model',
             model_file,
             '--asm',
-            asm_file,
+            f'{asm_file},{asm_config}',
             '--direction',
             'neck-lateral',
             '--labelme',
