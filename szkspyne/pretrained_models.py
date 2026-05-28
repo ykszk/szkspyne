@@ -23,7 +23,21 @@ class LitSMP(pl.LightningModule):
             in_channels=in_chs,
             classes=out_chs,
         )
-        model = smp.DeepLabV3Plus(**kwargs)
+        if hparams.model_name == 'deeplabv3plus':
+            model = smp.DeepLabV3Plus(**kwargs)
+        elif hparams.model_name == 'unet':
+            model = smp.Unet(**kwargs)
+        elif hparams.model_name == 'unetplusplus':
+            model = smp.UnetPlusPlus(**kwargs)
+        elif hparams.model_name == 'pspnet':
+            model = smp.PSPNet(**kwargs)
+        elif hparams.model_name == 'manet':
+            model = smp.MAnet(**kwargs)
+        elif hparams.model_name == 'segformer':
+            model = smp.Segformer(**kwargs)
+        else:
+            raise ValueError(f"Unsupported model_name: {hparams.model_name}")
+        
         self.model = model
         # self.loss = torch.nn.MSELoss()
         self.loss = torch.nn.BCEWithLogitsLoss()
@@ -38,6 +52,9 @@ class LitSMP(pl.LightningModule):
     def add_model_specific_args(parent_parser):
         parser = parent_parser.add_argument_group("LitSMP")
         parser.add_argument('--lr', help='Learning rate: %(default)s', metavar='<value>', type=float, default=1e-3)
+        parser.add_argument(
+            '--model_name', help='Model name: %(default)s', metavar='<name>', default='deeplabv3plus', choices=['unet', 'unetplusplus', 'deeplabv3plus', 'pspnet', 'manet', 'segformer']
+        )
         parser.add_argument(
             '--encoder_name', help='encoder name: %(default)s', metavar='<name>', default='efficientnet-b4'
         )
