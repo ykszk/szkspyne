@@ -3,11 +3,13 @@ import argparse
 import json
 from collections import defaultdict
 from pathlib import Path
-from typing import List, Union, Optional
-from logzero import logger
+from typing import List, Optional, Union
+
 import lmrspy
 import numpy as np
 import tqdm
+from logzero import logger
+
 from szkspyne import labelme_utils
 
 # https://github.com/ykszk/labelme-rs
@@ -83,9 +85,10 @@ for kind, subdir in subdirs:
         if kind == 'lateral_whole':
             rule_set = rule_set + rule_dict['lateral-spine']
         validators.append(lmrspy.Validator(rule_set, args.annotators, ignores))
-
+    logger.info(f'Loaded {len(validators)} validators for {kind}')
     valid_json: List[Path] = []
     invalid_json: List[Path] = []
+    skipped_json: List[Path] = []
     for fn in tqdm.tqdm(fns):
         with open(fn) as f:
             json_str = f.read()
@@ -103,10 +106,14 @@ for kind, subdir in subdirs:
             except Exception as e:
                 print(fn, e)
                 invalid_json.append(fn)
-                continue
+                break
+        else:
+            skipped_json.append(fn)
+
     print('Total file count:', len(fns))
     print('Valid:', len(valid_json))
     print('Invalid:', len(invalid_json))
+    print('Skipped:', len(skipped_json))
     if kind==subdir:
         outname = outdir / ('valid_' + kind + '.ndjson')
     else:
@@ -116,3 +123,6 @@ for kind, subdir in subdirs:
     if len(invalid_json) > 0:
         outname = outdir / ('invalid_' + kind + '.ndjson')
         save_ndjson(outname, invalid_json, [], args.image_parent)
+    if len(skipped_json) > 0:
+        outname = outdir / ('skipped_' + kind + '.ndjson')
+        save_ndjson(outname, skipped_json, [], args.image_parent)

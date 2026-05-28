@@ -1,12 +1,14 @@
 import argparse
-from typing import List
-from szkspyne import settings, labelme_utils
-from logzero import logger
-from pathlib import Path
 import copy
-import numpy as np
-from scipy.interpolate import CubicSpline
 import json
+from pathlib import Path
+from typing import List
+
+import numpy as np
+from logzero import logger
+from scipy.interpolate import CubicSpline
+
+from szkspyne import labelme_utils, settings
 
 # def extrapolate(pts: np.ndarray):
 #     '''
@@ -104,6 +106,10 @@ parser.add_argument('--l6', help='Output L6 augmented ndjson filename', metavar=
 # parser.add_argument('--labelme', help='Input is in labelme format', action='store_true')
 
 args, _unknown = parser.parse_known_args()
+
+if not (args.l4 or args.l5 or args.l6):
+    logger.error('At least one of --l4, --l5, or --l6 must be specified')
+    exit(1)
 
 if args.input=='-':
     # read from stdin
