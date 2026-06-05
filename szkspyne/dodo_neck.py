@@ -13,6 +13,7 @@ from szkspyne.utils.doit import Pipeline, concat, make_phony
 
 RESULT_DIR = Path(os.environ['RESULT_DIR'])
 os.environ['DATA_DIR'] = str(RESULT_DIR)
+os.environ['DS__HEATMAP__THRESH'] = '0.01' # default is 0.1
 
 if not RESULT_DIR.exists():
     raise FileNotFoundError(f"RESULT_DIR {RESULT_DIR} does not exist. Please set the environment variable.")
@@ -48,7 +49,7 @@ def extract_measurements_from_html(html_path) -> str:
     with open(html_path) as f:
         soup = BeautifulSoup(f, 'html.parser')
     mes_json = soup.find(id="embedded-measurements.json")
-    assert mes_json is not None, "No element with id 'embedded-measurements.json' found"
+    assert mes_json is not None, f"No element with id 'embedded-measurements.json' found in {html_path}"
 
     json_str = gzip.decompress(base64.b64decode(mes_json.text.strip())).decode('utf-8')
     return json_str
@@ -200,6 +201,18 @@ def task_ref_exp2lm():
         'targets': [outfile],
     }
 
+    # normalize vertebral shape
+    infile = outfile
+    poses = RESULT_DIR / "neck_study_poses.json"
+    outfile = RESULT_DIR / 'postprocess/normalized_native_lm_test.ndjson'
+    action = _normalize_vertebral_shape(infile, poses, outfile)
+    yield {
+        'name': 'normalize-shape',
+        'actions': [action],
+        'file_dep': [infile],
+        'targets': [outfile],
+    }
+
 
 def create_conv_action(infile, outfile):
     # scolrs conv --ndjson --spacing <input> <output> --from Labelme --to LateralPoints
@@ -208,7 +221,7 @@ def create_conv_action(infile, outfile):
 
 
 def task_ref_measure():
-    infile = RESULT_DIR / 'postprocess/native_lm_test.ndjson'
+    infile = RESULT_DIR / 'postprocess/normalized_native_lm_test.ndjson'
     outfile = RESULT_DIR / 'postprocess/measure_test_reference.ndjson'
     action = ['scolrs', 'measure', infile, outfile, 'neck']
     return {
@@ -225,7 +238,7 @@ def task_ref_draw():
     # scolrs svg-ndjson --resize 800x800 postprocess/lm_test.ndjson postprocess/reference/draw neck
     outdir = RESULT_DIR / 'postprocess/reference/draw'
     outdir.mkdir(parents=True, exist_ok=True)
-    infile = RESULT_DIR / 'postprocess/native_lm_test.ndjson'
+    infile = RESULT_DIR / 'postprocess/normalized_native_lm_test.ndjson'
     config_dir = SRC_DIR / '../configs'
     line_colors = config_dir / 'default_line_colors_label.csv'
     label_colors = config_dir / 'default_label_colors.yaml'
@@ -291,10 +304,34 @@ def task_train_lm2native():
             'targets': [outfile],
         }
 
+def _normalize_vertebral_shape(infile, poses, outfile):
+    c1 = ['python', SRC_DIR / 'type/neck_study.py', poses, infile]
+    c2 = ['scolrs', 'vertebra', 'normalize', "-"]
+    # remove empty lines
+    c3 = ['awk', 'NF']
+    pipeline = Pipeline().pipe(c1).pipe(c2).pipe(c3)
+    action = pipeline.runner(text=True, output_file=outfile)
+    return action
+
+
+def task_train_normalize_shape():
+    # normalize vertebral shapes
+    for fold_dir in FOLD_DIRS:
+        infile = fold_dir / 'train_native.ndjson'
+        poses = RESULT_DIR / "neck_study_poses.json"
+        outfile = fold_dir / 'train_normalized_native.ndjson'
+        action = _normalize_vertebral_shape(infile, poses, outfile)
+        yield {
+            'name': f'{fold_dir.name}',
+            'actions': [action],
+            'file_dep': [infile],
+            'targets': [outfile],
+        }
+
 def task_train_measure():
     # measure train data
     for fold_dir in FOLD_DIRS:
-        infile = fold_dir / 'train_native.ndjson'
+        infile = fold_dir / 'train_normalized_native.ndjson'
         outfile = fold_dir / 'measure_train.ndjson'
         action1 = ['scolrs', 'measure', infile, outfile, 'neck']
         # ndjson to csv
@@ -321,6 +358,9 @@ def task_summary():
     draw_phony = RESULT_DIR / 'postprocess/reference/draw.done'
     file_dep.append(draw_phony)
 
+    ai_draw_phony = RESULT_DIR / 'auto/postprocess/draw.done'
+    file_dep.append(ai_draw_phony)
+
     title = '{{"title":"neck summary"}}'
     # c1 = f"jupytext --to ipynb --output - {script} --update-metadata '{title}'"
     c1 = f"jupytext --to ipynb --output - {script}"
@@ -339,7 +379,7 @@ def task_extract_measurements():
     html_move_dir.mkdir(parents=True, exist_ok=True)
 
     for fold_dir in FOLD_DIRS:
-        measure_ndjson = fold_dir / AI_SUBDIR / 'measurements.ndjson'
+        measure_ndjson = fold_dir / AI_SUBDIR / 'raw_measurements.ndjson'
         file_dep = fold_dir / AI_SUBDIR / 'deepscol_keypoints.ndjson'
 
         html_dir = fold_dir / 'result'
@@ -349,7 +389,7 @@ def task_extract_measurements():
             for html_file in html_dir.glob('*.html'):
                 json_str = extract_measurements_from_html(html_file)
                 all_jsons.append((json_str, html_file))
-                shutil.move(str(html_file), html_move_dir / html_file.name)
+                # shutil.move(str(html_file), html_move_dir / html_file.name)
             with open(measure_ndjson, 'w') as f:
                 for json_str, html_file in all_jsons:
                     obj = json.loads(json_str)
@@ -428,8 +468,10 @@ def task_apply_model():
             'neck-lateral',
             '--labelme',
             '--html',
-            '--accelerators',
-            'cuda',
+            # '--accelerators',
+            # 'cuda',
+            '--inference-workers',
+            '4',
             outdir,
         ]
         logger.info(f'Running command: {" ".join([str(a) for a in action])}')
@@ -446,5 +488,78 @@ def task_apply_model():
             'name': fold_dir.name,
             'actions': [action, action2],
             'file_dep': [path_file, model_file, asm_file],
+            'targets': [outfile],
+        }
+
+def task_normalize_vertebrae():
+    for fold_dir in FOLD_DIRS:
+        infile = fold_dir / AI_SUBDIR / 'deepscol_keypoints.ndjson'
+        midfile = fold_dir / AI_SUBDIR / 'native_deepscol_keypoints.ndjson'
+        action1 = create_conv_action(infile, midfile)
+        poses = RESULT_DIR / "neck_study_poses.json"
+        outfile = fold_dir / AI_SUBDIR / 'normalized_deepscol_keypoints.ndjson'
+        action2 = _normalize_vertebral_shape(midfile, poses, outfile)
+        yield {
+            'name': f'{fold_dir.name}',
+            'actions': [action1, action2],
+            'file_dep': [infile],
+            'targets': [outfile],
+        }
+
+
+def task_draw_ai():
+    html_dir = RESULT_DIR / 'auto/postprocess/draw'
+
+    infiles = []
+    for fold_dir in FOLD_DIRS:
+        infile = fold_dir / AI_SUBDIR / 'normalized_deepscol_keypoints.ndjson'
+        infiles.append(infile)
+    
+    # outdir = fold_dir / AI_SUBDIR / 'draw'
+    # outdir.mkdir(parents=True, exist_ok=True)
+    config_dir = SRC_DIR / '../configs'
+    line_colors = config_dir / 'default_line_colors_label.csv'
+    label_colors = config_dir / 'default_label_colors.yaml'
+    hides = ['Adi', 'Sacs', 'ModifiedRenawatIndex', 'Tpr', 'EndPlateAngle', 'Eacsva', 'C2c7sva']
+    draw_cmd = [
+        'scolrs',
+        'svg-ndjson',
+        '--html',
+        '--label-colors',
+        label_colors,
+        '--line-colors',
+        line_colors,
+        '--resize',
+        f'{SVG_IMAGE_SIZE}x{SVG_IMAGE_SIZE}',
+        "-",
+        html_dir,
+        'neck',
+    ]
+    for hide in hides:
+        draw_cmd += ['--hide', hide]
+
+    cat_cmd = ['cat', *infiles]
+    pipeline = Pipeline().pipe(cat_cmd).pipe(draw_cmd).runner()
+
+    phony = html_dir / '../draw.done'
+    phony_action = (make_phony, [phony])
+
+    yield {
+        'name': f'{fold_dir.name}-draw',
+        'actions': [pipeline, phony_action],
+        'file_dep': infiles,
+        'targets': [phony],
+    }
+
+
+def task_measure_ai():
+    for fold_dir in FOLD_DIRS:
+        infile = fold_dir / AI_SUBDIR / 'normalized_deepscol_keypoints.ndjson'
+        outfile = fold_dir / AI_SUBDIR / 'measurements.ndjson'
+        action = ['scolrs', 'measure', infile, outfile, 'neck']
+        yield {
+            'name': f'{fold_dir.name}',
+            'actions': [action],
+            'file_dep': [infile],
             'targets': [outfile],
         }
