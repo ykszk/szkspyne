@@ -34,6 +34,8 @@ TGT_PCA_JSON = 'pca_model.json'
 
 EXTERNAL_TEST = os.environ.get('EXTERNAL_TEST', 'False').lower() in ('true', '1', 'yes')
 
+NECK_STUDY_POSES = RESULT_DIR / "neck_study_poses.json"
+
 AI_SUBDIR = 'auto'
 if EXTERNAL_TEST:
     # to differentiate file dependencies of external test from regular tasks
@@ -203,9 +205,12 @@ def task_ref_exp2lm():
 
     # normalize vertebral shape
     infile = outfile
-    poses = RESULT_DIR / "neck_study_poses.json"
     outfile = RESULT_DIR / 'postprocess/normalized_native_lm_test.ndjson'
-    action = _normalize_vertebral_shape(infile, poses, outfile)
+    if NECK_STUDY_POSES.exists():
+        action = _normalize_vertebral_shape(infile, NECK_STUDY_POSES, outfile)
+    else:
+        logger.warning(f"NECK_STUDY_POSES {NECK_STUDY_POSES} does not exist. Skipping shape normalization.")
+        action = ['cp', infile, outfile]
     yield {
         'name': 'normalize-shape',
         'actions': [action],
@@ -318,9 +323,12 @@ def task_train_normalize_shape():
     # normalize vertebral shapes
     for fold_dir in FOLD_DIRS:
         infile = fold_dir / 'train_native.ndjson'
-        poses = RESULT_DIR / "neck_study_poses.json"
         outfile = fold_dir / 'train_normalized_native.ndjson'
-        action = _normalize_vertebral_shape(infile, poses, outfile)
+        if NECK_STUDY_POSES.exists():
+            action = _normalize_vertebral_shape(infile, NECK_STUDY_POSES, outfile)
+        else:
+            logger.warning(f"NECK_STUDY_POSES {NECK_STUDY_POSES} does not exist. Skipping shape normalization.")
+            action = ['cp', infile, outfile]
         yield {
             'name': f'{fold_dir.name}',
             'actions': [action],
@@ -496,9 +504,12 @@ def task_normalize_vertebrae():
         infile = fold_dir / AI_SUBDIR / 'deepscol_keypoints.ndjson'
         midfile = fold_dir / AI_SUBDIR / 'native_deepscol_keypoints.ndjson'
         action1 = create_conv_action(infile, midfile)
-        poses = RESULT_DIR / "neck_study_poses.json"
         outfile = fold_dir / AI_SUBDIR / 'normalized_deepscol_keypoints.ndjson'
-        action2 = _normalize_vertebral_shape(midfile, poses, outfile)
+        if NECK_STUDY_POSES.exists():
+            action2 = _normalize_vertebral_shape(midfile, NECK_STUDY_POSES, outfile)
+        else:
+            logger.warning(f"NECK_STUDY_POSES {NECK_STUDY_POSES} does not exist. Skipping shape normalization.")
+            action2 = ['cp', midfile, outfile]
         yield {
             'name': f'{fold_dir.name}',
             'actions': [action1, action2],
@@ -509,47 +520,59 @@ def task_normalize_vertebrae():
 
 def task_draw_ai():
     html_dir = RESULT_DIR / 'auto/postprocess/draw'
-
-    infiles = []
-    for fold_dir in FOLD_DIRS:
-        infile = fold_dir / AI_SUBDIR / 'normalized_deepscol_keypoints.ndjson'
-        infiles.append(infile)
-    
-    # outdir = fold_dir / AI_SUBDIR / 'draw'
-    # outdir.mkdir(parents=True, exist_ok=True)
-    config_dir = SRC_DIR / '../configs'
-    line_colors = config_dir / 'default_line_colors_label.csv'
-    label_colors = config_dir / 'default_label_colors.yaml'
-    hides = ['Adi', 'Sacs', 'ModifiedRenawatIndex', 'Tpr', 'EndPlateAngle', 'Eacsva', 'C2c7sva']
-    draw_cmd = [
-        'scolrs',
-        'svg-ndjson',
-        '--html',
-        '--label-colors',
-        label_colors,
-        '--line-colors',
-        line_colors,
-        '--resize',
-        f'{SVG_IMAGE_SIZE}x{SVG_IMAGE_SIZE}',
-        "-",
-        html_dir,
-        'neck',
-    ]
-    for hide in hides:
-        draw_cmd += ['--hide', hide]
-
-    cat_cmd = ['cat', *infiles]
-    pipeline = Pipeline().pipe(cat_cmd).pipe(draw_cmd).runner()
-
     phony = html_dir / '../draw.done'
     phony_action = (make_phony, [phony])
 
-    yield {
-        'name': f'{fold_dir.name}-draw',
-        'actions': [pipeline, phony_action],
-        'file_dep': infiles,
-        'targets': [phony],
-    }
+    if NECK_STUDY_POSES.exists():
+        infiles = []
+        for fold_dir in FOLD_DIRS:
+            infile = fold_dir / AI_SUBDIR / 'normalized_deepscol_keypoints.ndjson'
+            infiles.append(infile)
+        
+        config_dir = SRC_DIR / '../configs'
+        line_colors = config_dir / 'default_line_colors_label.csv'
+        label_colors = config_dir / 'default_label_colors.yaml'
+        hides = ['Adi', 'Sacs', 'ModifiedRenawatIndex', 'Tpr', 'EndPlateAngle', 'Eacsva', 'C2c7sva']
+        draw_cmd = [
+            'scolrs',
+            'svg-ndjson',
+            '--html',
+            '--label-colors',
+            label_colors,
+            '--line-colors',
+            line_colors,
+            '--resize',
+            f'{SVG_IMAGE_SIZE}x{SVG_IMAGE_SIZE}',
+            "-",
+            html_dir,
+            'neck',
+        ]
+        for hide in hides:
+            draw_cmd += ['--hide', hide]
+
+        cat_cmd = ['cat', *infiles]
+        pipeline = Pipeline().pipe(cat_cmd).pipe(draw_cmd).runner()
+
+        yield {
+            'name': 'ai-draw',
+            'actions': [pipeline, phony_action],
+            'file_dep': infiles,
+            'targets': [phony],
+        }
+    else:
+        logger.warning(f"NECK_STUDY_POSES {NECK_STUDY_POSES} does not exist. Skipping AI draw task.")
+        def action():
+            html_move_dir = html_dir
+            for fold_dir in FOLD_DIRS:
+                for html_file in (fold_dir / 'result').glob('*.html'):
+                    shutil.move(str(html_file), html_move_dir / html_file.name)
+    
+        yield {
+            'name': 'ai-draw',
+            'actions': [action, phony_action],
+            'file_dep': [],
+            'targets': [phony],
+        }
 
 
 def task_measure_ai():
