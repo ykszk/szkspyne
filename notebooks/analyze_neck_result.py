@@ -116,16 +116,13 @@ df_ai[desc_cols].abs().describe()
 # %%
 
 
-display_header('h2', 'Scatter plots')
-
 cases_output_dir = data_dir / 'postprocess/cases'
 cases_output_dir.mkdir(parents=True, exist_ok=True)
 ref_case_dir = data_dir / 'postprocess/reference/draw'
-if EXTERNAL_TEST:
-    ai_case_dir = data_dir / 'ai/postprocess/draw'
-else:
-    ai_case_dir = data_dir / 'auto/postprocess/draw'
+ai_case_dir = data_dir / 'auto/postprocess/draw'
 
+dfs = {}
+series_list = []
 for col in df_ref.columns:
     n_non_nan = df_ref[col].notna().sum()
     if n_non_nan == 0:
@@ -134,6 +131,26 @@ for col in df_ref.columns:
     df = pd.concat([df_ref[col], df_ai[col]], axis=1)
     df.columns = ['Reference', 'AI']
     df = df.dropna()
+
+    r, p = stats.pearsonr(df['Reference'], df['AI'])
+    r2 = r**2
+    rms = sqrt(((df['Reference'] - df['AI']) ** 2).mean())
+    mae = (df['Reference'] - df['AI']).abs().mean()
+    series = pd.DataFrame([{'Pearson r': r, 'R^2': r2, 'RMS': rms, 'MAE': mae}])
+    series.index = [col]
+    # display(series)
+    series_list.append(series)
+
+    dfs[col] = df
+
+df_summary = pd.concat(series_list)
+display_header('h2', 'Summary of correlation and error metrics')
+display(df_summary)
+#%%
+
+display_header('h2', 'Scatter plots')
+
+for col, df in dfs.items():
 
     display_header('h3', f'{col}: {len(df)} data points')
 
@@ -160,13 +177,6 @@ for col in df_ref.columns:
     plt.legend()
     plt.show()
 
-    r, p = stats.pearsonr(df['Reference'], df['AI'])
-    r2 = r**2
-    rms = sqrt(((df['Reference'] - df['AI']) ** 2).mean())
-    mae = (df['Reference'] - df['AI']).abs().mean()
-    series = pd.DataFrame([{'Pearson r': r, 'R^2': r2, 'RMS': rms, 'MAE': mae}])
-    series.index = [col]
-    display(series)
 
     df['error'] = df['AI'] - df['Reference']
     df['abs error'] = df['error'].abs()
