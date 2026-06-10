@@ -8,7 +8,7 @@ readonly SCRIPT_DIR
 readonly result_dir="$1"
 readonly ndjson_filename="$2"
 
-readonly N_SPLIT=5
+readonly N_SPLIT=10
 
 # check if --holdout is set
 if [ "$#" -eq 3 ]; then
@@ -23,8 +23,12 @@ else
     python3 "$SCRIPT_DIR"/preexp.py --fold "$N_SPLIT" --output "$result_dir" "$ndjson_filename"
 fi
 
+cp "$SCRIPT_DIR"/../script/neck_study_poses.json "$result_dir"
+
 for fold_dir in "$result_dir"/folds/*; do
     echo "$fold_dir"
     # python3 "$SCRIPT_DIR"/exp_single.py --encoder_name efficientnet-b5 --height 1024 --batch_size 4 --lr 0.001 --sigma 3 --max-epochs 128 --input "$fold_dir" --crop_labels TL TR BL BR
-    python3 "$SCRIPT_DIR"/exp_single.py --encoder_name efficientnet-b4 --height 768 --batch_size 5 --lr 0.001 --sigma 3 --max-epochs 128 --input "$fold_dir"
+    # python3 "$SCRIPT_DIR"/exp_single.py --encoder_name efficientnet-b4 --height 768 --batch_size 5 --lr 0.001 --sigma 5 --max-epochs 128 --input "$fold_dir"
+    python3 "$SCRIPT_DIR"/exp_single.py --encoder_name efficientnet-b3  --model_name deeplabv3plus --height 768 --batch_size 5 --lr 0.001 --sigma 5 --max-epochs 128 --input "$fold_dir"
+    # python3 "$SCRIPT_DIR"/exp_single.py --encoder_name mobileone_s1 --height 768 --batch_size 5 --lr 0.001 --sigma 5 --max-epochs 128 --input "$fold_dir"
 done

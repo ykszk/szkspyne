@@ -238,6 +238,7 @@ def task_ref_measure():
 
 SVG_IMAGE_SIZE = 800
 
+HIDES = ['Adi', 'Sacs', 'ModifiedRenawatIndex', 'Tpr', 'EndPlateAngle', 'Eacsva', 'C2c7sva', 'MidPlaneAngle', 'InterVertebralAngle', 'AnteroposteriorVertebralTranslation']
 
 def task_ref_draw():
     # scolrs svg-ndjson --resize 800x800 postprocess/lm_test.ndjson postprocess/reference/draw neck
@@ -247,7 +248,6 @@ def task_ref_draw():
     config_dir = SRC_DIR / '../configs'
     line_colors = config_dir / 'default_line_colors_label.csv'
     label_colors = config_dir / 'default_label_colors.yaml'
-    hides = ['Adi', 'Sacs', 'ModifiedRenawatIndex', 'Tpr', 'EndPlateAngle', 'Eacsva', 'C2c7sva']
     action = [
         'scolrs',
         'svg-ndjson',
@@ -262,7 +262,7 @@ def task_ref_draw():
         outdir,
         'neck',
     ]
-    for hide in hides:
+    for hide in HIDES:
         action += ['--hide', hide]
 
     phony = outdir / '../draw.done'
@@ -532,7 +532,6 @@ def task_draw_ai():
         config_dir = SRC_DIR / '../configs'
         line_colors = config_dir / 'default_line_colors_label.csv'
         label_colors = config_dir / 'default_label_colors.yaml'
-        hides = ['Adi', 'Sacs', 'ModifiedRenawatIndex', 'Tpr', 'EndPlateAngle', 'Eacsva', 'C2c7sva']
         draw_cmd = [
             'scolrs',
             'svg-ndjson',
@@ -547,7 +546,7 @@ def task_draw_ai():
             html_dir,
             'neck',
         ]
-        for hide in hides:
+        for hide in HIDES:
             draw_cmd += ['--hide', hide]
 
         cat_cmd = ['cat', *infiles]

@@ -1,13 +1,14 @@
+import json
 import os
 import sys
 from pathlib import Path
-import json
-from logzero import logger
 from typing import Optional
+
+from logzero import logger
+
 import szkspyne.utils.measure as measure_utils
-from szkspyne.utils.doit import concat, make_phony
-from szkspyne.utils.doit import Pipeline
 import szkspyne.utils.task as task_utils
+from szkspyne.utils.doit import Pipeline, concat, make_phony
 
 log_level = os.environ.get('LOG_LEVEL', 'INFO').upper()
 logger.setLevel(log_level)
@@ -994,7 +995,8 @@ def task_onnx():
         args = json.load(f)
         height = str(args['height'])
         encoder = args['encoder_name']
-    action = ['python', script, 'onnx', '1', '13', model_file, outfile, '--height', height, '--encoder_name', encoder]
+        model_name = args['model_name']
+    action = ['python', script, 'onnx', '--in_chs', '1', '--out_chs', '13', model_file, outfile, '--height', height]#, '--encoder_name', encoder, '--model_name', model_name]
     yield {
         'name': 'convert-onnx',
         'actions': [action],
