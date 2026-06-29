@@ -1,3 +1,4 @@
+from functools import partial
 from typing import List
 
 import img_utils
@@ -7,11 +8,20 @@ import segmentation_models_pytorch as smp
 import torch
 import torch.nn.functional as F
 import torch.optim as optim
+import torchvision
 from szkmipy import boundingbox as bb
 
 DOWN_FACTOR = 256
 bb.enable_torch()
 
+class MSEWithSigmoidLoss(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.mse = torch.nn.MSELoss()
+
+    def forward(self, input, target):
+        input = torch.sigmoid(input)
+        return self.mse(input, target)
 
 class LitSMP(pl.LightningModule):
     def __init__(self, in_chs, out_chs, hparams):
@@ -39,8 +49,16 @@ class LitSMP(pl.LightningModule):
             raise ValueError(f"Unsupported model_name: {hparams.model_name}")
         
         self.model = model
-        # self.loss = torch.nn.MSELoss()
-        self.loss = torch.nn.BCEWithLogitsLoss()
+
+        self.loss = hparams.loss
+        if self.loss == 'mse':
+            self.loss = MSEWithSigmoidLoss()
+        elif self.loss == 'bce':
+            self.loss = torch.nn.BCEWithLogitsLoss()
+        elif self.loss == 'focal':
+            self.loss = partial(torchvision.ops.sigmoid_focal_loss, alpha=0.25, gamma=2.0, reduction='mean')
+        else:
+            raise ValueError(f"Unsupported loss: {hparams.loss}")
         self.lr = hparams.lr
         self.auto_crop_enabled = False
         self.auto_crop_height = 1024
@@ -60,6 +78,9 @@ class LitSMP(pl.LightningModule):
         )
         parser.add_argument(
             '--encoder_weights', help='encoder weights: %(default)s', metavar='<name>', default='imagenet'
+        )
+        parser.add_argument(
+            '--loss', help='Loss function: %(default)s', metavar='<name>', default='bce', choices=['bce', 'mse', 'focal']
         )
         return parent_parser
 
@@ -199,6 +220,9 @@ def create_onnx(args):
         model.load_state_dict(torch.load(args.weights))
     if args.align_false:
         set_align_false(model)
+    if args.activation == 'sigmoid':
+        print('Applying sigmoid activation to the output')
+        model = torch.nn.Sequential(model, torch.nn.Sigmoid())
     model.eval()
 
     # Let's create a dummy input tensor
@@ -244,6 +268,10 @@ if __name__ == "__main__":
     # height
     parser_onnx.add_argument(
         '--height', help='Height of the input image', type=int, default=768, metavar='<value>'
+    )
+    # activation
+    parser_onnx.add_argument(
+        '--activation', help='Activation function to apply to the output', choices=['sigmoid', 'none'], default='sigmoid'
     )
     # align false
     parser_onnx.add_argument(
