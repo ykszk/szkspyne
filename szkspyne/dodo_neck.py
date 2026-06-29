@@ -13,7 +13,8 @@ from szkspyne.utils.doit import Pipeline, concat, make_phony
 
 RESULT_DIR = Path(os.environ['RESULT_DIR'])
 os.environ['DATA_DIR'] = str(RESULT_DIR)
-os.environ['DS__HEATMAP__THRESH'] = '0.01' # default is 0.1
+os.environ['DS__HEATMAP__THRESH'] = '0.1' # default is 0.1
+os.environ['DS__HEATMAP__BLUR_SIGMA'] = '3' # default is none
 
 if not RESULT_DIR.exists():
     raise FileNotFoundError(f"RESULT_DIR {RESULT_DIR} does not exist. Please set the environment variable.")
@@ -265,7 +266,7 @@ def task_ref_draw():
     for hide in HIDES:
         action += ['--hide', hide]
 
-    phony = outdir / '../draw.done'
+    phony = (outdir / '../draw.done').absolute()
     phony_action = (make_phony, [phony])
 
     yield {
@@ -346,8 +347,23 @@ def task_train_measure():
         script = SRC_DIR / 'utils/scolrs.py'
         action2 = ['python', script, outfile, outfile.with_suffix('.csv')]
 
-        return {
+        yield {
+            'name': fold_dir.name,
             'actions': [action1, action2],
+            'file_dep': [infile],
+            'targets': [outfile],
+        }
+    
+def task_train_rom():
+    # calculate ROM of train data
+    for fold_dir in FOLD_DIRS:
+        infile = fold_dir / 'measure_train.ndjson'
+        outfile = fold_dir / 'rom_train.csv'
+        script = SCRIPT_DIR / 'calculate_rom.py'
+        action = ['python', script, NECK_STUDY_POSES, infile, outfile]
+        yield {
+            'name': fold_dir.name,
+            'actions': [action],
             'file_dep': [infile],
             'targets': [outfile],
         }
@@ -363,13 +379,13 @@ def task_summary():
     # deps of draw phony
     # draw_phony = RESULT_DIR / AI_SUBDIR / 'draw.done'
     # file_dep.append(draw_phony)
-    draw_phony = RESULT_DIR / 'postprocess/reference/draw.done'
+    draw_phony = (RESULT_DIR / 'postprocess/reference/draw.done').absolute()
     file_dep.append(draw_phony)
 
-    ai_draw_phony = RESULT_DIR / 'auto/postprocess/draw.done'
+    ai_draw_phony = (RESULT_DIR / 'auto/postprocess/draw.done').absolute()
     file_dep.append(ai_draw_phony)
 
-    title = '{{"title":"neck summary"}}'
+    # title = '{{"title":"neck summary"}}'
     # c1 = f"jupytext --to ipynb --output - {script} --update-metadata '{title}'"
     c1 = f"jupytext --to ipynb --output - {script}"
     c2 = f'jupyter nbconvert --stdin --to html --execute --no-input --output {output}'
@@ -446,7 +462,7 @@ def task_apply_model():
         asm_file = model_dir / TGT_PCA_JSON
         asm_config = SRC_DIR / 'conf/asm_config_neck.toml'
         os.environ['DS__SIZE__IMAGE_RESIZE'] = "800,800"
-        os.environ['DS__SESSION__INTRA_THREADS'] = "8"
+        os.environ['DS__SESSION__INTRA_THREADS'] = "4"
         # set LD_LIBRARY_PATH to include ONNX Runtime library
         # directory containing `deepscol`
         which_deepscol = os.popen('which deepscol').read().strip()
@@ -463,6 +479,9 @@ def task_apply_model():
                 if cuda_lib_dir.exists():
                     os.environ['LD_LIBRARY_PATH'] = f"{cuda_lib_dir}:{os.environ['LD_LIBRARY_PATH']}"
                     break
+            # onnx runtime provider
+            which_deepscol = os.popen('which deepscol').read().strip()
+            os.environ['LD_LIBRARY_PATH'] = f"{Path(which_deepscol).parent}:{os.environ['LD_LIBRARY_PATH']}"
 
         action = [
             'deepscol',
@@ -476,8 +495,9 @@ def task_apply_model():
             'neck-lateral',
             '--labelme',
             '--html',
-            # '--accelerators',
-            # 'cuda',
+            '--heatmap',
+            '--accelerators',
+            'cuda',
             '--inference-workers',
             '4',
             outdir,
@@ -520,7 +540,7 @@ def task_normalize_vertebrae():
 
 def task_draw_ai():
     html_dir = RESULT_DIR / 'auto/postprocess/draw'
-    phony = html_dir / '../draw.done'
+    phony = (html_dir / '../draw.done').absolute()
     phony_action = (make_phony, [phony])
 
     if NECK_STUDY_POSES.exists():
