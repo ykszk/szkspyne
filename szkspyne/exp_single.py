@@ -218,13 +218,9 @@ def main():
 
     dataset = point_utils.ImageDataset(test_xs, transforms.test_transform)
     test_loader = DataLoader(dataset, shuffle=False, drop_last=False, **loader_kwargs)
-    # xs = next(iter(test_loader))
-    # mhd.write('tmp_test_xs.mha', xs.cpu().numpy())
     logger.info('Load weight:%s', mc.best_model_path)
-    # lit_model.load_from_checkpoint(mc.best_model_path)
     with torch.serialization.safe_globals([argparse.Namespace]): # couldn't load without this line
         lit_model = pretrained_models.LitSMP.load_from_checkpoint(mc.best_model_path)
-    # lit_model.enable_auto_crop(HEIGHT, crop_thresh=0.05, margin=0.1)
     print(type(lit_model))
     logger.info('Start test')
 
@@ -250,37 +246,13 @@ def main():
     callback = SaveCallback(writer, lambda x: (PROB_MAX * x).permute((0, 2, 3, 1)).type(torch.ShortTensor).cpu().numpy())
 
     # create new trainer with `devices=1`
-    trainer = pl.Trainer(accelerator=args.accelerator, devices=1, precision=precision, callbacks=[callback])  # args.devices,
-    #  logger=csv_logger,
-    #  log_every_n_steps=len(train_loader)//8,
-    #  callbacks=[early_stop_callback, mc])
+    trainer = pl.Trainer(accelerator=args.accelerator, devices=1, precision=precision, callbacks=[callback])
     trainer.predict(model=lit_model, dataloaders=test_loader, ckpt_path=None, return_predictions=False)
-    # y_preds = []
-    # with torch.no_grad():
-    #     y_preds.append(trainer.predict(dataloaders=test_loader, ckpt_path=None))
-
-    # to channel last
-    # y_preds = torch.cat(y_preds, 0).detach().cpu().numpy().astype(np.int16)
-    # y_preds = np.concatenate(y_preds, axis=0)
     logger.info('End test')
-    # mhd.write(outdir / f'y_pred.mha', y_preds, {'ElementNumberOfChannels': y_preds.shape[-1]})
 
     if args.save_best:
         torch.save(lit_model.model.to('cpu').state_dict(), outdir / 'best_weights.pth')
-    # test_data = labelme_utils.load_ndjson(outdir / 'test.ndjson')
-    # for image_type in ['ap_whole', 'lateral_whole']:
-    #     logger.info('Save preds %s', image_type)
-    #     indices = []
-    #     for i, data in enumerate(test_data):
-    #         if image_type in data['content']['flags']:
-    #             indices.append(i)
-    #     if not indices:
-    #         logger.info('No data for %s', image_type)
-    #         continue
-    #     y_preds_it = y_preds[indices].copy()
-    #     mhd.write(outdir / f'y_pred_{image_type}.mha', y_preds_it, {'ElementNumberOfChannels': y_preds_it.shape[-1]})
-    #     it_data = [test_data[i] for i in indices]
-    #     labelme_utils.save_ndjson(it_data, outdir / f'test_{image_type}.ndjson')
+
     logger.info('End saving results')
 
     return 0
