@@ -222,7 +222,8 @@ def main():
     # mhd.write('tmp_test_xs.mha', xs.cpu().numpy())
     logger.info('Load weight:%s', mc.best_model_path)
     # lit_model.load_from_checkpoint(mc.best_model_path)
-    lit_model = pretrained_models.LitSMP.load_from_checkpoint(mc.best_model_path)
+    with torch.serialization.safe_globals([argparse.Namespace]): # couldn't load without this line
+        lit_model = pretrained_models.LitSMP.load_from_checkpoint(mc.best_model_path)
     # lit_model.enable_auto_crop(HEIGHT, crop_thresh=0.05, margin=0.1)
     print(type(lit_model))
     logger.info('Start test')
