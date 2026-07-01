@@ -241,7 +241,7 @@ def main():
 
     from settings import PROB_MAX
     y_preds_shape = [n_test] + list(y_shape) + [N_CLASSES]
-    header =  mhd.create_header(y_preds_shape, compress=True, last_dim_is_channel=True, compression_type='zstandard')
+    header =  mhd.create_header(y_preds_shape, compress=True, last_dim_is_channel=True, compression_type='zlib')
     writer = mhd.Writer(outdir / 'y_pred.mha', header, dtype=np.dtype('i2'))
     callback = SaveCallback(writer, lambda x: (PROB_MAX * x).permute((0, 2, 3, 1)).type(torch.ShortTensor).cpu().numpy())
 

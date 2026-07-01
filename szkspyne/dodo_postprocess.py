@@ -86,7 +86,7 @@ def task_pca():
 
 
 TGT_HM_KPS = 'all_heatmap_keypoints.ndjson'
-HM_IMAGE_DB = OUTPUT_MAIN_DIR / f'heatmap_images.sqlite3'
+HM_IMAGE_DB = OUTPUT_MAIN_DIR / 'heatmap_images.sqlite3'
 PHONY_DB_TGT = 'hm2db.done'
 
 
@@ -259,7 +259,7 @@ def task_flags():
     for image_type in IMAGE_TYPES:
         start = f"grep {image_type} {infile}"
         jq_pipe = [f"jq -c '{j}'" for j in jqs]
-        sed = f"sed 's/術後/PostOP/g'"
+        sed = "sed 's/術後/PostOP/g'"
         action = ' | '.join([start, *jq_pipe, sed])
         target = FLAGS[image_type]
         action += f' > {target}'
@@ -313,7 +313,7 @@ def task_collect():
         infiles += [fold / f'{image_type}_{PHONY_DB_TGT}' for fold in FOLD_DIRS]
     outfile = RESULT_DIR / PHONY_DB_TGT
     yield {
-        'name': f'db',
+        'name': 'db',
         'actions': [(make_phony, [outfile])],
         'file_dep': infiles,
         'targets': [outfile],
@@ -463,7 +463,7 @@ def task_curve():
             # join curves with points
             infile = RESULT_DIR / subdir / 'keypoints' / image_type / 'no-bend_final_keypoints_native.ndjson'
             file_deps.append(infile)
-            curve_and_points_file = RESULT_DIR / subdir / f'curve_and_points.ndjson'
+            curve_and_points_file = RESULT_DIR / subdir / 'curve_and_points.ndjson'
             action2 = f'lmrs join {infile} {curve_file} > {curve_and_points_file}'
 
             yield {
@@ -521,7 +521,7 @@ def task_closest_endplate():
     outfile_csv = outdir / 'no-bend_measures_ap_whole_diff.csv'
     action4 = ['python', script, infile1, infile2, outfile_ndjson, '--dataframe', outfile_csv, '--basename']
     yield {
-        'name': f'find-endplate',
+        'name': 'find-endplate',
         'actions': [action1, action2, action3, action3_1, action4],
         # 'actions': [action1, action3, action4],
         'file_dep': file_dep,
@@ -608,7 +608,7 @@ def task_native():
     for image_type in IMAGE_TYPES:
         subdirs = ['reference', 'auto']
         for subdir in subdirs:
-            infile = RESULT_DIR / subdir / 'keypoints' / image_type / f'final_keypoints.ndjson'
+            infile = RESULT_DIR / subdir / 'keypoints' / image_type / 'final_keypoints.ndjson'
             outfile = infile.with_name('no-bend_final_keypoints.ndjson')
             file_dep = [infile, db_phony]
             if HOLD_OUT:
@@ -839,7 +839,7 @@ def task_summary():
             c1 = f"jupytext --to ipynb --output - {script} --update-metadata '{title}'"
             action = ' | '.join([c1, c2])
             yield {
-                'name': f'summary-{image_type}-{subdir}-{post_op}',
+                'name': f'summary-{image_type}-{post_op}',
                 'actions': [action],
                 'file_dep': file_dep,
                 'targets': [outfile],
@@ -868,7 +868,7 @@ def _train_summary(source_file: Path, output_dir: Path):
         outfile = output_dir / (infile.stem + f'_{image_type}.ndjson')
         c1 = f"jq -c '{jq_command}' {infile}"
         c2 = f"jq -c '{JQ_REMOVE_BEND}'"
-        sort = f"lmrs sort -"
+        sort = "lmrs sort -"
         action = ' | '.join([c1, c2, sort]) + f' > {outfile}'
 
         yield {

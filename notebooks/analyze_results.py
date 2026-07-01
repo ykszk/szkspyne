@@ -19,7 +19,7 @@ logger.setLevel(os.environ.get('LOG_LEVEL', 'INFO').upper())
 
 # %%
 
-result_dir = Path(os.environ.get('RESULT_DIR', '/poseidon/users/suzuki/projects/scoliosis/result/exp20241113'))
+result_dir = Path(os.environ['RESULT_DIR'])
 
 image_type = os.environ.get('IMAGE_TYPE', 'ap_whole')
 against_closest = os.environ.get('AGAINST_CLOSEST', 'false').lower() == 'true'
@@ -96,7 +96,7 @@ if True:
         df_ref_ext.to_csv(output_dir / f'no-bend_measures_{image_type}_reference_ext.csv')
         df_ai_ext.to_csv(output_dir / f'no-bend_measures_{image_type}_ai_ext.csv')
 
-    count_labels = ['L4', 'L5', 'L6']
+    count_labels = sorted(df_ref_ext['L count'].unique())
     df_cm = pd.DataFrame(
         sklearn.metrics.confusion_matrix(df_ref_ext['L count'], df_ai_ext['L count'], labels=count_labels),
         index=count_labels,
@@ -242,10 +242,10 @@ for col in cols:
         ref_render_dir = result_dir / f'reference/{image_type}'
         if against_closest:
             ai_render_dir = result_dir / f'closest/{image_type}'
-            side_by_side_dir = result_dir / f'closest/side_by_side'
+            side_by_side_dir = result_dir / 'closest/side_by_side'
         else:
             ai_render_dir = result_dir / f'auto/{image_type}'
-            side_by_side_dir = result_dir / f'postprocess/side_by_side'
+            side_by_side_dir = result_dir / 'postprocess/side_by_side'
         if POST_OP is not None:
             side_by_side_dir = side_by_side_dir.with_name(side_by_side_dir.name + ('_PostOP' if POST_OP else '_PreOP'))
         side_by_side_dir.mkdir(exist_ok=True, parents=True)

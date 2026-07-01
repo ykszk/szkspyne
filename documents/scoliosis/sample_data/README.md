@@ -1,0 +1,1 @@
+Case courtesy of Henry Knipe, <a href="https://radiopaedia.org/?lang=us">Radiopaedia.org</a>. From the case <a href="https://radiopaedia.org/cases/176510?lang=us">rID: 176510</a>
