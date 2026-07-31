@@ -64,5 +64,8 @@ lines_after_imports = 2
 backend = "sqlite3"
 
 [tool.uv.sources]
-szkmipy = { git = "https://github.com/ykszk/szkmipy.git" }
-pyscol = { git = "https://github.com/ykszk/scolrs.git", subdirectory = "crates/pyscol" }
+szkmipy = { git = "https://github.com/ykszk/szkmipy.git", tag = "v0.1.2" }
+pyscol = { git = "https://github.com/ykszk/scolrs.git", subdirectory = "crates/pyscol", rev = "9f1cd1419cc18efbee6b2dd4329670566c71be4e" }
+
+[tool.uv.config-settings-package]
+pyscol = { build-args = "--features gdcm" }
