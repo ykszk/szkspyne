@@ -50,7 +50,10 @@ class LitSMP(pl.LightningModule):
         
         self.model = model
 
-        self.loss = hparams.loss
+        if hasattr(hparams, 'loss'):
+            self.loss = hparams.loss
+        else:
+            self.loss = 'bce'
         if self.loss == 'mse':
             self.loss = MSEWithSigmoidLoss()
         elif self.loss == 'bce':

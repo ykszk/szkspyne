@@ -13,7 +13,7 @@ from szkspyne.utils.doit import Pipeline, concat, make_phony
 
 RESULT_DIR = Path(os.environ['RESULT_DIR'])
 os.environ['DATA_DIR'] = str(RESULT_DIR)
-os.environ['DS__HEATMAP__THRESH'] = '0.1' # default is 0.1
+# os.environ['DS__HEATMAP__THRESH'] = '0.1' # default is 0.1
 os.environ['DS__HEATMAP__BLUR_SIGMA'] = '3' # default is none
 
 if not RESULT_DIR.exists():
@@ -36,6 +36,13 @@ TGT_PCA_JSON = 'pca_model.json'
 EXTERNAL_TEST = os.environ.get('EXTERNAL_TEST', 'False').lower() in ('true', '1', 'yes')
 
 NECK_STUDY_POSES = RESULT_DIR / "neck_study_poses.json"
+
+# Rotate points slightly so that the vertebral corners are sorted by y coordinate. Some flexion images have caudal vertebra with lower y coordinate than cranial vertebra.
+CMD_ROTATE = ['lmrs', 'mat', '-r=5', '-', '--ndjson']
+CMD_ROTATE_INV = ['lmrs', 'mat', '-r=-5', '-', '--ndjson']
+
+CMD_SORT_LAMINA = ['lmrs', 'sort', '-', '--labels', 'Lamina']
+CMD_SORT_NON_VERTEBRAL_AND_LAMINA = task_utils.CMD_SORT_VERTEBRAL_CORNERS + ['--labels', 'Lamina', '--inv-label', '--by-x']
 
 AI_SUBDIR = 'auto'
 if EXTERNAL_TEST:
@@ -99,9 +106,11 @@ def task_build_pca():
             .pipe(['cat', infile])
             .pipe(['python3', SRC_DIR / 'labelme_utils.py', 'shape2lm'])
             .pipe(['lmrs', 'filter', '--rules', SRC_DIR / 'conf/rules-neck.txt', '-'])
+            .pipe(CMD_ROTATE)
             .pipe(task_utils.CMD_SORT_VERTEBRAL_CORNERS)
-            .pipe(task_utils.CMD_SORT_NON_VERTEBRAL)
-            .pipe(['lmrs', 'sort', '-', '--labels', 'Lamina'])
+            .pipe(CMD_SORT_LAMINA)
+            .pipe(CMD_ROTATE_INV)
+            .pipe(CMD_SORT_NON_VERTEBRAL_AND_LAMINA)
             .pipe(['python3', SRC_DIR / 'labelme_utils.py', 'lm2shape'])
             .pipe(['python3', script, outfile, '--json', json_outfile])
         )
@@ -131,28 +140,6 @@ PCA_FIT_PARAMS = [
 ]
 
 
-def task_fit_pca():
-    '''
-    Fit PCA models
-    '''
-    script = SRC_DIR / 'asm/pt_fit_model.py'
-    for fold_dir in FOLD_DIRS:
-        model_file = fold_dir / TGT_PCA
-        outfile = fold_dir / 'auto/pca_keypoints.ndjson'
-        mha_file = fold_dir / 'y_pred.mha'
-        ndjson_file = fold_dir / 'auto/heatmap_keypoints.ndjson'
-        skipped = fold_dir / 'auto/pca_skipped.txt'
-        icp_weight = '0.00001'
-        params = PCA_FIT_PARAMS + ['--skip_complete', '--skipped', skipped, '--icp_weight', icp_weight]
-
-        action = ['python3', script, ndjson_file, mha_file, '--output', outfile] + params + ['--model', model_file]
-        yield {
-            'name': f'{fold_dir.name}',
-            'actions': [action],
-            'file_dep': [model_file],
-            'targets': [outfile],
-        }
-
 def sub_exp2lm(name, infile, outfile):
     '''
     Convert exp results to lm format for external test
@@ -164,11 +151,9 @@ def sub_exp2lm(name, infile, outfile):
         action = ['python', script, infile]
 
     sort_corners = task_utils.CMD_SORT_VERTEBRAL_CORNERS
-    sort_non_corners = task_utils.CMD_SORT_NON_VERTEBRAL
+    sort_non_corners = CMD_SORT_NON_VERTEBRAL_AND_LAMINA
 
-    sort_lamina = ['lmrs', 'sort', '-', '--labels', 'Lamina']
-
-    pipeline = Pipeline().pipe(action).pipe(sort_corners).pipe(sort_non_corners).pipe(sort_lamina)
+    pipeline = Pipeline().pipe(action).pipe(CMD_ROTATE).pipe(sort_corners).pipe(CMD_SORT_LAMINA).pipe(CMD_ROTATE_INV).pipe(sort_non_corners)
     action = pipeline.runner(text=True, output_file=outfile)
     return {
         'name': name,
@@ -239,7 +224,7 @@ def task_ref_measure():
 
 SVG_IMAGE_SIZE = 800
 
-HIDES = ['Adi', 'Sacs', 'ModifiedRenawatIndex', 'Tpr', 'EndPlateAngle', 'Eacsva', 'C2c7sva', 'MidPlaneAngle', 'InterVertebralAngle', 'AnteroposteriorVertebralTranslation']
+HIDES = ['Adi', 'Sacs', 'RedlundJohnellMethod', 'RanawatMethod', 'ModifiedRanawatIndex', 'Tpr', 'EndPlateAngle', 'Eacsva', 'C2c7sva', 'MidPlaneAngle', 'InterVertebralAngle', 'AnteroposteriorVertebralTranslation']
 
 def task_ref_draw():
     # scolrs svg-ndjson --resize 800x800 postprocess/lm_test.ndjson postprocess/reference/draw neck
@@ -509,6 +494,10 @@ def task_apply_model():
         action2 = (
             Pipeline()
             .pipe(['lmrs', 'ndjson', '--parent', 'remove', str(outdir)])
+            .pipe(CMD_ROTATE) # deepscol (unintentionally) sort points by y coordinate. rotate, reorder, and rotate back to original orientation to ensure vertebral corners are sorted/labeled correctly. workaround for deepscol v0.1.2
+            .pipe(task_utils.CMD_SORT_VERTEBRAL_CORNERS)
+            .pipe(CMD_SORT_LAMINA)
+            .pipe(CMD_ROTATE_INV)
             .runner(text=True, output_file=outfile)
         )
 
@@ -584,7 +573,7 @@ def task_draw_ai():
             html_move_dir = html_dir
             for fold_dir in FOLD_DIRS:
                 for html_file in (fold_dir / 'result').glob('*.html'):
-                    shutil.move(str(html_file), html_move_dir / html_file.name)
+                    shutil.copyfile(str(html_file), html_move_dir / html_file.name)
     
         yield {
             'name': 'ai-draw',

@@ -7,12 +7,18 @@ from pathlib import Path
 from typing import List
 
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 import seaborn as sns
 from IPython.display import HTML, display
 from scipy import stats
 
 from szkspyne.utils import scolrs
+
+# Show all columns
+pd.set_option('display.max_columns', None)
+# Show all rows
+pd.set_option('display.max_rows', None)
 
 # display(HTML("<style>.main-container { max-width:600 !important; }</style>"))
 # display(HTML('<style>table.dataframe{overflow-x: scroll}</style>'))
@@ -34,7 +40,6 @@ else:
     exclude = None
 
 EXTERNAL_TEST = os.environ.get('EXTERNAL_TEST', 'False').lower() in ('true', '1', 'yes')
-
 
 def load_as_measures(filename: str, exclude = None) -> List[scolrs.MeasureResultLine]:
     lines = scolrs.MeasureResultLine.from_ndjson(filename)
@@ -198,3 +203,113 @@ for col, df in dfs.items():
     args = ['scolrs', 'catalog', *case_filenames, outfile, '--title', title]
     args = [str(arg) for arg in args]
     subprocess.check_call(args)
+
+#%%
+from szkspyne.type.neck_study import SortedFiles, Studies, UnsortedFiles
+
+# TODO: use `script/calculate_rom.py`
+display_header('h2', 'Range of motion')
+
+study_pose_file = data_dir / 'neck_study_poses.json'
+if study_pose_file.exists():
+    study_poses = Studies.model_validate_json(study_pose_file.read_text())
+    rom_index = ['C2/3', 'C3/4', 'C4/5', 'C5/6', 'C6/7', 'C7/T1']
+else:
+    print('No study pose file found.')
+    study_poses = Studies(studies={})
+    rom_index = []
+ref_roms, ai_roms = {}, {}
+for study_id, poses in study_poses.root.items():
+    if isinstance(poses, UnsortedFiles):
+        continue
+    elif isinstance(poses, SortedFiles):
+        pass
+    else:
+        continue
+    if not (poses.flexion and poses.extension): # either flexion or extension is missing
+        continue
+    def extract_rom_measure(measure_dict, poses):
+        flexion_measure = measure_dict.get(poses.flexion, None)
+        extension_measure = measure_dict.get(poses.extension, None)
+        if flexion_measure is None or extension_measure is None:
+            return None
+        flex_measure = flexion_measure.content.measurements
+        ext_measure = extension_measure.content.measurements
+        # get `InterVertebralAngle_?`s
+        keys = [f'InterVertebralAngle_{i}' for i in range(1, 7)]
+        flex_angles = np.array([flex_measure[k].Ok for k in keys])
+        ext_angles = np.array([ext_measure[k].Ok for k in keys])
+
+        rom = ext_angles - flex_angles
+        return rom
+    rom = extract_rom_measure(ref_measure_dict, poses)
+    if rom is not None:
+        ref_roms[study_id] = rom
+    rom = extract_rom_measure(ai_measure_dict, poses)
+    if rom is not None:
+        ai_roms[study_id] = rom
+
+# %%
+if ref_roms:
+    df_ref_rom = pd.DataFrame.from_dict(ref_roms, orient='index', columns=rom_index)
+    display_header('h3', 'Reference range of motion')
+    display(df_ref_rom.head())
+    df_ai_rom = pd.DataFrame.from_dict(ai_roms, orient='index', columns=rom_index)
+    display_header('h3', 'AI range of motion')
+    display(df_ai_rom.head())
+    df_rom_diff = df_ref_rom - df_ai_rom
+    display_header('h3', 'Difference (reference - AI) in range of motion')
+    display(df_rom_diff.head())
+    display(df_rom_diff.describe())
+
+#%%
+if ref_roms:
+    df_concat = pd.concat([df_ref_rom.add_suffix('_ref'), df_ai_rom.add_suffix('_ai')], axis=1)
+    df_concat.to_csv(data_dir / 'postprocess/rom_reference_ai.csv')
+
+#%%
+# pearson correlation r, r^2, rms,and mae for each level
+rom_summary = []
+for level in rom_index:
+    ref_values = df_ref_rom[level]
+    ai_values = df_ai_rom[level]
+    mask = ref_values.notna() & ai_values.notna()
+    r, p = stats.pearsonr(ref_values[mask], ai_values[mask])
+    r2 = r**2
+    rms = sqrt(((ref_values[mask] - ai_values[mask]) ** 2).mean())
+    mae = (ref_values[mask] - ai_values[mask]).abs().mean()
+    rom_summary.append({'Level': level, 'Pearson r': r, 'R^2': r2, 'RMS': rms, 'MAE': mae})
+if rom_summary:
+    df_rom_summary = pd.DataFrame(rom_summary)
+    display_header('h3', 'Summary of correlation and error metrics for range of motion')
+    display(df_rom_summary)
+
+#%%
+# scatter plot for each level
+for level in rom_index:
+    df = df_concat[[f'{level}_ref', f'{level}_ai']].dropna()
+    df.columns = ['Reference', 'AI']
+    display_header('h4', f'Range of motion at {level}')
+    g = sns.jointplot(data=df, x='Reference', y='AI', joint_kws={'alpha': 0.5})
+    x0, x1 = g.ax_joint.get_xlim()
+    y0, y1 = g.ax_joint.get_ylim()
+    lims = [max(x0, y0), min(x1, y1)]
+    g.ax_joint.axline(
+        (df['Reference'].min(), df['Reference'].min()),
+        slope=1,
+        color='gray',
+        linestyle='--',
+        label='y = x',
+        alpha=0.25,
+    )
+    plt.xlabel('Reference')
+    plt.ylabel('AI')
+    plt.legend()
+    plt.show()
+
+    # worst 5 cases
+    df['error'] = df['AI'] - df['Reference']
+    df['abs error'] = df['error'].abs()
+    df_sorted = df.sort_values('abs error', ascending=False).head(n=5)
+    display_header('h5', f'Worst 5 cases for range of motion at {level}')
+    display(df_sorted)
