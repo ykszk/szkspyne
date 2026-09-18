@@ -1,0 +1,2 @@
+- case1 : Case courtesy of Andrew Dixon, <a href="https://radiopaedia.org/?lang=us">Radiopaedia.org</a>. From the case <a href="https://radiopaedia.org/cases/32505?lang=us">rID: 32505</a>
+- case2 : Case courtesy of Frank Gaillard, <a href="https://radiopaedia.org/?lang=us">Radiopaedia.org</a>. From the case <a href="https://radiopaedia.org/cases/37967?lang=us">rID: 37967</a>

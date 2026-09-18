@@ -25,10 +25,12 @@ fi
 
 cp "$SCRIPT_DIR"/../script/neck_study_poses.json "$result_dir"
 
+readonly CROP_LABELS="TL TR BL BR Brow Sella ExternalAuditoryCanal Orbit Occipital Chin Lamina Manubrium PosteriorHardPalate AnteriorC1Arch AnteriorDens PosteriorDens"
+
 for fold_dir in "$result_dir"/folds/*; do
     echo "$fold_dir"
     # python3 "$SCRIPT_DIR"/exp_single.py --encoder_name efficientnet-b5 --height 1024 --batch_size 4 --lr 0.001 --sigma 3 --max-epochs 128 --input "$fold_dir" --crop_labels TL TR BL BR
-    # python3 "$SCRIPT_DIR"/exp_single.py --encoder_name efficientnet-b4 --height 768 --batch_size 5 --lr 0.001 --sigma 5 --max-epochs 128 --input "$fold_dir"
-    python3 "$SCRIPT_DIR"/exp_single.py --encoder_name efficientnet-b3  --model_name deeplabv3plus --height 768 --batch_size 5 --lr 0.001 --sigma 5 --max-epochs 128 --input "$fold_dir"
+    # python3 "$SCRIPT_DIR"/exp_single.py --encoder_name efficientnet-b4 --height 768 --batch_size 5 --lr 0.001 --sigma 5 --max-epochs 128 --input "$fold_dir" --crop_labels $CROP_LABELS
+    python3 "$SCRIPT_DIR"/exp_single.py --encoder_name efficientnet-b3 --model_name deeplabv3plus --loss bce --height 768 --batch_size 5 --lr 0.001 --sigma 5 --max-epochs 128 --input "$fold_dir" --crop_labels $CROP_LABELS
     # python3 "$SCRIPT_DIR"/exp_single.py --encoder_name mobileone_s1 --height 768 --batch_size 5 --lr 0.001 --sigma 5 --max-epochs 128 --input "$fold_dir"
 done
