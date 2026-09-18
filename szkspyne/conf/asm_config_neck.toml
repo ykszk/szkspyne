@@ -1,0 +1,36 @@
+sigmas = [
+    10.0,
+    5.0,
+    0.1,
+]
+
+[fit]
+lambda = 0.0001
+
+[fit.adam]
+learning_rate = 0.01
+beta1 = 0.9
+beta2 = 0.999
+epsilon = 0.00000001
+
+[stopper]
+max_iterations = 100
+all = false
+
+[stopper.no_improvement]
+patience = 8
+min_delta = 0.0
+objective = "minimize"
+
+[mode]
+variance = 0.999999
+
+[icp_init]
+alpha = 1.0
+beta = 1.0
+lambda = 100
+max_iter = 100
+tol = 0.000001
+
+[icp_init.mode_config]
+variance = 0.999

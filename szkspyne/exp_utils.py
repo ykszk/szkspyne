@@ -1,22 +1,23 @@
+import collections.abc as abc
 import json
 import sys
 from pathlib import Path
-from typing import Any, List, Sequence, Optional, Tuple, Union, Callable, Iterator
+from typing import Any, Callable, Iterator, List, Optional, Sequence, Tuple, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import pydicom
 import seaborn as sns
+import zstandard
 from joblib import Parallel, delayed, parallel_config
 from logzero import logger
 from PIL import Image
 from tqdm import tqdm
-import pydicom
-import collections.abc as abc
-import zstandard
 
 from szkspyne import img_utils, transforms
 from szkspyne.settings import LABEL_NAMES
+
 
 class CompressedNumpyArray(abc.Sequence):
     '''
@@ -81,7 +82,7 @@ def load_image(filename: Union[str, Path]) -> np.ndarray:
     if str(filename).endswith('.dcm'):
         x = load_dicom(filename)
     else:
-        x = np.array(Image.open(filename))
+        x = np.array(Image.open(filename).convert("L"))
     return x
 
 def load_shape(filename: Union[str, Path]) -> np.ndarray:

@@ -6,7 +6,7 @@ if len(sys.argv) < 3:
     print("Usage: python sort_poses.py <annotation_ndjson> <output_ndjson>")
     sys.exit(1)
 annotation_ndjson = sys.argv[1]
-output_ndjson = sys.argv[2]
+output_json = sys.argv[2]
 
 data = []
 with open(annotation_ndjson, "r") as f:
@@ -31,5 +31,5 @@ for item in data:
         sys.exit(1)
     else:
         group[pose] = os.path.basename(item['filename'])
-with open(output_ndjson, "w") as f:
+with open(output_json, "w") as f:
     json.dump(group_ids, f)

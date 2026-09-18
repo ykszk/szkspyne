@@ -1,7 +1,6 @@
 import os
 import sys
 
-
 if os.name == 'posix':
     import matplotlib
 
@@ -12,7 +11,6 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import torch
-
 
 torch.set_num_threads(1)
 # import multiprocessing as mp
@@ -29,11 +27,10 @@ import pretrained_models
 import torch
 import transforms
 from logzero import logger
+from pytorch_lightning.callbacks import Callback
 from settings import FLIP_PAIRS, LABEL_NAMES
 from szkmipy import mhd
 from torch.utils.data import DataLoader
-from pytorch_lightning.callbacks import Callback
-
 
 torch.backends.cudnn.benchmark = True
 
@@ -156,7 +153,7 @@ def main():
         transforms.base_kps_transform,
         sigma=SIGMA,
     )
-    val_loader = DataLoader(dataset, shuffle=False, drop_last=True, **loader_kwargs)
+    val_loader = DataLoader(dataset, shuffle=False, drop_last=False, **loader_kwargs)
 
     import pytorch_lightning as pl
     from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
@@ -241,7 +238,7 @@ def main():
 
     from settings import PROB_MAX
     y_preds_shape = [n_test] + list(y_shape) + [N_CLASSES]
-    header =  mhd.create_header(y_preds_shape, compress=True, last_dim_is_channel=True, compression_type='zlib')
+    header =  mhd.create_header(y_preds_shape, compress=True, last_dim_is_channel=True, compression_type='zstandard')
     writer = mhd.Writer(outdir / 'y_pred.mha', header, dtype=np.dtype('i2'))
     callback = SaveCallback(writer, lambda x: (PROB_MAX * x).permute((0, 2, 3, 1)).type(torch.ShortTensor).cpu().numpy())
 

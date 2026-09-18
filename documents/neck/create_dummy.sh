@@ -1,6 +1,6 @@
 cd documents/neck
 mkdir -p dummy
-for i in {1..10}
+for i in {1..20}
 do
     for image in sample_data/*.jpg
     do
