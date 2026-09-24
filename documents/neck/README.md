@@ -16,8 +16,8 @@ This document describes how to train a model for extracting landmark points from
 - [ykszk/labelme-rs](https://github.com/ykszk/labelme-rs)
   - `lmrs`
 ```sh
-cargo install --git https://github.com/ykszk/scolrs --tag v0.1.3 scolrs-commands --features gdcm --locked
-cargo install --git https://github.com/ykszk/scolrs --tag v0.1.3 deepscol --features gdcm --locked
+cargo install --git https://github.com/ykszk/scolrs --tag v0.1.4 scolrs-commands --features gdcm --locked
+cargo install --git https://github.com/ykszk/scolrs --tag v0.1.4 deepscol --features gdcm --locked
 cargo install --git https://github.com/ykszk/labelme-rs lmrs --tag v0.14.4
 ```
 
