@@ -84,7 +84,8 @@ class MovablePoints():
         tentative_template = mps[0]
         if len(mps) == 1:
             return tentative_template
-        tfs = [tentative_template.calculate_transform(mp) for mp in mps[1:]]
+        # Every sample is a candidate, including the tentative template (identity transform)
+        tfs = [tentative_template.calculate_transform(mp) for mp in mps]
         param_arrs = np.array([[tf.scale, tf.translation[0], tf.translation[1], tf.rotation] for tf in tfs])
         mean_params = np.mean(param_arrs, axis=0)
         # calculate the mahalanobis distance from the mean
