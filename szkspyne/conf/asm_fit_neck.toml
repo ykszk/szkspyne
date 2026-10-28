@@ -1,0 +1,6 @@
+# Fitting configuration stored in the neck ASM model, overriding the defaults of the fitter
+[mode]
+variance = 0.95
+
+[fit]
+lambda = 0.005

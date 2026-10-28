@@ -1,5 +1,8 @@
 #%%
+import json
+import tomllib
 from dataclasses import dataclass
+from pathlib import Path
 from datetime import datetime, timezone
 from typing import List, Literal, Optional
 
@@ -243,18 +246,21 @@ class ActiveShapeModelBuilder:
             timestamp=datetime.now(timezone.utc).isoformat(timespec='seconds'),
         )
     
-    def save(self, filename: str, model_name: str, labels: List[str], reference_labels: List[str]) -> None:
+    def save(self, filename: str, model_name: str, labels: List[str], reference_labels: List[str], config: Optional[dict] = None) -> None:
         """
         Save the ActiveShapeModel to a file.
         The file will contain the PCA components and the template points.
+        `config` (fitting configuration) is stored as a JSON string.
         """
-        np.savez(filename, model_name=model_name, mean=self.pca.mean_, components=self.pca.components_, explained_variance=self.pca.explained_variance_, explained_variance_ratio=self.pca.explained_variance_ratio_, template_points=self.template.points, template_reference=self.template.reference_points, labels=labels, point_counts=self.template.point_counts, reference_labels=reference_labels, alignment=self.alignment, dataset_size=self.dataset_size, timestamp=self.timestamp)
+        extra = {} if config is None else {'config': json.dumps(config)}
+        np.savez(filename, model_name=model_name, mean=self.pca.mean_, components=self.pca.components_, explained_variance=self.pca.explained_variance_, explained_variance_ratio=self.pca.explained_variance_ratio_, template_points=self.template.points, template_reference=self.template.reference_points, labels=labels, point_counts=self.template.point_counts, reference_labels=reference_labels, alignment=self.alignment, dataset_size=self.dataset_size, timestamp=self.timestamp, **extra)
 
-    def to_dict(self, model_name: str, labels: List[str], reference_labels: List[str]) -> dict:
+    def to_dict(self, model_name: str, labels: List[str], reference_labels: List[str], config: Optional[dict] = None) -> dict:
         """
         Convert the ActiveShapeModel to a JSON serializable dictionary.
+        `config` is the fitting configuration of the model, possibly partial, overriding the defaults of the fitter.
         """
-        return {
+        d = {
             'model_name': model_name,
             'mean': self.pca.mean_.tolist(),
             'components': self.pca.components_.tolist(),
@@ -269,6 +275,9 @@ class ActiveShapeModelBuilder:
             'dataset_size': self.dataset_size,
             'timestamp': self.timestamp,
         }
+        if config is not None:
+            d['config'] = config
+        return d
 
 
 def main():
@@ -301,8 +310,18 @@ def main():
         default='reference',
         help='Align shapes by the reference points or by all points (generalized Procrustes analysis)',
     )
+    parser.add_argument(
+        '--config',
+        type=Path,
+        help='Fitting configuration (TOML or JSON, possibly partial) to store in the model',
+    )
 
     args = parser.parse_args()
+    config = None
+    if args.config:
+        with open(args.config, 'rb') as f:
+            config = tomllib.load(f) if args.config.suffix == '.toml' else json.load(f)
+        logger.info('Fitting configuration from %s: %s', args.config, config)
 
     if args.labelme:
         shape_dicts = [line.into_shape_dict_line() for line in labelme_utils.LabelMeLine.from_lines(args.input)]
@@ -318,14 +337,12 @@ def main():
     # %%
     logger.info('Saving Active Shape Model to %s', args.output)
     if not args.model_name:
-        from pathlib import Path
         args.model_name = Path(args.output).stem
-    asm_builder.save(args.output, args.model_name, settings.ASM_LABEL_NAMES, settings.ANCHOR_LABEL_NAMES)
+    asm_builder.save(args.output, args.model_name, settings.ASM_LABEL_NAMES, settings.ANCHOR_LABEL_NAMES, config)
     logger.info('Active Shape Model saved successfully.')
 
     if args.json:
-        import json
-        json_output = asm_builder.to_dict(args.model_name, settings.ASM_LABEL_NAMES, settings.ANCHOR_LABEL_NAMES)
+        json_output = asm_builder.to_dict(args.model_name, settings.ASM_LABEL_NAMES, settings.ANCHOR_LABEL_NAMES, config)
         with open(args.json, 'w') as f:
             json.dump(json_output, f, indent=4)
         logger.info('Active Shape Model saved as JSON to %s', args.json)

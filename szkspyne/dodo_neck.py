@@ -95,6 +95,7 @@ def task_build_pca():
     Create pca models
     '''
     script = SRC_DIR / 'asm/point_data.py'
+    fit_config = SRC_DIR / 'conf/asm_fit_neck.toml'
     for fold_dir in FOLD_DIRS:
         # cat infile | python3 SRC_DIR/labelme_utils.py shape2lm | lmrs filter --rules SRC_DIR/conf/rules-neck.txt - | python3 SRC_DIR/labelme_utils.py lm2shape | python3 script outfile
         infile = fold_dir / 'train_val.ndjson'
@@ -112,13 +113,13 @@ def task_build_pca():
             .pipe(CMD_ROTATE_INV)
             .pipe(CMD_SORT_NON_VERTEBRAL_AND_LAMINA)
             .pipe(['python3', SRC_DIR / 'labelme_utils.py', 'lm2shape'])
-            .pipe(['python3', script, outfile, '--json', json_outfile])
+            .pipe(['python3', script, outfile, '--json', json_outfile, '--alignment', 'procrustes', '--config', fit_config])
         )
         action = pipeline.runner(text=True)
         yield {
             'name': f'{fold_dir.name}',
             'actions': [action],
-            'file_dep': [infile],
+            'file_dep': [infile, fit_config],
             'targets': [outfile, json_outfile],
         }
 
@@ -445,7 +446,6 @@ def task_apply_model():
         logger.debug(f'MODEL_DIR: {model_dir}')
         model_file = model_dir / "model.onnx"
         asm_file = model_dir / TGT_PCA_JSON
-        asm_config = SRC_DIR / 'conf/asm_config_neck.toml'
         os.environ['DS__SIZE__IMAGE_RESIZE'] = "800,800"
         os.environ['DS__SESSION__INTRA_THREADS'] = "4"
         # set LD_LIBRARY_PATH to include ONNX Runtime library
@@ -475,7 +475,7 @@ def task_apply_model():
             '--model',
             model_file,
             '--asm',
-            f'{asm_file},{asm_config}',
+            asm_file,
             '--direction',
             'neck-lateral',
             '--labelme',
