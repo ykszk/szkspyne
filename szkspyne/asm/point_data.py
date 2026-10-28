@@ -1,6 +1,7 @@
 #%%
 from dataclasses import dataclass
-from typing import List, Optional
+from datetime import datetime, timezone
+from typing import List, Literal, Optional
 
 import numpy as np
 from logzero import logger
@@ -148,32 +149,106 @@ class PresetPointData(MovablePoints):
 from sklearn.decomposition import PCA
 
 
+Alignment = Literal['reference', 'procrustes']
+
+
+def _mean_reference_points(data: List[MovablePoints], tfs: List[SimilarityTransform]) -> List[Optional[List[float]]]:
+    '''
+    Mean of the reference points mapped by each shape's transform, ignoring missing ones.
+    '''
+    n_refs = len(data[0].reference_points)
+    means: List[Optional[List[float]]] = []
+    for i in range(n_refs):
+        pts = [tf(np.asarray(d.reference_points[i], dtype=np.float64)[None])[0]
+               for d, tf in zip(data, tfs) if d.reference_points[i] is not None]
+        means.append(np.mean(pts, axis=0).tolist() if pts else None)
+    return means
+
+
+def _estimate_similarity(src: np.ndarray, dst: np.ndarray) -> SimilarityTransform:
+    tf = SimilarityTransform()
+    tf.estimate(src, dst)
+    return tf
+
+
+def _procrustes_align(data: List[MovablePoints], template: MovablePoints, max_iter: int = 100, tol: float = 1e-3) -> tuple:
+    """
+    Generalized Procrustes analysis on all points.
+    Each shape is aligned to the mean shape by a similarity transform, and the mean is
+    kept in the template's frame (scale, rotation, position) at every iteration.
+    Returns the aligned shapes and the transforms.
+    """
+    shapes = np.array([d.points for d in data], dtype=np.float64)
+    frame = np.asarray(template.points, dtype=np.float64)
+    mean = frame
+    for i in range(max_iter):
+        tfs = [_estimate_similarity(s, mean) for s in shapes]
+        aligned = np.array([tf(s) for tf, s in zip(tfs, shapes)])
+        new_mean = aligned.mean(axis=0)
+        new_mean = _estimate_similarity(new_mean, frame)(new_mean)
+        change = np.abs(new_mean - mean).max()
+        mean = new_mean
+        logger.debug('Procrustes iteration %d: max mean change %f', i, change)
+        if change < tol:
+            break
+    else:
+        logger.warning('Procrustes alignment did not converge in %d iterations', max_iter)
+    tfs = [_estimate_similarity(s, mean) for s in shapes]
+    aligned = np.array([tf(s) for tf, s in zip(tfs, shapes)])
+    return aligned, tfs
+
+
 @dataclass
 class ActiveShapeModelBuilder:
     pca: PCA
     template: MovablePoints
+    alignment: Alignment
+    dataset_size: int
+    timestamp: str
 
     @staticmethod
-    def from_data(data: List[MovablePoints]) -> 'ActiveShapeModelBuilder':
+    def from_data(data: List[MovablePoints], alignment: Alignment = 'reference') -> 'ActiveShapeModelBuilder':
         """
         Create an ActiveShapeModel from a list of MovablePoints.
-        The model is created by selecting the template from the data.
+        The model frame is defined by the template selected from the data.
+
+        alignment:
+            'reference': each shape is aligned to the template by the reference points.
+            'procrustes': each shape is aligned to the mean shape by all points
+                (generalized Procrustes analysis). The template becomes the mean shape and
+                its reference points the mean of the aligned reference points.
         """
         template = MovablePoints.select_template(data)
-        aligned_data = [template.align(d)[0] for d in data]
+        if alignment == 'reference':
+            aligned_data = [template.align(d)[0] for d in data]
+        elif alignment == 'procrustes':
+            aligned_data, tfs = _procrustes_align(data, template)
+            template = MovablePoints(
+                points=aligned_data.mean(axis=0),
+                reference_points=_mean_reference_points(data, tfs),
+                point_counts=template.point_counts,
+            )
+        else:
+            raise ValueError(f'Unknown alignment: {alignment}')
         array = np.array(aligned_data, dtype=np.float64)
         array = array.reshape(array.shape[0], -1)
         pca = PCA()
         pca.fit(array)
 
-        return ActiveShapeModelBuilder(pca=pca, template=template)
+        return ActiveShapeModelBuilder(
+            pca=pca,
+            template=template,
+            alignment=alignment,
+            dataset_size=len(data),
+            timestamp=datetime.now(timezone.utc).isoformat(timespec='seconds'),
+        )
     
     def save(self, filename: str, model_name: str, labels: List[str], reference_labels: List[str]) -> None:
         """
         Save the ActiveShapeModel to a file.
         The file will contain the PCA components and the template points.
         """
-        np.savez(filename, model_name=model_name, mean=self.pca.mean_, components=self.pca.components_, explained_variance=self.pca.explained_variance_, explained_variance_ratio=self.pca.explained_variance_ratio_, template_points=self.template.points, template_reference=self.template.reference_points, labels=labels, point_counts=self.template.point_counts, reference_labels=reference_labels)
+        np.savez(filename, model_name=model_name, mean=self.pca.mean_, components=self.pca.components_, explained_variance=self.pca.explained_variance_, explained_variance_ratio=self.pca.explained_variance_ratio_, template_points=self.template.points, template_reference=self.template.reference_points, labels=labels, point_counts=self.template.point_counts, reference_labels=reference_labels, alignment=self.alignment, dataset_size=self.dataset_size, timestamp=self.timestamp)
 
     def to_dict(self, model_name: str, labels: List[str], reference_labels: List[str]) -> dict:
         """
@@ -189,7 +264,10 @@ class ActiveShapeModelBuilder:
             'template_reference': self.template.reference_points,
             'labels': labels,
             'reference_labels': reference_labels,
-            'point_counts': self.template.point_counts
+            'point_counts': self.template.point_counts,
+            'alignment': self.alignment,
+            'dataset_size': self.dataset_size,
+            'timestamp': self.timestamp,
         }
 
 
@@ -217,6 +295,12 @@ def main():
         help='Input is in labelme format',
         action='store_true',
     )
+    parser.add_argument(
+        '--alignment',
+        choices=['reference', 'procrustes'],
+        default='reference',
+        help='Align shapes by the reference points or by all points (generalized Procrustes analysis)',
+    )
 
     args = parser.parse_args()
 
@@ -229,8 +313,8 @@ def main():
     spine_data = [PresetPointData.from_shape_dict(shape_dict.content) for shape_dict in shape_dicts]
     logger.info('Point counts: %s', spine_data[0].point_counts)
 
-    logger.info('Building Active Shape Model from %d spine data', len(spine_data))
-    asm_builder = ActiveShapeModelBuilder.from_data(spine_data)
+    logger.info('Building Active Shape Model from %d spine data with %s alignment', len(spine_data), args.alignment)
+    asm_builder = ActiveShapeModelBuilder.from_data(spine_data, alignment=args.alignment)
     # %%
     logger.info('Saving Active Shape Model to %s', args.output)
     if not args.model_name:
