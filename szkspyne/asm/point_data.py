@@ -31,8 +31,8 @@ class MovablePoints():
         Calculate the transform parameters to transform the src_points to the template points.
         The transform parameters are defined as (scale, rotation, translation).
         """
-        src = src_points.reference_points
-        dst = self.reference_points
+        src = np.asarray(src_points.reference_points, dtype=np.float64)
+        dst = np.asarray(self.reference_points, dtype=np.float64)
         # calculate similarity transform parameters
         tf = SimilarityTransform()
         if inverse:
