@@ -37,11 +37,8 @@ EXTERNAL_TEST = os.environ.get('EXTERNAL_TEST', 'False').lower() in ('true', '1'
 
 NECK_STUDY_POSES = RESULT_DIR / "neck_study_poses.json"
 
-# Rotate points slightly so that the vertebral corners are sorted by y coordinate. Some flexion images have caudal vertebra with lower y coordinate than cranial vertebra.
-CMD_ROTATE = ['lmrs', 'mat', '-r=5', '-', '--ndjson']
-CMD_ROTATE_INV = ['lmrs', 'mat', '-r=-5', '-', '--ndjson']
-
-CMD_SORT_LAMINA = ['lmrs', 'sort', '-', '--labels', 'Lamina']
+# Order vertebral corners and laminae along the spine. Sorting by y fails in flexion images, where a caudal vertebra can have a lower y coordinate than a cranial one.
+CMD_ORDER_SPINE = ['scolrs', 'order-spine', '-', '--ndjson']
 CMD_SORT_NON_VERTEBRAL_AND_LAMINA = task_utils.CMD_SORT_VERTEBRAL_CORNERS + ['--labels', 'Lamina', '--inv-label', '--by-x']
 
 AI_SUBDIR = 'auto'
@@ -107,10 +104,7 @@ def task_build_pca():
             .pipe(['cat', infile])
             .pipe(['python3', SRC_DIR / 'labelme_utils.py', 'shape2lm'])
             .pipe(['lmrs', 'filter', '--rules', SRC_DIR / 'conf/rules-neck.txt', '-'])
-            .pipe(CMD_ROTATE)
-            .pipe(task_utils.CMD_SORT_VERTEBRAL_CORNERS)
-            .pipe(CMD_SORT_LAMINA)
-            .pipe(CMD_ROTATE_INV)
+            .pipe(CMD_ORDER_SPINE)
             .pipe(CMD_SORT_NON_VERTEBRAL_AND_LAMINA)
             .pipe(['python3', SRC_DIR / 'labelme_utils.py', 'lm2shape'])
             .pipe(['python3', script, outfile, '--json', json_outfile, '--alignment', 'procrustes', '--config', fit_config])
@@ -151,10 +145,7 @@ def sub_exp2lm(name, infile, outfile):
     else:
         action = ['python', script, infile]
 
-    sort_corners = task_utils.CMD_SORT_VERTEBRAL_CORNERS
-    sort_non_corners = CMD_SORT_NON_VERTEBRAL_AND_LAMINA
-
-    pipeline = Pipeline().pipe(action).pipe(CMD_ROTATE).pipe(sort_corners).pipe(CMD_SORT_LAMINA).pipe(CMD_ROTATE_INV).pipe(sort_non_corners)
+    pipeline = Pipeline().pipe(action).pipe(CMD_ORDER_SPINE).pipe(CMD_SORT_NON_VERTEBRAL_AND_LAMINA)
     action = pipeline.runner(text=True, output_file=outfile)
     return {
         'name': name,
@@ -494,10 +485,6 @@ def task_apply_model():
         action2 = (
             Pipeline()
             .pipe(['lmrs', 'ndjson', '--parent', 'remove', str(outdir)])
-            .pipe(CMD_ROTATE) # deepscol (unintentionally) sort points by y coordinate. rotate, reorder, and rotate back to original orientation to ensure vertebral corners are sorted/labeled correctly. workaround for deepscol v0.1.2
-            .pipe(task_utils.CMD_SORT_VERTEBRAL_CORNERS)
-            .pipe(CMD_SORT_LAMINA)
-            .pipe(CMD_ROTATE_INV)
             .runner(text=True, output_file=outfile)
         )
 
