@@ -1,6 +1,7 @@
 # szkspyne
 My python package for spine AI
 
+See [documents/scoliosis](documents/scoliosis) and [documents/neck](documents/neck) for scoliosis- and neck-related documentation.
 
 ## Requirements
 
